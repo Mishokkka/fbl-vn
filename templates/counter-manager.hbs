@@ -22,8 +22,8 @@
       {{#each counters}}
         <div class="fbl-vn-counter-manager-row" data-counter-row data-counter-id="{{id}}">
           <span class="fbl-vn-counter-manager-index">{{index}}</span>
-          <input type="text" data-counter-name value="{{name}}" placeholder="Название счётчика" />
-          <input type="number" step="1" data-counter-initial value="{{initial}}" title="Стартовое значение" />
+          <input type="text" data-counter-name value="{{name}}" placeholder="Название счётчика" aria-label="Название счётчика {{index}}" />
+          <input type="number" step="1" data-counter-initial value="{{initial}}" title="Стартовое значение" aria-label="Стартовое значение счётчика {{index}}" />
           <span class="fbl-vn-counter-manager-usage" title="{{usageLabel}}">{{usageLabel}}</span>
           <button type="button" class="danger" data-action="deleteCounter" data-counter-id="{{id}}" title="Удалить счётчик" aria-label="Удалить счётчик"><i class="fa-solid fa-trash"></i></button>
         </div>

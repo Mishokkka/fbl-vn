@@ -1,3 +1,10 @@
+.fbl-vn-graph-app.application {
+  min-width: min(720px, calc(100vw - 24px));
+  min-height: min(480px, calc(100vh - 24px));
+  max-width: calc(100vw - 8px);
+  max-height: calc(100vh - 8px);
+}
+
 .fbl-vn-graph {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -56,7 +63,8 @@
 
 .fbl-vn-graph-body {
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  cursor: default;
   background-color: var(--vn-bg);
   background-image:
     linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
@@ -70,6 +78,8 @@
   position: relative;
   min-width: 100%;
   min-height: 100%;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 .fbl-vn-graph-lines {
@@ -116,7 +126,7 @@
   marker-end: url(#fbl-vn-arrow-broken);
 }
 
-.graph-edge-label {
+.fbl-vn-graph .graph-edge-label {
   position: absolute;
   z-index: 3;
   max-width: 150px;
@@ -133,21 +143,21 @@
   pointer-events: none;
 }
 
-.graph-edge-label.is-choice {
+.fbl-vn-graph .graph-edge-label.is-choice {
   border-color: rgba(222, 158, 98, 0.36);
   color: #f1d1aa;
 }
 
 
-.graph-edge-label.is-conditional {
+.fbl-vn-graph .graph-edge-label.is-conditional {
   border-color: rgba(210, 168, 95, 0.58);
   color: #e6c88f;
 }
-.graph-edge-label.is-terminal {
+.fbl-vn-graph .graph-edge-label.is-terminal {
   color: var(--vn-muted);
 }
 
-.graph-edge-label.is-broken {
+.fbl-vn-graph .graph-edge-label.is-broken {
   border-color: rgba(226, 95, 95, 0.55);
   color: #f0c1c1;
 }
@@ -227,16 +237,6 @@
 }
 
 /* Interactive graph */
-.fbl-vn-graph-body {
-  overflow: hidden;
-  cursor: default;
-}
-
-.fbl-vn-graph-canvas {
-  transform-origin: 0 0;
-  will-change: transform;
-}
-
 .fbl-vn-graph-head .graph-help {
   max-width: 420px;
 }
@@ -270,4 +270,20 @@
   border-color: rgba(182, 138, 74, 0.56);
   color: var(--vn-text);
   background: rgba(182, 138, 74, 0.14);
+}
+
+@media (max-width: 900px), (max-height: 620px) {
+  .fbl-vn-graph-head {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .fbl-vn-graph-head .graph-title {
+    flex: 1 0 100%;
+    margin-right: 0;
+  }
+
+  .fbl-vn-graph-head .graph-help {
+    display: none;
+  }
 }

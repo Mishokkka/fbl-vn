@@ -1,6 +1,6 @@
 .fbl-vn-counter-manager-app {
-  min-width: 620px;
-  min-height: 420px;
+  min-width: min(620px, calc(100vw - 24px));
+  min-height: min(420px, calc(100vh - 24px));
 }
 
 .fbl-vn-counter-manager {
@@ -145,7 +145,7 @@
 
 @media (max-width: 700px) {
   .fbl-vn-counter-manager-app {
-    min-width: 460px;
+    min-width: min(460px, calc(100vw - 24px));
   }
 
   .fbl-vn-counter-manager-toolbar {

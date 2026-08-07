@@ -1,44 +1,35 @@
 import { MODULE_ID } from "./constants.js";
 export function randomId(prefix = "id") {
-    var _a, _b, _c;
-    const random = (_c = (_b = (_a = foundry.utils) === null || _a === void 0 ? void 0 : _a.randomID) === null || _b === void 0 ? void 0 : _b.call(_a, 10)) !== null && _c !== void 0 ? _c : Math.random().toString(36).slice(2, 12);
+    const random = globalThis.foundry?.utils?.randomID?.(10) ?? Math.random().toString(36).slice(2, 12);
     return `${prefix}-${random}`;
 }
 export function duplicateData(data) {
-    var _a;
-    if ((_a = foundry.utils) === null || _a === void 0 ? void 0 : _a.deepClone)
-        return foundry.utils.deepClone(data);
+    if (globalThis.foundry?.utils?.deepClone) return globalThis.foundry.utils.deepClone(data);
     return JSON.parse(JSON.stringify(data));
 }
 export function mergeData(target, source) {
-    var _a;
-    if ((_a = foundry.utils) === null || _a === void 0 ? void 0 : _a.mergeObject)
-        return foundry.utils.mergeObject(target, source, { inplace: false });
+    if (globalThis.foundry?.utils?.mergeObject) return globalThis.foundry.utils.mergeObject(target, source, { inplace: false });
     return Object.assign({}, target, source);
 }
 export function localize(key) {
-    var _a, _b, _c;
-    return (_c = (_b = (_a = game.i18n) === null || _a === void 0 ? void 0 : _a.localize) === null || _b === void 0 ? void 0 : _b.call(_a, key)) !== null && _c !== void 0 ? _c : key;
+    return globalThis.game?.i18n?.localize?.(key) ?? key;
 }
 export function warn(message) {
     console.warn(`${MODULE_ID} | ${message}`);
 }
 export function notify(message) {
-    var _a;
-    (_a = ui.notifications) === null || _a === void 0 ? void 0 : _a.info(message);
+    globalThis.ui?.notifications?.info?.(message);
 }
 export function notifyWarn(message) {
-    var _a;
-    (_a = ui.notifications) === null || _a === void 0 ? void 0 : _a.warn(message);
+    globalThis.ui?.notifications?.warn?.(message);
 }
 export function notifyError(message) {
-    var _a;
-    (_a = ui.notifications) === null || _a === void 0 ? void 0 : _a.error(message);
+    globalThis.ui?.notifications?.error?.(message);
 }
 
 export async function confirmDialog(message, { title = "Подтверждение", yes = "Да", no = "Нет" } = {}) {
     const text = String(message ?? "");
-    const DialogV2 = foundry.applications?.api?.DialogV2;
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
     if (DialogV2?.confirm) {
         try {
             const content = `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
@@ -59,8 +50,7 @@ export async function confirmDialog(message, { title = "Подтверждени
     return globalThis.confirm(text);
 }
 export function getFilePickerClass() {
-    var _a, _b, _c;
-    return (_c = (_b = (_a = foundry.applications) === null || _a === void 0 ? void 0 : _a.apps) === null || _b === void 0 ? void 0 : _b.FilePicker) !== null && _c !== void 0 ? _c : globalThis.FilePicker;
+    return globalThis.foundry?.applications?.apps?.FilePicker ?? globalThis.FilePicker;
 }
 export function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -93,16 +83,22 @@ export async function readJsonFile(file) {
 }
 
 
+/**
+ * Render a lightweight modal form. `content` is trusted, author-generated HTML and is
+ * inserted without escaping. Escape every dynamic value before interpolating it.
+ */
 export function formDialog({ title = "Ввод", content = "", submitLabel = "OK", cancelLabel = "Отмена", danger = false } = {}) {
     return new Promise(resolve => {
         const backdrop = document.createElement("div");
         backdrop.className = "fbl-vn-modal-backdrop";
+        const previousFocus = document.activeElement;
+        const titleId = `fbl-vn-dialog-title-${randomId("title")}`;
         const titleText = escapeHtml(title);
         const submitText = escapeHtml(submitLabel);
         const cancelText = escapeHtml(cancelLabel);
         backdrop.innerHTML = `
-          <form class="fbl-vn-modal" autocomplete="off">
-            <header><strong>${titleText}</strong></header>
+          <form class="fbl-vn-modal" autocomplete="off" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+            <header><strong id="${titleId}">${titleText}</strong></header>
             <section class="fbl-vn-modal-body">${content}</section>
             <footer>
               <button type="button" data-dialog-cancel>${cancelText}</button>
@@ -110,15 +106,35 @@ export function formDialog({ title = "Ввод", content = "", submitLabel = "OK
             </footer>
           </form>`;
         const form = backdrop.querySelector("form");
+        const focusable = () => [...form.querySelectorAll("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])")];
         const cleanup = (value) => {
             backdrop.remove();
             document.removeEventListener("keydown", onKeyDown, true);
+            if (previousFocus?.isConnected && typeof previousFocus.focus === "function") previousFocus.focus();
             resolve(value);
         };
         const onKeyDown = event => {
             if (event.key === "Escape") {
                 event.preventDefault();
                 cleanup(null);
+                return;
+            }
+            if (event.key === "Tab") {
+                const items = focusable();
+                if (!items.length) {
+                    event.preventDefault();
+                    return;
+                }
+                const first = items[0];
+                const last = items[items.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                }
+                else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
             }
         };
         backdrop.addEventListener("mousedown", event => {

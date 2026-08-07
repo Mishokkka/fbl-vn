@@ -521,6 +521,7 @@ button.fbl-vn-validation-item.warning i {
 
 
 .fbl-vn-editor .final-toggle-field {
+  position: relative;
   display: grid;
   grid-template-rows: var(--vn-label-h) var(--vn-control-h);
   align-items: stretch;
@@ -540,7 +541,16 @@ button.fbl-vn-validation-item.warning i {
 }
 
 .fbl-vn-editor .final-toggle-field input {
-  display: none;
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .fbl-vn-editor .final-toggle-field .icon-toggle {
@@ -558,6 +568,11 @@ button.fbl-vn-validation-item.warning i {
   border-color: rgba(196, 128, 78, 0.72);
   background: rgba(145, 72, 72, 0.28);
   color: #f3c7a4;
+}
+
+.fbl-vn-editor .final-toggle-field input:focus-visible + .icon-toggle {
+  outline: 2px solid var(--vn-accent);
+  outline-offset: 2px;
 }
 
 .fbl-vn-editor .frame-issue.final {

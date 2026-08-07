@@ -3,7 +3,8 @@ import { duplicateData, randomId } from "../utils/foundry-helpers.js";
 
 export function migrateData(source) {
     const data = duplicateData(source && typeof source === "object" ? source : DEFAULT_DATA);
-    let schemaVersion = Number(data.schemaVersion || 0);
+    const parsedVersion = Number(data.schemaVersion);
+    let schemaVersion = Number.isFinite(parsedVersion) ? parsedVersion : 0;
     if (schemaVersion < 1) {
         migrateToV1(data);
         schemaVersion = 1;
@@ -198,15 +199,18 @@ function migrateToV6(data) {
             const legacy = frame.sceneRouting && typeof frame.sceneRouting === "object"
                 ? frame.sceneRouting
                 : (frame.nextRouting && typeof frame.nextRouting === "object" ? frame.nextRouting : {});
-            const legacyTrue = String(legacy.trueFrameId || legacy.trueSceneId || "");
-            const legacyFalse = String(legacy.falseFrameId || legacy.falseSceneId || "");
+            const legacyTrueFrame = String(legacy.trueFrameId || "");
+            const legacyFalseFrame = String(legacy.falseFrameId || "");
+            const resolvedTrue = frameIds.has(legacyTrueFrame) ? legacyTrueFrame : "";
+            const resolvedFalse = frameIds.has(legacyFalseFrame) ? legacyFalseFrame : "";
+            const routable = Boolean(resolvedTrue || resolvedFalse);
             frame.nextRouting = {
-                enabled: legacy.enabled === true,
+                enabled: legacy.enabled === true && routable,
                 counterId: String(legacy.counterId || ""),
                 operator: String(legacy.operator || "gte"),
                 value: Number.isFinite(Number(legacy.value)) ? Number(legacy.value) : 0,
-                trueFrameId: frameIds.has(legacyTrue) ? legacyTrue : "",
-                falseFrameId: frameIds.has(legacyFalse) ? legacyFalse : ""
+                trueFrameId: resolvedTrue,
+                falseFrameId: resolvedFalse
             };
             if (frame.nextRouting.enabled && frame.sceneRouting?.enabled === true) frame.isFinal = false;
             delete frame.sceneRouting;

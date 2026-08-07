@@ -1,7 +1,7 @@
 import { VNSceneStore } from "../data/scene-store.js";
 import { createCharacterPreset, createCharacterPortrait, sanitizeCharacter } from "../data/schema.js";
 import { MODULE_ID } from "../utils/constants.js";
-import { confirmDialog, duplicateData, notify, notifyWarn } from "../utils/foundry-helpers.js";
+import { confirmDialog, duplicateData, notify } from "../utils/foundry-helpers.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
 
 const ApplicationV2 = foundry.applications.api.ApplicationV2;
@@ -32,7 +32,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         return pairs.map(pair => ({ value: pair[0], label: pair[1], selected: pair[0] === selected }));
     }
 
-    async _commitCharacters() {
+    _readCharacters() {
         if (!this.element) return VNSceneStore.characters;
         const rows = [...this.element.querySelectorAll("[data-character-row]")];
         const characters = [];
@@ -57,14 +57,19 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
                 portraits
             }));
         }
-        const data = VNSceneStore.data;
-        data.characters = characters;
-        await VNSceneStore.setData(data);
         return characters;
     }
 
-    _refreshEditor() {
-        if (this.editor && typeof this.editor.render === "function") this.editor.render();
+    async _commitCharacters() {
+        const characters = this._readCharacters();
+        await VNSceneStore.replaceCharacters(characters);
+        return characters;
+    }
+
+    _refreshEditor(parts = ["framePanel"]) {
+        if (!this.editor) return;
+        if (typeof this.editor._renderEditorParts === "function") this.editor._renderEditorParts(parts);
+        else if (typeof this.editor.render === "function") this.editor.render();
     }
 
     static async _onSave(event, target) {
@@ -72,48 +77,46 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         await this._commitCharacters();
         notify("VN: пресеты персонажей сохранены.");
         this._refreshEditor();
-        this.render();
     }
 
     static async _onAddCharacter(event, target) {
         event.preventDefault();
-        await this._commitCharacters();
-        const data = VNSceneStore.data;
-        data.characters.push(createCharacterPreset("Новый персонаж", "Основной", "", "center"));
-        await VNSceneStore.setData(data);
+        const characters = this._readCharacters();
+        characters.push(createCharacterPreset("Новый персонаж", "Основной", "", "center"));
+        await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
         this.render();
     }
 
     static async _onDeleteCharacter(event, target) {
         event.preventDefault();
-        await this._commitCharacters();
-        const character = VNSceneStore.getCharacter(target.dataset.characterId);
+        const characters = this._readCharacters();
+        const character = characters.find(item => item.id === target.dataset.characterId);
         if (!character) return;
         if (!await confirmDialog(`Удалить пресет «${character.name}»?`, { title: "Удаление персонажа", yes: "Удалить", no: "Отмена" })) return;
-        await VNSceneStore.deleteCharacter(character.id);
+        await VNSceneStore.replaceCharacters(characters.filter(item => item.id !== character.id));
         this._refreshEditor();
         this.render();
     }
 
     static async _onAddPortrait(event, target) {
         event.preventDefault();
-        const characters = await this._commitCharacters();
+        const characters = this._readCharacters();
         const character = characters.find(item => item.id === target.dataset.characterId);
         if (!character) return;
         character.portraits.push(createCharacterPortrait("Новый портрет", ""));
-        await VNSceneStore.upsertCharacter(character);
+        await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
         this.render();
     }
 
     static async _onDeletePortrait(event, target) {
         event.preventDefault();
-        const characters = await this._commitCharacters();
+        const characters = this._readCharacters();
         const character = characters.find(item => item.id === target.dataset.characterId);
         if (!character) return;
         character.portraits = character.portraits.filter(portrait => portrait.id !== target.dataset.portraitId);
-        await VNSceneStore.upsertCharacter(character);
+        await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
         this.render();
     }
@@ -129,10 +132,8 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
             label: "Портрет",
             onSelect: async (path) => {
                 input.value = path;
-                await VNSceneStore.rememberAsset("image", path, path.split("/").pop());
                 await this._commitCharacters();
                 this._refreshEditor();
-                this.render();
             }
         }).render(true);
     }

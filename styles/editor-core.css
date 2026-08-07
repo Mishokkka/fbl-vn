@@ -1,8 +1,10 @@
 .fbl-vn-editor-app {
   --vn-frame-row-h: 26px;
   --vn-frame-col-w: 360px;
-  min-width: 1180px;
-  min-height: 660px;
+  min-width: min(1180px, calc(100vw - 24px));
+  min-height: min(660px, calc(100vh - 24px));
+  max-width: calc(100vw - 8px);
+  max-height: calc(100vh - 8px);
 }
 
 .fbl-vn-editor-app .window-header {
@@ -39,7 +41,7 @@
 }
 
 .fbl-vn-editor-header-actions button > i {
-  color: currentColor;
+  color: currentcolor;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
 }
 

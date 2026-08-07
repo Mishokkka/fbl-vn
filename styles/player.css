@@ -96,11 +96,17 @@
 
 .fbl-vn-dialogue {
   position: absolute;
+  box-sizing: border-box;
   left: 7vw;
   right: 7vw;
   bottom: 5vh;
   min-height: 150px;
-  padding: 24px 30px 26px;
+  max-height: min(56vh, 520px);
+  padding: 24px 30px 58px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border: 1px solid rgba(239, 232, 219, 0.26);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(23, 23, 23, 0.92), rgba(8, 8, 8, 0.94));
@@ -109,21 +115,26 @@
 }
 
 .fbl-vn-speaker {
-  position: absolute;
-  top: -24px;
-  left: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  width: fit-content;
   min-width: 180px;
+  max-width: calc(100% - 12px);
+  margin: -12px 0 12px -6px;
   padding: 8px 18px;
   border: 1px solid rgba(201, 167, 111, 0.5);
-  border-radius: 10px 10px 0 0;
+  border-radius: 10px;
   background: rgba(15, 13, 10, 0.96);
   color: #e7c58d;
   font-size: 20px;
   letter-spacing: 0.03em;
+  overflow-wrap: anywhere;
 }
 
 .fbl-vn-text {
   min-height: 68px;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
   font-size: clamp(18px, 1.55vw, 25px);
   line-height: 1.45;
@@ -228,6 +239,11 @@
   gap: 12px;
 }
 
+.fbl-vn-choice-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .fbl-vn-player-choice-list button.is-selected,
 .fbl-vn-next.is-voted {
   background: rgba(61, 45, 23, 0.98);
@@ -252,11 +268,12 @@
 
 .fbl-vn-volume-widget {
   position: absolute;
-  right: 18px;
-  bottom: 18px;
+  top: 18px;
+  right: 64px;
+  bottom: auto;
   z-index: 4;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   align-items: flex-end;
   gap: 8px;
 }
@@ -327,4 +344,41 @@
 .fbl-vn-player.is-reduced-motion .fbl-vn-portrait {
   animation: none;
   transition: none;
+}
+
+
+.fbl-vn-player :is(button, input[type="range"]):focus-visible {
+  outline: 2px solid #e7c58d;
+  outline-offset: 2px;
+}
+
+@media (max-width: 1000px), (max-height: 620px) {
+  .fbl-vn-dialogue {
+    left: 3vw;
+    right: 3vw;
+    bottom: 2vh;
+    max-height: 60vh;
+    padding: 20px 22px 54px;
+  }
+
+  .fbl-vn-speaker {
+    max-width: calc(100% - 12px);
+    margin-left: -4px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .fbl-vn-portrait {
+    bottom: 18vh;
+    max-height: 72vh;
+    max-width: 52vw;
+  }
+}
+
+@media (max-height: 480px) {
+  .fbl-vn-dialogue {
+    max-height: 56vh;
+  }
 }

@@ -63,28 +63,28 @@ export class VNPreloader {
     }
 
     static preloadAudio(path) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             const audio = new Audio();
             let settled = false;
             const cleanup = () => {
                 audio.removeEventListener("canplaythrough", success);
                 audio.removeEventListener("loadeddata", success);
-                audio.removeEventListener("error", failSoft);
+                audio.removeEventListener("error", failure);
             };
-            const success = () => {
+            const settle = callback => {
                 if (settled) return;
                 settled = true;
                 cleanup();
-                resolve(path);
+                callback();
             };
-            const failSoft = () => success();
+            const success = () => settle(() => resolve(path));
+            const failure = () => settle(() => reject(new Error(`Audio load failed: ${path}`)));
             audio.preload = "auto";
             audio.addEventListener("canplaythrough", success, { once: true });
             audio.addEventListener("loadeddata", success, { once: true });
-            audio.addEventListener("error", failSoft, { once: true });
+            audio.addEventListener("error", failure, { once: true });
             audio.src = path;
             audio.load();
-            setTimeout(success, 3000);
         });
     }
 }

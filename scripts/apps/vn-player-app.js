@@ -43,6 +43,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this.mode === PLAYER_MODES.VOTE && !this.participantIds.includes(game.user.id) && game.user?.isGM) this.participantIds.push(game.user.id);
         this.loading = true;
         this.started = false;
+        this._starting = false;
         this.preloadDone = 0;
         this.preloadTotal = 0;
         this.currentFrameId = null;
@@ -57,8 +58,16 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._typingComplete = true;
         this._keyboardElement = null;
         this._onKeyboardKeydown = event => {
-            if (event.key === "Escape" && game.user.isGM) this.finish();
-            if ((event.key === " " || event.key === "Enter") && this.started) this.next();
+            if (event.repeat || this._isKeyboardControlTarget(event.target)) return;
+            if (event.key === "Escape" && this._isLeader()) {
+                event.preventDefault();
+                void this.finish();
+                return;
+            }
+            if ((event.key === " " || event.key === "Enter") && this.started) {
+                event.preventDefault();
+                void this.next();
+            }
         };
         this._onWindowResize = () => this._applyFullscreenPosition();
         this._resizeBound = false;
@@ -76,6 +85,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._leaderVoteStep = "";
         this._leaderVotes = new Map();
         this._resolvingVote = false;
+        this._interactionBusy = false;
         this._finishing = false;
         VNPlayerApp.pendingAdvances.delete(this.scene.id);
         VNPlayerApp.active.set(this.scene.id, this);
@@ -116,6 +126,22 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return this._choiceByIdByFrame.get(frameId)?.get(choiceId) || null;
     }
 
+    _isLeader() {
+        return Boolean(this.leaderId && game.user?.id === this.leaderId);
+    }
+
+    _isKeyboardControlTarget(target) {
+        return Boolean(target?.closest?.("button, input, select, textarea, a, [contenteditable='true'], [role='button'], .fbl-vn-volume-panel, .fbl-vn-volume-widget"));
+    }
+
+    _activeParticipantIds() {
+        return this.participantIds.filter(id => {
+            if (id === game.user?.id) return game.user?.active !== false;
+            const user = game.users?.get?.(id);
+            return Boolean(user?.active);
+        });
+    }
+
     _prefersReducedMotion() {
         const disabled = (() => {
             try { return game.settings?.get?.(MODULE_ID, SETTINGS.DISABLE_TRANSITIONS) === true; }
@@ -132,8 +158,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     static async openScene(payload) {
         if (!payload || !payload.scene) return;
         const scene = payload.scene;
-        const existing = VNPlayerApp.active.get(scene.id);
-        if (existing) await existing.close({ force: true });
+        for (const app of [...VNPlayerApp.active.values()]) {
+            await app.close({ force: true });
+        }
         const app = new VNPlayerApp({
             scene,
             mode: payload.mode !== undefined ? payload.mode : PLAYER_MODES.INDIVIDUAL,
@@ -142,7 +169,16 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             networked: payload.networked === true || Array.isArray(payload.targetIds)
         });
         await app.render(true);
-        app.preload();
+        if (payload.resumeState) {
+            await app.preload();
+            await app.resume(payload.resumeState);
+        }
+        else {
+            void app.preload().catch(error => {
+                console.error(`${MODULE_ID} | Cutscene preload failed.`, error);
+                notifyWarn("VN: предзагрузка катсцены завершилась ошибкой. Подробности записаны в консоль.");
+            });
+        }
         return app;
     }
 
@@ -152,7 +188,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             VNPlayerApp.pendingStarts.add(sceneId);
             return;
         }
-        app.start();
+        return app.start();
     }
 
     static advanceScene(sceneId, frameId, textIndex = 0, options = {}) {
@@ -168,27 +204,42 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
         }
         if (options && options.choiceId) app._applyChoiceEffectById(options.choiceId);
-        if (app.currentFrameId === frameId) app._goToTextBlock(Number(textIndex || 0), { remote: true });
-        else app.goToFrame(frameId, { remote: true, textIndex });
+        if (app.currentFrameId === frameId) return app._goToTextBlock(Number(textIndex || 0), { remote: true });
+        return app.goToFrame(frameId, { remote: true, textIndex });
     }
 
     static closeScene(sceneId) {
         const app = VNPlayerApp.active.get(sceneId);
-        if (app) app.close({ force: true });
+        if (app) return app.close({ force: true });
     }
 
     static recordVote(payload, senderId) {
         const sceneId = payload?.sceneId;
         const app = sceneId ? VNPlayerApp.active.get(sceneId) : null;
         if (!app) return;
-        app._recordVoteAsLeader(payload, senderId);
+        return app._recordVoteAsLeader(payload, senderId);
     }
 
     static updateVoteState(payload) {
         const sceneId = payload?.sceneId;
         const app = sceneId ? VNPlayerApp.active.get(sceneId) : null;
         if (!app) return;
-        app._applyVoteState(payload);
+        return app._applyVoteState(payload);
+    }
+
+    static getSyncState(sceneId) {
+        const app = VNPlayerApp.active.get(sceneId);
+        if (!app || !app._isLeader() || !app.started) return null;
+        return {
+            currentFrameId: app.currentFrameId,
+            currentTextIndex: app.currentTextIndex,
+            counterState: Object.assign({}, app.counterState),
+            visualState: Object.assign({}, app.visualState)
+        };
+    }
+
+    static handleUserConnection(user, connected) {
+        for (const app of VNPlayerApp.active.values()) app._onParticipantConnectionChange(user, connected);
     }
 
     async preload() {
@@ -201,7 +252,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const paths = VNPreloader.collectPaths(this.scene);
         this.preloadTotal = paths.length;
         this.preloadDone = 0;
-        await this.render();
+        this._pendingPreloadProgress = { done: 0, total: this.preloadTotal };
+        this._flushPreloadProgressUpdate();
         const results = await VNPreloader.preloadScene(this.scene, progress => {
             this.preloadDone = progress.done;
             this.preloadTotal = progress.total;
@@ -212,11 +264,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const failed = Array.isArray(results) ? results.filter(result => result && result.ok === false) : [];
         if (failed.length && game.user?.isGM) notifyWarn(`VN: не удалось предзагрузить ассеты: ${failed.length}. Катсцена будет запущена, но часть ресурсов может появиться с задержкой.`);
         this.loading = false;
-        VNSocket.signalReady(this.scene.id);
+        VNSocket.signalReady(this.scene.id, this.leaderId);
         await this.render();
         if (VNPlayerApp.pendingStarts.has(this.scene.id)) {
             VNPlayerApp.pendingStarts.delete(this.scene.id);
-            this.start();
+            await this.start();
         }
     }
 
@@ -244,18 +296,45 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     async start() {
+        if (this.started || this._starting) return;
         if (this.loading) {
             VNPlayerApp.pendingStarts.add(this.scene.id);
             return;
         }
+        this._starting = true;
+        try {
+            this.started = true;
+            this.counterState = getInitialCounterState(this.scene);
+            this.audio.pauseExternalAudio();
+            this.visualState = createVisualState();
+            const frames = Array.isArray(this.scene.frames) ? this.scene.frames : [];
+            const firstId = this.scene.startFrame || (frames[0] ? frames[0].id : null);
+            await this.goToFrame(firstId, { force: true });
+            await this._flushPendingRemoteFrames();
+        }
+        finally {
+            this._starting = false;
+        }
+    }
+
+    async resume(state = {}) {
+        if (this.loading || this._disposed) return;
         this.started = true;
-        this.counterState = getInitialCounterState(this.scene);
         this.audio.pauseExternalAudio();
-        this.visualState = createVisualState();
-        const frames = Array.isArray(this.scene.frames) ? this.scene.frames : [];
-        const firstId = this.scene.startFrame || (frames[0] ? frames[0].id : null);
-        await this.goToFrame(firstId, { force: true });
-        await this._flushPendingRemoteFrames();
+        this.counterState = state.counterState && typeof state.counterState === "object" ? Object.assign({}, state.counterState) : getInitialCounterState(this.scene);
+        this.visualState = Object.assign(createVisualState(), state.visualState && typeof state.visualState === "object" ? state.visualState : {});
+        const frame = this._getFrame(state.currentFrameId);
+        if (!frame) {
+            this.started = false;
+            return this.start();
+        }
+        this.currentFrameId = frame.id;
+        const blocks = getFrameTextBlocks(frame);
+        this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
+        this._resetVoteForStep(frame.id, this.currentTextIndex);
+        await this.audio.applyFrame(frame);
+        await this._playCurrentVoice(frame);
+        await this.render();
     }
 
     async _flushPendingRemoteFrames() {
@@ -276,8 +355,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const blocks = getFrameTextBlocks(frame);
         const currentBlock = getTextBlock(frame, this.currentTextIndex);
         const isVoteMode = this.mode === PLAYER_MODES.VOTE;
-        const isParticipant = !isVoteMode || this.participantIds.includes(game.user.id);
-        const canAdvance = this.started && isParticipant && (this.mode !== PLAYER_MODES.GM || game.user.isGM);
+        const activeParticipants = this._activeParticipantIds();
+        const isParticipant = !isVoteMode || activeParticipants.includes(game.user.id);
+        const canAdvance = this.started && isParticipant && (this.mode !== PLAYER_MODES.GM || this._isLeader());
         const portraitPosition = this.visualState.portraitPosition || "center";
         const transition = frame && frame.transition ? frame.transition : "fade";
         const isChoice = Boolean(frame && frame.type === "choice");
@@ -285,7 +365,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const isLastTextBlock = this.currentTextIndex >= Math.max(0, blocks.length - 1);
         const localVote = this._getLocalVoteForCurrentStep();
         const voteState = this._getVoteStateForCurrentStep();
-        const voteTotal = this.participantIds.length || 1;
+        const voteTotal = activeParticipants.length || 1;
         const choices = frame && Array.isArray(frame.choices) ? frame.choices : [];
         const choiceCounts = voteState && voteState.choices ? voteState.choices : {};
         const currentVolumeLevels = this._volumeLevels();
@@ -303,7 +383,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             showChoices: isChoice && isLastTextBlock && !isFinal,
             isGmMode: this.mode === PLAYER_MODES.GM,
             isVoteMode,
-            isLeader: game.user.isGM,
+            isLeader: this._isLeader(),
             portraitClass: `portrait-${portraitPosition}`,
             portraitSrc: this.visualState.portrait,
             portraitAlt: frame && frame.speaker ? frame.speaker : "",
@@ -323,7 +403,6 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             currentText: currentBlock ? currentBlock.text : "",
             currentTextIndex: this.currentTextIndex + 1,
             textBlockCount: blocks.length,
-            hasTextCounter: false,
             voteTotal,
             voteCount: voteState ? voteState.voters.length : 0,
             localHasVoted: Boolean(localVote),
@@ -333,8 +412,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         });
     }
 
-    _onRender(context, options) {
-        super._onRender(context, options);
+    async _onRender(context, options) {
+        await super._onRender(context, options);
         this._applyFullscreenPosition();
         this._bindResize();
         this._applyBackgroundStyle(context.backgroundSrc || "");
@@ -377,7 +456,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this._keyboardElement = root;
         }
         root.setAttribute("tabindex", "0");
-        root.focus();
+        const activeElement = document.activeElement;
+        if (!activeElement || activeElement === document.body || activeElement === document.documentElement) root.focus();
     }
 
     _bindClickAdvance() {
@@ -388,7 +468,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         area.dataset.vnAdvanceBound = "true";
         area.addEventListener("click", event => {
             if (event.target && event.target.closest && event.target.closest("button,input,label,.fbl-vn-volume-panel,.fbl-vn-volume-widget")) return;
-            this.next();
+            void this.next();
         });
     }
 
@@ -556,7 +636,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frame = this._getFrame(frameId);
         if (!frame) return this.finish();
         this.currentFrameId = frame.id;
-        this.currentTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
+        const blocks = getFrameTextBlocks(frame);
+        const requestedTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
+        this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(requestedTextIndex) ? requestedTextIndex : 0));
         this._resetVoteForStep(frame.id, this.currentTextIndex);
         this._applyVisualState(frame);
         await this.audio.applyFrame(frame);
@@ -579,7 +661,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     _shouldBroadcastAdvance() {
-        return Boolean(game.user?.isGM && (this.mode === PLAYER_MODES.GM || this.mode === PLAYER_MODES.VOTE));
+        return Boolean(this._isLeader() && (this.mode === PLAYER_MODES.GM || this.mode === PLAYER_MODES.VOTE));
     }
 
     async _playCurrentVoice(frame) {
@@ -589,50 +671,71 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     async next() {
-        if (!this.started) return;
+        if (!this.started || this._interactionBusy) return;
         if (!this._typingComplete) {
             this._completeText();
             return;
         }
-        if (this.mode === PLAYER_MODES.VOTE) return this._submitContinueVote();
-        if (this.mode === PLAYER_MODES.GM && !game.user.isGM) return;
-        const frame = this._getFrame(this.currentFrameId);
-        if (!frame) return this.finish();
-        const blocks = getFrameTextBlocks(frame);
-        if (this.currentTextIndex < blocks.length - 1) {
-            await this._goToTextBlock(this.currentTextIndex + 1);
-            return;
+        this._interactionBusy = true;
+        try {
+            if (this.mode === PLAYER_MODES.VOTE) return await this._submitContinueVote();
+            if (this.mode === PLAYER_MODES.GM && !this._isLeader()) return;
+            const frame = this._getFrame(this.currentFrameId);
+            if (!frame) return await this.finish();
+            const blocks = getFrameTextBlocks(frame);
+            if (this.currentTextIndex < blocks.length - 1) {
+                await this._goToTextBlock(this.currentTextIndex + 1);
+                return;
+            }
+            if (frame.type === "choice") return;
+            if (frame.isFinal === true) return await this.finish();
+            const nextId = this._getNextFrameId(frame);
+            if (!nextId) return await this.finish();
+            await this.goToFrame(nextId);
         }
-        if (frame.type === "choice") return;
-        if (frame.isFinal === true) return this.finish();
-        const nextId = this._getNextFrameId(frame);
-        if (!nextId) return this.finish();
-        await this.goToFrame(nextId);
+        catch (error) {
+            console.error(`${MODULE_ID} | Failed to advance cutscene.`, error);
+            notifyWarn("VN: не удалось перейти к следующему кадру. Подробности записаны в консоль.");
+        }
+        finally {
+            this._interactionBusy = false;
+        }
     }
 
     async choose(choiceId) {
-        if (!this.started) return;
+        if (!this.started || this._interactionBusy) return;
         if (!this._typingComplete) {
             this._completeText();
             return;
         }
-        const frame = this._getFrame(this.currentFrameId);
-        const blocks = getFrameTextBlocks(frame);
-        if (this.currentTextIndex < blocks.length - 1) {
-            if (this.mode === PLAYER_MODES.VOTE) return this._submitContinueVote();
-            await this._goToTextBlock(this.currentTextIndex + 1);
-            return;
+        this._interactionBusy = true;
+        try {
+            const frame = this._getFrame(this.currentFrameId);
+            if (!frame) return;
+            const blocks = getFrameTextBlocks(frame);
+            if (this.currentTextIndex < blocks.length - 1) {
+                if (this.mode === PLAYER_MODES.VOTE) return await this._submitContinueVote();
+                await this._goToTextBlock(this.currentTextIndex + 1);
+                return;
+            }
+            if (this.mode === PLAYER_MODES.VOTE) return await this._submitChoiceVote(choiceId);
+            if (this.mode === PLAYER_MODES.GM && !this._isLeader()) return;
+            const choices = Array.isArray(frame.choices) ? frame.choices : [];
+            const choice = choices.find(c => c.id === choiceId);
+            if (!choice || !isChoiceAvailable(choice, this.counterState)) return;
+            this._applyChoiceEffect(choice);
+            if (frame.isFinal === true) return await this.finish();
+            const nextId = choice.next || this._getNextFrameId(frame);
+            if (!nextId) return await this.finish();
+            await this.goToFrame(nextId, { choiceId: choice.id });
         }
-        if (this.mode === PLAYER_MODES.VOTE) return this._submitChoiceVote(choiceId);
-        if (this.mode === PLAYER_MODES.GM && !game.user.isGM) return;
-        const choices = frame && Array.isArray(frame.choices) ? frame.choices : [];
-        const choice = choices.find(c => c.id === choiceId);
-        if (!choice || !isChoiceAvailable(choice, this.counterState)) return;
-        this._applyChoiceEffect(choice);
-        if (frame.isFinal === true) return this.finish();
-        const nextId = choice.next || this._getNextFrameId(frame);
-        if (!nextId) return this.finish();
-        await this.goToFrame(nextId, { choiceId: choice.id });
+        catch (error) {
+            console.error(`${MODULE_ID} | Failed to apply cutscene choice.`, error);
+            notifyWarn("VN: не удалось применить выбор. Подробности записаны в консоль.");
+        }
+        finally {
+            this._interactionBusy = false;
+        }
     }
 
     async _submitContinueVote() {
@@ -657,7 +760,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     _canSubmitVote() {
-        return Boolean(this.mode === PLAYER_MODES.VOTE && this.participantIds.includes(game.user.id));
+        return Boolean(this.mode === PLAYER_MODES.VOTE && this._activeParticipantIds().includes(game.user.id));
     }
 
     async _submitVote({ action, choiceId = "" }) {
@@ -670,7 +773,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             choiceId: choiceId || ""
         };
         this._localVote = vote;
-        await this.render();
+        this._syncVoteDom();
         VNSocket.submitVote(this.scene.id, vote, this.leaderId);
     }
 
@@ -703,11 +806,47 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return this._voteState;
     }
 
+
+    _syncVoteDom() {
+        if (this.mode !== PLAYER_MODES.VOTE || !this.element || !this.started) return;
+        const frame = this._getFrame(this.currentFrameId);
+        if (!frame) return;
+        const activeParticipants = this._activeParticipantIds();
+        const isParticipant = activeParticipants.includes(game.user.id);
+        const localVote = this._getLocalVoteForCurrentStep();
+        const voteState = this._getVoteStateForCurrentStep();
+        const total = Number(voteState.total || activeParticipants.length || 1);
+
+        for (const button of this.element.querySelectorAll(".fbl-vn-player-choice-list button[data-choice-id]")) {
+            const choiceId = button.dataset.choiceId || "";
+            const choice = this._getChoice(this.currentFrameId, choiceId);
+            const available = Boolean(choice && isChoiceAvailable(choice, this.counterState));
+            const selected = Boolean(localVote && localVote.action === "choice" && localVote.choiceId === choiceId);
+            button.classList.toggle("is-selected", selected);
+            button.classList.toggle("is-unavailable", !available);
+            button.disabled = !isParticipant || Boolean(localVote) || !available;
+            const count = button.querySelector(".fbl-vn-vote-count");
+            if (count) count.textContent = `${Number(voteState.choices?.[choiceId] || 0)} / ${total}`;
+        }
+
+        const nextButton = this.element.querySelector(".fbl-vn-next[data-action='next']");
+        if (nextButton) {
+            const voted = Boolean(localVote);
+            nextButton.classList.toggle("is-voted", voted);
+            nextButton.disabled = !isParticipant || voted;
+            const actionLabel = nextButton.querySelector("[data-vote-action-label]");
+            if (actionLabel) actionLabel.textContent = voted ? "Ждём остальных" : "Продолжить";
+            const count = nextButton.querySelector(".fbl-vn-vote-count");
+            if (count) count.textContent = `${voteState.voters.length} / ${total}`;
+        }
+    }
+
     async _recordVoteAsLeader(payload, senderId) {
-        if (!game.user?.isGM || this.mode !== PLAYER_MODES.VOTE || this._resolvingVote) return;
+        if (!this._isLeader() || this.mode !== PLAYER_MODES.VOTE || this._resolvingVote) return;
         if (!payload || payload.sceneId !== this.scene.id) return;
         const userId = senderId;
-        if (!this.participantIds.includes(userId)) return;
+        const activeParticipants = this._activeParticipantIds();
+        if (!activeParticipants.includes(userId)) return;
         const frameId = payload.frameId || "";
         const textIndex = Number(payload.textIndex || 0);
         if (frameId !== this.currentFrameId || textIndex !== Number(this.currentTextIndex || 0)) return;
@@ -722,7 +861,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         this._leaderVotes.set(userId, { action, choiceId: payload.choiceId || "" });
         this._publishVoteState();
-        if (this.participantIds.every(id => this._leaderVotes.has(id))) await this._resolveLeaderVotes();
+        if (activeParticipants.every(id => this._leaderVotes.has(id))) await this._resolveLeaderVotes();
     }
 
     _isVoteActionValid(frame, action, choiceId) {
@@ -750,7 +889,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             action,
             voters: [...this._leaderVotes.keys()],
             choices,
-            total: this.participantIds.length
+            total: this._activeParticipantIds().length
         };
     }
 
@@ -773,9 +912,18 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             action: payload.action || "",
             voters,
             choices,
-            total: Number(payload.total || this.participantIds.length || 0)
+            total: Number(payload.total || this._activeParticipantIds().length || 0)
         };
-        this.render();
+        this._syncVoteDom();
+    }
+
+    _onParticipantConnectionChange(user, _connected) {
+        if (!this._isLeader() || this.mode !== PLAYER_MODES.VOTE || !user || !this.participantIds.includes(user.id)) return;
+        this._publishVoteState();
+        const activeParticipants = this._activeParticipantIds();
+        if (activeParticipants.length && activeParticipants.every(id => this._leaderVotes.has(id))) {
+            void this._resolveLeaderVotes();
+        }
     }
 
     async _resolveLeaderVotes() {
@@ -783,7 +931,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._resolvingVote = true;
         const frame = this._getFrame(this.currentFrameId);
         if (!frame) return this.finish();
-        const votes = [...this._leaderVotes.values()];
+        const activeParticipants = new Set(this._activeParticipantIds());
+        const votes = [...this._leaderVotes.entries()].filter(([userId]) => activeParticipants.has(userId)).map(([, vote]) => vote);
         const hasChoiceVote = votes.some(vote => vote.action === "choice");
         if (hasChoiceVote) {
             const choiceId = this._pickMajorityChoice(votes);
@@ -819,7 +968,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
         }
         if (frame.isFinal === true) return this.finish();
-        if (frame.type === "choice") return;
+        if (frame.type === "choice") {
+            this._resolvingVote = false;
+            return;
+        }
         const nextId = this._getNextFrameId(frame);
         if (!nextId) return this.finish();
         await this.goToFrame(nextId);
@@ -839,7 +991,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this._finishing) return;
         this._finishing = true;
         const synchronized = this.networked && (this.mode === PLAYER_MODES.GM || this.mode === PLAYER_MODES.VOTE);
-        if (synchronized && game.user?.isGM) VNSocket.close(this.scene.id);
+        if (synchronized && this._isLeader()) VNSocket.close(this.scene.id);
         await this.close({ force: true });
     }
 
@@ -866,17 +1018,17 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static _onNext(event, target) {
         event.preventDefault();
-        this.next();
+        void this.next();
     }
 
     static _onChoose(event, target) {
         event.preventDefault();
-        this.choose(target.dataset.choiceId);
+        void this.choose(target.dataset.choiceId);
     }
 
     static _onCloseCutscene(event, target) {
         event.preventDefault();
-        this.finish();
+        void this.finish();
     }
 
     static _onToggleVolumePanel(event, target) {

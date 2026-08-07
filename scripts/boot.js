@@ -1,5 +1,6 @@
 (() => {
     const MODULE_ID = "fbl-vn-cutscenes";
+    const BOOT_SRC = globalThis.document?.currentScript?.src ?? null;
     const state = {
         loaded: false,
         loading: null,
@@ -7,20 +8,14 @@
         module: null
     };
     function moduleUrl(path) {
-        var _a, _b, _c, _d;
-        const current = (_b = (_a = document.currentScript) === null || _a === void 0 ? void 0 : _a.src) !== null && _b !== void 0 ? _b : `${(_d = (_c = globalThis.location) === null || _c === void 0 ? void 0 : _c.origin) !== null && _d !== void 0 ? _d : ""}/modules/${MODULE_ID}/scripts/boot.js`;
+        const current = BOOT_SRC ?? `${globalThis.location?.origin ?? ""}/modules/${MODULE_ID}/scripts/boot.js`;
         return new URL(path, current).href;
     }
     function reportError(error) {
         var _a, _b;
         state.error = error;
         console.error(`${MODULE_ID} | Failed to load runtime`, error);
-        try {
-            (_b = (_a = ui === null || ui === void 0 ? void 0 : ui.notifications) === null || _a === void 0 ? void 0 : _a.error) === null || _b === void 0 ? void 0 : _b.call(_a, `VN: модуль не загрузил runtime. Смотри консоль.`);
-        }
-        catch (_error) {
-            // UI may not exist yet during early boot.
-        }
+        globalThis.ui?.notifications?.error?.(`VN: модуль не загрузил runtime. Смотри консоль.`);
     }
     async function loadRuntime() {
         if (state.loaded && state.module)
@@ -74,7 +69,7 @@
                 var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
                 return ({
                     moduleId: MODULE_ID,
-                    bootScript: (_b = (_a = document.currentScript) === null || _a === void 0 ? void 0 : _a.src) !== null && _b !== void 0 ? _b : null,
+                    bootScript: BOOT_SRC,
                     loaded: state.loaded,
                     loading: Boolean(state.loading),
                     error: state.error ? String((_f = (_d = (_c = state.error) === null || _c === void 0 ? void 0 : _c.stack) !== null && _d !== void 0 ? _d : (_e = state.error) === null || _e === void 0 ? void 0 : _e.message) !== null && _f !== void 0 ? _f : state.error) : null,
@@ -89,14 +84,18 @@
     }
     function boot() {
         installStub();
-        loadRuntime().catch(() => { });
+        loadRuntime().catch(error => {
+            console.error(`${MODULE_ID} | Runtime boot attempt failed.`, error);
+        });
     }
     if (globalThis.game)
         installStub();
     Hooks.once("init", boot);
     Hooks.once("ready", () => {
         installStub();
-        loadRuntime().catch(() => { });
+        loadRuntime().catch(error => {
+            console.error(`${MODULE_ID} | Runtime boot attempt failed.`, error);
+        });
     });
     console.log(`${MODULE_ID} | Boot script registered. Macro: game.fblVN.openEditor()`);
 })();

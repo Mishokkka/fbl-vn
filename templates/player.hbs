@@ -28,7 +28,6 @@
       {{#if hasSpeaker}}
         <div class="fbl-vn-speaker">{{frame.speaker}}</div>
       {{/if}}
-      {{#if hasTextCounter}}<div class="fbl-vn-text-counter">{{currentTextIndex}} / {{textBlockCount}}</div>{{/if}}
       <div class="fbl-vn-text" data-vn-text>{{currentText}}</div>
 
       {{#if showChoices}}
@@ -44,7 +43,7 @@
         {{#if canAdvance}}
           <button type="button" class="fbl-vn-next {{#if localHasVoted}}is-voted{{/if}}" data-action="next" {{#if localHasVoted}}disabled{{/if}}>
             {{#if isVoteMode}}
-              {{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}
+              <span data-vote-action-label>{{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}</span>
               <span class="fbl-vn-vote-count">{{voteCount}} / {{voteTotal}}</span>
             {{else}}
               Продолжить
@@ -68,13 +67,13 @@
           {{/each}}
         </div>
       {{/if}}
-      <button type="button" class="fbl-vn-volume-toggle" data-action="toggleVolumePanel" title="Громкость" aria-label="Громкость">
+      <button type="button" class="fbl-vn-volume-toggle" data-action="toggleVolumePanel" title="Громкость" aria-label="Громкость" aria-expanded="{{#if volumePanelOpen}}true{{else}}false{{/if}}">
         <i class="fa-solid fa-volume-high"></i>
       </button>
     </div>
 
     {{#if isLeader}}
-      <button type="button" class="fbl-vn-close" data-action="closeCutscene" title="Закрыть"><i class="fa-solid fa-xmark"></i></button>
+      <button type="button" class="fbl-vn-close" data-action="closeCutscene" title="Закрыть" aria-label="Закрыть"><i class="fa-solid fa-xmark"></i></button>
     {{/if}}
   {{/if}}
 </section>

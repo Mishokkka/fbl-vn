@@ -17,32 +17,32 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
         return VNSceneStore.getScene(this.sceneId);
     }
 
-    _usageForCounter(scene, counterId) {
-        let choiceConditions = 0;
-        let choiceEffects = 0;
+    _buildCounterUsage(scene) {
+        const usageById = new Map((scene?.counters || []).map(counter => [counter.id, { choiceConditions: 0, choiceEffects: 0, nextRoutings: 0, total: 0 }]));
         for (const frame of scene && Array.isArray(scene.frames) ? scene.frames : []) {
             for (const choice of Array.isArray(frame.choices) ? frame.choices : []) {
-                if (choice.conditionCounterId === counterId) choiceConditions += 1;
-                if (choice.effectCounterId === counterId) choiceEffects += 1;
+                const conditionUsage = usageById.get(choice.conditionCounterId);
+                if (conditionUsage) conditionUsage.choiceConditions += 1;
+                const effectUsage = usageById.get(choice.effectCounterId);
+                if (effectUsage) effectUsage.choiceEffects += 1;
             }
+            const routingUsage = frame?.nextRouting?.enabled ? usageById.get(frame.nextRouting.counterId) : null;
+            if (routingUsage) routingUsage.nextRoutings += 1;
         }
-        let nextRoutings = 0;
-        for (const frame of scene && Array.isArray(scene.frames) ? scene.frames : []) {
-            if (frame?.nextRouting?.enabled && frame.nextRouting.counterId === counterId) nextRoutings += 1;
-        }
-        return {
-            choiceConditions,
-            choiceEffects,
-            nextRoutings,
-            total: choiceConditions + choiceEffects + nextRoutings
-        };
+        for (const usage of usageById.values()) usage.total = usage.choiceConditions + usage.choiceEffects + usage.nextRoutings;
+        return usageById;
+    }
+
+    _usageForCounter(scene, counterId) {
+        return this._buildCounterUsage(scene).get(counterId) || { choiceConditions: 0, choiceEffects: 0, nextRoutings: 0, total: 0 };
     }
 
     async _prepareContext(options) {
         const context = await super._prepareContext(options);
         const scene = this._getScene();
+        const usageById = this._buildCounterUsage(scene);
         const counters = (scene && Array.isArray(scene.counters) ? scene.counters : []).map((counter, index) => {
-            const usage = this._usageForCounter(scene, counter.id);
+            const usage = usageById.get(counter.id) || { choiceConditions: 0, choiceEffects: 0, nextRoutings: 0, total: 0 };
             const usageParts = [];
             if (usage.choiceConditions) usageParts.push(`условия: ${usage.choiceConditions}`);
             if (usage.choiceEffects) usageParts.push(`эффекты: ${usage.choiceEffects}`);
@@ -62,15 +62,20 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
         });
     }
 
-    async _commitCounters() {
-        const scene = this._getScene();
-        if (!scene || !this.element) return scene;
+    _readCounters(scene = this._getScene()) {
+        if (!scene || !this.element) return scene?.counters || [];
         const rows = [...this.element.querySelectorAll("[data-counter-row]")];
-        scene.counters = rows.map((row, index) => sanitizeSceneCounter({
+        return rows.map((row, index) => sanitizeSceneCounter({
             id: row.dataset.counterId || randomId("counter"),
             name: row.querySelector("[data-counter-name]")?.value || `Счётчик ${index + 1}`,
             initial: Number(row.querySelector("[data-counter-initial]")?.value || 0)
         }));
+    }
+
+    async _commitCounters() {
+        const scene = this._getScene();
+        if (!scene) return scene;
+        scene.counters = this._readCounters(scene);
         await VNSceneStore.upsertScene(scene);
         return scene;
     }
@@ -86,13 +91,13 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
         await this._commitCounters();
         this._refreshEditor();
         notify("VN: счётчики сохранены.");
-        this.render();
     }
 
     static async _onAddCounter(event) {
         event.preventDefault();
-        const scene = await this._commitCounters();
+        const scene = this._getScene();
         if (!scene) return;
+        scene.counters = this._readCounters(scene);
         let number = scene.counters.length + 1;
         let name = `Счётчик ${number}`;
         while (scene.counters.some(counter => counter.name === name)) {
@@ -107,8 +112,9 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
 
     static async _onDeleteCounter(event, target) {
         event.preventDefault();
-        const scene = await this._commitCounters();
+        const scene = this._getScene();
         if (!scene) return;
+        scene.counters = this._readCounters(scene);
         const counterId = target.dataset.counterId || "";
         const counter = scene.counters.find(item => item.id === counterId);
         if (!counter) return;
