@@ -1,0 +1,43 @@
+:where(.fbl-vn-editor-app, .fbl-vn-asset-picker-app, .fbl-vn-character-manager-app, .fbl-vn-counter-manager-app, .fbl-vn-graph-app) {
+  --vn-bg: #101112;
+  --vn-surface-0: #0d0e10;
+  --vn-surface-1: #131517;
+  --vn-surface-2: #17191c;
+  --vn-surface-3: #202328;
+  --vn-control: #090a0c;
+  --vn-control-hover: #15181c;
+  --vn-border: rgba(226, 215, 196, 0.13);
+  --vn-border-strong: rgba(226, 215, 196, 0.28);
+  --vn-text: #efe8db;
+  --vn-soft: #d8cdbb;
+  --vn-muted: #a79f91;
+  --vn-faint: rgba(231, 225, 212, 0.42);
+  --vn-accent: #b68a4a;
+  --vn-accent-soft: rgba(182, 138, 74, 0.18);
+  --vn-danger: #b24b4b;
+  --vn-dialogue: rgba(61, 101, 145, 0.24);
+  --vn-dialogue-border: rgba(98, 150, 205, 0.32);
+  --vn-narration: rgba(67, 119, 83, 0.24);
+  --vn-narration-border: rgba(101, 169, 119, 0.32);
+  --vn-choice: rgba(145, 72, 72, 0.25);
+  --vn-choice-border: rgba(201, 107, 107, 0.34);
+  --vn-radius-sm: 6px;
+  --vn-radius-md: 8px;
+  --vn-gap-xs: 4px;
+  --vn-gap-sm: 6px;
+  --vn-gap-md: 8px;
+  --vn-gap-lg: 12px;
+  --vn-control-h: 32px;
+  --vn-label-h: 14px;
+  --vn-field-label-gap: 4px;
+}
+
+.fbl-vn-graph-app {
+  --vn-bg: #0e0f11;
+  --vn-dialogue: rgba(61, 101, 145, 0.32);
+  --vn-dialogue-border: rgba(98, 150, 205, 0.48);
+  --vn-narration: rgba(67, 119, 83, 0.32);
+  --vn-narration-border: rgba(101, 169, 119, 0.48);
+  --vn-choice: rgba(145, 72, 72, 0.34);
+  --vn-choice-border: rgba(201, 107, 107, 0.5);
+}

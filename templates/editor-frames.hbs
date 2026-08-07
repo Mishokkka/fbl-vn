@@ -1,0 +1,73 @@
+<aside class="fbl-vn-frames" {{#unless selectedScene}}hidden{{/unless}}>
+  {{#if selectedScene}}
+          <header class="fbl-vn-frame-tools">
+            <button type="button" data-action="moveFrame" data-direction="up" title="Выше" aria-label="Выше" {{#unless selectedFrame}}disabled{{/unless}}><i class="fa-solid fa-arrow-up"></i></button>
+            <button type="button" data-action="moveFrame" data-direction="down" title="Ниже" aria-label="Ниже" {{#unless selectedFrame}}disabled{{/unless}}><i class="fa-solid fa-arrow-down"></i></button>
+            <button type="button" data-action="duplicateFrame" title="Дублировать кадр" aria-label="Дублировать кадр" {{#unless selectedFrame}}disabled{{/unless}}><i class="fa-regular fa-copy"></i></button>
+            <button type="button" data-action="deleteFrame" title="Удалить кадр" aria-label="Удалить кадр" {{#unless selectedFrame}}disabled{{/unless}}><i class="fa-solid fa-trash"></i></button>
+            <span class="tool-separator"></span>
+            <button type="button" data-action="addFolder" title="Создать папку" aria-label="Создать папку"><i class="fa-solid fa-folder-plus"></i></button>
+            <button type="button" data-action="renameFolder" title="Переименовать папку выбранного кадра" aria-label="Переименовать папку" {{#unless hasSelectedFolder}}disabled{{/unless}}><i class="fa-solid fa-pen-to-square"></i></button>
+            <button type="button" data-action="deleteFolder" title="Удалить папку выбранного кадра" aria-label="Удалить папку" {{#unless hasSelectedFolder}}disabled{{/unless}}><i class="fa-solid fa-folder-minus"></i></button>
+          </header>
+  
+          <div class="fbl-vn-add-row">
+            <button type="button" data-action="addFrame" data-type="dialogue">+ Реплика</button>
+            <button type="button" data-action="addFrame" data-type="narration">+ Наррация</button>
+            <button type="button" data-action="addFrame" data-type="choice">+ Выбор</button>
+          </div>
+  
+          <div class="fbl-vn-frame-list" data-frame-list>
+            {{#if hasFrameTreeRows}}
+              {{#each frameTreeRows}}
+                {{#if isFolder}}
+                  <div draggable="true" class="fbl-vn-tree-item fbl-vn-folder-row {{#if selected}}is-selected{{/if}} {{#if collapsed}}is-collapsed{{/if}} {{#if isEditing}}is-editing{{/if}}" data-tree-item data-item-type="folder" data-item-id="{{id}}" data-folder-id="{{id}}" style="--depth: {{depth}}; --indent: {{indent}}px; --folder-color: {{styleColor}};">
+                    {{#if isEditing}}
+                      <span class="folder-indent"></span>
+                      <input type="color" class="folder-color-input" data-folder-color-input value="{{color}}" title="Цвет папки" />
+                      <input type="text" class="folder-name-input" data-folder-name-input value="{{name}}" placeholder="Название папки" />
+                      <button type="button" class="tree-icon" data-action="saveFolderEdit" data-folder-id="{{id}}" title="Сохранить папку" aria-label="Сохранить папку"><i class="fa-solid fa-check"></i></button>
+                      <button type="button" class="tree-icon" data-action="cancelFolderEdit" data-folder-id="{{id}}" title="Отмена" aria-label="Отмена"><i class="fa-solid fa-xmark"></i></button>
+                    {{else}}
+                      <div class="tree-main" title="{{name}}">
+                        <span class="folder-indent"></span>
+                        <button type="button" class="folder-toggle" data-action="toggleFolder" data-folder-id="{{id}}" title="Скрыть / раскрыть папку" aria-label="Скрыть / раскрыть папку">
+                          {{#if collapsed}}<i class="fa-solid fa-caret-right"></i>{{else}}<i class="fa-solid fa-caret-down"></i>{{/if}}
+                        </button>
+                        <button type="button" class="folder-select" data-action="selectFolder" data-folder-id="{{id}}" title="Выбрать папку"><i class="fa-solid fa-folder"></i><strong>{{name}}</strong></button>
+                      </div>
+                      <button type="button" class="tree-icon" data-action="addFolder" data-parent-id="{{id}}" title="Создать подпапку" aria-label="Создать подпапку"><i class="fa-solid fa-folder-plus"></i></button>
+                      <button type="button" class="tree-icon" data-action="editFolder" data-folder-id="{{id}}" title="Редактировать папку" aria-label="Редактировать папку"><i class="fa-solid fa-pen"></i></button>
+                      <button type="button" class="tree-icon" data-action="deleteFolder" data-folder-id="{{id}}" title="Удалить папку" aria-label="Удалить папку"><i class="fa-solid fa-xmark"></i></button>
+                    {{/if}}
+                  </div>
+                {{/if}}
+                {{#if isFrame}}
+                  <button type="button" draggable="true" class="fbl-vn-tree-item fbl-vn-frame frame-type-{{type}} {{#if selected}}is-selected{{/if}}" data-tree-item data-item-type="frame" data-item-id="{{id}}" data-action="selectFrame" data-frame-id="{{id}}" title="{{label}}" style="--depth: {{depth}}; --indent: {{indent}}px;">
+                    <span class="folder-indent"></span>
+                    <span class="index">{{index}})</span>
+                    <strong>{{label}}</strong>
+                    {{#if isFinal}}<span class="frame-issue final" title="Финальный кадр"><i class="fa-solid fa-flag-checkered"></i></span>{{/if}}
+                    {{#if hasError}}<span class="frame-issue error" title="В кадре есть ошибка"><i class="fa-solid fa-triangle-exclamation"></i></span>{{/if}}
+                    {{#if hasWarning}}<span class="frame-issue warning" title="В кадре есть предупреждение"><i class="fa-solid fa-circle-exclamation"></i></span>{{/if}}
+                  </button>
+                {{/if}}
+              {{/each}}
+            {{else}}
+              <p class="empty">Кадров нет.</p>
+            {{/if}}
+          </div>
+  
+          <footer class="fbl-vn-branch-panel">
+            <select data-branch-select title="Название ветки">
+              {{#each branchOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+            <button type="button" data-branch-action="addBranch" title="Добавить новую ветку" aria-label="Добавить новую ветку"><i class="fa-solid fa-plus"></i></button>
+            <button type="button" data-branch-action="renameBranch" title="Переименовать ветку" aria-label="Переименовать ветку" {{#unless activeBranch}}disabled{{/unless}}><i class="fa-solid fa-pen"></i></button>
+            <button type="button" data-branch-action="duplicateBranch" title="Копировать ветку" aria-label="Копировать ветку" {{#unless activeBranch}}disabled{{/unless}}><i class="fa-regular fa-copy"></i></button>
+            <button type="button" class="danger" data-branch-action="deleteBranch" title="Удалить ветку и перенести кадры" aria-label="Удалить ветку" {{#unless canDeleteBranch}}disabled{{/unless}}><i class="fa-solid fa-trash"></i></button>
+          </footer>
+  {{/if}}
+</aside>

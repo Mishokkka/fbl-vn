@@ -1,0 +1,25 @@
+  <aside class="fbl-vn-scenes">
+    <header class="fbl-vn-scenes-head">
+      <h2>Катсцены</h2>
+      <button type="button" data-action="createScene" title="Создать катсцену" aria-label="Создать катсцену"><i class="fa-solid fa-plus"></i></button>
+    </header>
+
+    <div class="fbl-vn-scene-list">
+      {{#if hasScenes}}
+        {{#each scenes}}
+          <button type="button" class="fbl-vn-scene {{#if selected}}is-selected{{/if}}" data-action="selectScene" data-scene-id="{{id}}">
+            <strong>{{title}}</strong>
+            <span>{{frameCount}} кадров</span>
+          </button>
+        {{/each}}
+      {{else}}
+        <p class="empty">Катсцен пока нет.</p>
+      {{/if}}
+    </div>
+
+    <footer class="fbl-vn-stack">
+      <button type="button" data-action="createSample"><i class="fa-solid fa-wand-magic-sparkles"></i> Пример</button>
+      <button type="button" data-action="importJson"><i class="fa-solid fa-file-import"></i> Импорт JSON</button>
+      <button type="button" data-action="exportAll"><i class="fa-solid fa-file-export"></i> Экспорт всего</button>
+    </footer>
+  </aside>

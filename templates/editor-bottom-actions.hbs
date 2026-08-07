@@ -1,0 +1,8 @@
+<footer class="fbl-vn-bottom-actions" {{#unless selectedScene}}hidden{{/unless}}>
+  {{#if selectedScene}}
+          <button type="button" data-action="openGraph"><i class="fa-solid fa-diagram-project"></i> Схема связей</button>
+          <button type="button" data-action="duplicateScene"><i class="fa-regular fa-copy"></i> Дублировать катсцену</button>
+          <button type="button" data-action="exportScene"><i class="fa-solid fa-file-export"></i> Экспорт катсцены</button>
+          <button type="button" class="danger" data-action="deleteScene"><i class="fa-solid fa-trash"></i> Удалить катсцену</button>
+  {{/if}}
+</footer>

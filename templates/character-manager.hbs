@@ -1,0 +1,50 @@
+<section class="fbl-vn-ui fbl-vn-character-manager">
+  <header class="fbl-vn-character-toolbar">
+    <button type="button" data-action="addCharacter"><i class="fa-solid fa-user-plus"></i> Добавить персонажа</button>
+    <button type="button" data-action="save"><i class="fa-solid fa-floppy-disk"></i> Сохранить</button>
+  </header>
+
+  <div class="fbl-vn-character-list">
+    {{#if hasCharacters}}
+      {{#each characters}}
+        <section class="fbl-vn-character-card" data-character-row data-character-id="{{id}}">
+          <header>
+            <div class="form-group">
+              <label>Имя</label>
+              <input type="text" data-character-name value="{{name}}" />
+            </div>
+            <div class="form-group">
+              <label>Позиция по умолчанию</label>
+              <select data-character-position>
+                {{#each positionOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </div>
+            <button type="button" data-action="addPortrait" data-character-id="{{id}}" title="Добавить портрет"><i class="fa-solid fa-image"></i></button>
+            <button type="button" class="danger" data-action="deleteCharacter" data-character-id="{{id}}" title="Удалить персонажа"><i class="fa-solid fa-trash"></i></button>
+          </header>
+
+          <div class="fbl-vn-portrait-list">
+            {{#each portraits}}
+              <div class="fbl-vn-portrait-row" data-portrait-row data-portrait-id="{{id}}">
+                <div class="form-group">
+                  <label>Название</label>
+                  <input type="text" data-portrait-label value="{{label}}" />
+                </div>
+                <div class="form-group path-field">
+                  <label>Файл</label>
+                  <input type="text" name="portrait-path-{{id}}" data-portrait-path value="{{path}}" />
+                  <button type="button" data-action="pickPortrait" data-field="portrait-path-{{id}}" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                </div>
+                <button type="button" class="danger" data-action="deletePortrait" data-character-id="{{../id}}" data-portrait-id="{{id}}" title="Удалить портрет"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+            {{/each}}
+          </div>
+        </section>
+      {{/each}}
+    {{else}}
+      <p class="empty">Пресетов персонажей пока нет.</p>
+    {{/if}}
+  </div>
+</section>

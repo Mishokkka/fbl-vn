@@ -1,0 +1,155 @@
+.fbl-vn-choices {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--vn-border);
+  border-radius: var(--vn-radius-md);
+  background: var(--vn-surface-2);
+}
+
+.fbl-vn-choices > header {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vn-gap-sm);
+  margin-bottom: 6px;
+}
+
+.fbl-vn-choices > header h4 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.fbl-vn-choices > header button {
+  width: auto;
+  padding: 0 10px;
+}
+
+.fbl-vn-editor-choice-list {
+  display: grid;
+  gap: 5px;
+}
+
+.fbl-vn-choice-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-areas:
+    "idx main"
+    "idx logic";
+  gap: 5px 6px;
+  align-items: start;
+  overflow: hidden;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--vn-radius-sm);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.fbl-vn-choice-row.has-error {
+  border-color: rgba(226, 95, 95, 0.48);
+}
+
+.fbl-vn-choice-row.has-warning:not(.has-error) {
+  border-color: rgba(216, 180, 110, 0.38);
+}
+
+.fbl-vn-choice-row .choice-index {
+  grid-area: idx;
+  min-height: 58px;
+  display: grid;
+  align-items: start;
+  justify-items: end;
+  padding-top: 36px;
+  color: var(--vn-soft);
+  font-size: 13px;
+}
+
+.fbl-vn-choice-row .choice-main-line {
+  grid-area: main;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(220px, 340px) 124px;
+  gap: 8px;
+  align-items: end;
+}
+
+.fbl-vn-choice-row .choice-logic-line {
+  grid-area: logic;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.fbl-vn-choice-row .choice-logic-block {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 120px) minmax(56px, 72px);
+  gap: 5px;
+  align-items: end;
+  padding: 4px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: var(--vn-radius-sm);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.fbl-vn-choice-row .choice-logic-title {
+  grid-column: 1 / -1;
+  height: 14px;
+  color: var(--vn-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fbl-vn-choice-row :is(.choice-text, .choice-target, .choice-actions, .choice-condition-counter, .choice-condition-op, .choice-condition-value, .choice-effect-counter, .choice-effect-op, .choice-effect-value) {
+  min-width: 0;
+}
+
+.fbl-vn-choice-row .choice-actions {
+  width: 124px;
+  min-width: 124px;
+  display: grid;
+  grid-template-columns: repeat(4, 28px);
+  gap: 4px;
+  align-items: end;
+  justify-content: end;
+  align-self: end;
+}
+
+.fbl-vn-choice-row .choice-actions button,
+.fbl-vn-choice-row .fbl-vn-target-picker button {
+  width: 28px;
+  min-width: 28px;
+  height: var(--vn-control-h);
+  min-height: var(--vn-control-h);
+  max-height: var(--vn-control-h);
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+}
+
+.fbl-vn-choice-row .choice-actions button i,
+.fbl-vn-choice-row .fbl-vn-target-picker button i {
+  margin: 0;
+  line-height: 1;
+}
+
+.fbl-vn-choice-row :is(input, select) {
+  min-width: 0;
+}
+
+@media (max-width: 1320px) {
+  .fbl-vn-choice-row .choice-main-line {
+    grid-template-columns: minmax(0, 1fr) minmax(190px, 300px) 124px;
+  }
+
+  .fbl-vn-choice-row .choice-logic-line {
+    grid-template-columns: 1fr;
+  }
+}

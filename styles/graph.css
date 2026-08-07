@@ -1,0 +1,273 @@
+.fbl-vn-graph {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.fbl-vn-graph-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--vn-border);
+  background: var(--vn-surface-2);
+}
+
+.fbl-vn-graph-head .graph-title {
+  min-width: 0;
+  margin-right: auto;
+}
+
+.fbl-vn-graph-head h2,
+.fbl-vn-graph-head p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fbl-vn-graph-head h2 {
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.fbl-vn-graph-head p,
+.fbl-vn-graph-head .legend {
+  color: var(--vn-muted);
+  font-size: 12px;
+}
+
+.fbl-vn-graph-head .legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--vn-border);
+  border-radius: 999px;
+  background: rgba(0,0,0,0.16);
+  white-space: nowrap;
+}
+
+.fbl-vn-graph-head .legend.dialogue { border-color: var(--vn-dialogue-border); background: var(--vn-dialogue); color: var(--vn-soft); }
+.fbl-vn-graph-head .legend.narration { border-color: var(--vn-narration-border); background: var(--vn-narration); color: var(--vn-soft); }
+.fbl-vn-graph-head .legend.choice { border-color: var(--vn-choice-border); background: var(--vn-choice); color: var(--vn-soft); }
+.fbl-vn-graph-head .legend.warning i { color: #d8b46e; }
+
+.fbl-vn-graph-body {
+  min-height: 0;
+  overflow: auto;
+  background-color: var(--vn-bg);
+  background-image:
+    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+  background-size: 64px 64px, 64px 64px, 16px 16px, 16px 16px;
+}
+
+.fbl-vn-graph-canvas {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.fbl-vn-graph-lines {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.fbl-vn-graph-lines marker path {
+  fill: rgba(205, 185, 151, 0.86);
+}
+
+.fbl-vn-graph-lines #fbl-vn-arrow-broken path {
+  fill: rgba(226, 95, 95, 0.88);
+}
+
+.fbl-vn-graph-lines .graph-edge {
+  fill: none;
+  stroke: rgba(205, 185, 151, 0.72);
+  stroke-width: 2;
+  marker-end: url(#fbl-vn-arrow);
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.9));
+}
+
+.fbl-vn-graph-lines .graph-edge.is-choice {
+  stroke: rgba(222, 158, 98, 0.78);
+}
+
+
+.fbl-vn-graph-lines .graph-edge.is-conditional {
+  stroke: #d2a85f;
+  stroke-dasharray: 7 5;
+}
+.fbl-vn-graph-lines .graph-edge.is-terminal {
+  stroke: rgba(167, 159, 145, 0.58);
+  stroke-dasharray: 7 5;
+}
+
+.fbl-vn-graph-lines .graph-edge.is-broken {
+  stroke: rgba(226, 95, 95, 0.9);
+  stroke-dasharray: 8 4;
+  marker-end: url(#fbl-vn-arrow-broken);
+}
+
+.graph-edge-label {
+  position: absolute;
+  z-index: 3;
+  max-width: 150px;
+  padding: 3px 7px;
+  border: 1px solid rgba(226, 215, 196, 0.18);
+  border-radius: 999px;
+  background: rgba(13, 14, 16, 0.92);
+  color: var(--vn-soft);
+  font-size: 11px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.graph-edge-label.is-choice {
+  border-color: rgba(222, 158, 98, 0.36);
+  color: #f1d1aa;
+}
+
+
+.graph-edge-label.is-conditional {
+  border-color: rgba(210, 168, 95, 0.58);
+  color: #e6c88f;
+}
+.graph-edge-label.is-terminal {
+  color: var(--vn-muted);
+}
+
+.graph-edge-label.is-broken {
+  border-color: rgba(226, 95, 95, 0.55);
+  color: #f0c1c1;
+}
+
+.fbl-vn-graph-node {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  grid-template-rows: 28px 24px 24px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--vn-border);
+  border-radius: 8px;
+  background: var(--vn-surface-1);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+}
+
+.fbl-vn-graph-node.frame-type-dialogue { background: linear-gradient(180deg, var(--vn-dialogue), var(--vn-surface-1)); border-color: var(--vn-dialogue-border); }
+.fbl-vn-graph-node.frame-type-narration { background: linear-gradient(180deg, var(--vn-narration), var(--vn-surface-1)); border-color: var(--vn-narration-border); }
+.fbl-vn-graph-node.frame-type-choice { background: linear-gradient(180deg, var(--vn-choice), var(--vn-surface-1)); border-color: var(--vn-choice-border); }
+.fbl-vn-graph-node.frame-type-terminal { background: linear-gradient(180deg, rgba(112,112,112,0.22), var(--vn-surface-1)); }
+.fbl-vn-graph-node.frame-type-broken { background: linear-gradient(180deg, rgba(170,60,60,0.34), var(--vn-surface-1)); border-color: rgba(226, 95, 95, 0.6); }
+
+.fbl-vn-graph-node.is-start {
+  box-shadow: 0 8px 22px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(182, 138, 74, 0.76);
+}
+
+.fbl-vn-graph-node.is-unreachable {
+  outline: 1px solid rgba(216, 180, 110, 0.38);
+}
+
+.fbl-vn-graph-node.has-issue {
+  outline: 1px solid rgba(216, 180, 110, 0.24);
+}
+
+.fbl-vn-graph-node header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  margin-bottom: 5px;
+}
+
+.fbl-vn-graph-node header strong,
+.fbl-vn-graph-node .node-speaker span,
+.fbl-vn-graph-node .node-background span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fbl-vn-graph-node header strong {
+  color: var(--vn-text);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.fbl-vn-graph-node .node-speaker,
+.fbl-vn-graph-node .node-background {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  color: var(--vn-muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.fbl-vn-graph-node .node-speaker i,
+.fbl-vn-graph-node .node-background i {
+  width: 14px;
+  text-align: center;
+  opacity: 0.72;
+}
+
+/* Interactive graph */
+.fbl-vn-graph-body {
+  overflow: hidden;
+  cursor: default;
+}
+
+.fbl-vn-graph-canvas {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.fbl-vn-graph-head .graph-help {
+  max-width: 420px;
+}
+
+.fbl-vn-graph-node:not(.is-virtual) {
+  cursor: grab;
+}
+
+.fbl-vn-graph-node.is-dragging {
+  cursor: grabbing;
+  z-index: 10;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.52), 0 0 0 1px rgba(182, 138, 74, 0.7);
+}
+
+.fbl-vn-graph-head .graph-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.fbl-vn-graph-head .graph-toggle input {
+  margin: 0;
+}
+
+.fbl-vn-graph-head button.legend.graph-button {
+  cursor: pointer;
+  font: inherit;
+  color: var(--vn-soft);
+}
+
+.fbl-vn-graph-head button.legend.graph-button:hover {
+  border-color: rgba(182, 138, 74, 0.56);
+  color: var(--vn-text);
+  background: rgba(182, 138, 74, 0.14);
+}

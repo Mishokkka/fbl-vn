@@ -1,0 +1,171 @@
+.fbl-vn-counter-manager-app {
+  min-width: 620px;
+  min-height: 420px;
+}
+
+.fbl-vn-counter-manager {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--vn-bg);
+  color: var(--vn-text);
+}
+
+.fbl-vn-counter-manager-toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--vn-border);
+  background: linear-gradient(180deg, var(--vn-surface-3), var(--vn-surface-2));
+}
+
+.fbl-vn-counter-manager-title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.fbl-vn-counter-manager-title strong {
+  overflow: hidden;
+  color: var(--vn-text);
+  font-size: 15px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fbl-vn-counter-manager-title span {
+  overflow: hidden;
+  color: var(--vn-muted);
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fbl-vn-counter-manager-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.fbl-vn-counter-manager-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 10px;
+  background: var(--vn-surface-0);
+}
+
+.fbl-vn-counter-manager-head,
+.fbl-vn-counter-manager-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 28px minmax(180px, 1fr) 90px minmax(150px, 0.8fr) 34px;
+  gap: 6px;
+  align-items: center;
+}
+
+.fbl-vn-counter-manager-head {
+  padding: 0 7px 2px;
+  color: var(--vn-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fbl-vn-counter-manager-row {
+  padding: 7px;
+  border: 1px solid var(--vn-border);
+  border-radius: var(--vn-radius-sm);
+  background: linear-gradient(180deg, var(--vn-surface-2), var(--vn-surface-1));
+}
+
+.fbl-vn-counter-manager-row:focus-within {
+  border-color: rgba(182, 138, 74, 0.48);
+}
+
+.fbl-vn-counter-manager-index {
+  color: var(--vn-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.fbl-vn-counter-manager-usage {
+  overflow: hidden;
+  color: var(--vn-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fbl-vn-counter-manager-row > button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
+
+.fbl-vn-counter-manager-empty {
+  min-height: 250px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px;
+  border: 1px dashed var(--vn-border-strong);
+  border-radius: var(--vn-radius-md);
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--vn-muted);
+  text-align: center;
+}
+
+.fbl-vn-counter-manager-empty > i {
+  color: var(--vn-accent);
+  font-size: 30px;
+  opacity: 0.9;
+}
+
+.fbl-vn-counter-manager-empty > strong {
+  color: var(--vn-text);
+  font-size: 15px;
+}
+
+.fbl-vn-counter-manager-empty > span {
+  max-width: 460px;
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .fbl-vn-counter-manager-app {
+    min-width: 460px;
+  }
+
+  .fbl-vn-counter-manager-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fbl-vn-counter-manager-title span {
+    white-space: normal;
+  }
+
+  .fbl-vn-counter-manager-head {
+    display: none;
+  }
+
+  .fbl-vn-counter-manager-row {
+    grid-template-columns: 28px minmax(0, 1fr) 86px 34px;
+  }
+
+  .fbl-vn-counter-manager-usage {
+    grid-column: 2 / -1;
+  }
+}

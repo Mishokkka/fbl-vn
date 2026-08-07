@@ -1,0 +1,308 @@
+<section class="fbl-vn-frame-panel" {{#unless selectedScene}}hidden{{/unless}}>
+  {{#if selectedScene}}
+          {{#if selectedFrame}}
+            <div class="fbl-vn-field-row row-frame-title">
+              <div class="form-group">
+                <label>Тип</label>
+                <select name="frame.type">
+                  {{#each frameTypeOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Ветка</label>
+                <select name="frame.branchId">
+                  {{#each frameBranchOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Папка</label>
+                <select name="frame.folderId">
+                  {{#each folderOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Техническое имя кадра</label>
+                <input type="text" name="frame.title" value="{{selectedFrame.title}}" placeholder="Например: Вход в церковь" />
+              </div>
+            </div>
+  
+            <div class="fbl-vn-field-row row-background">
+              <div class="form-group path-field">
+                <label>Фон</label>
+                <input type="text" name="frame.background" value="{{selectedFrame.background}}" placeholder="Путь к изображению. Пусто = оставить предыдущий фон." />
+                <button type="button" data-action="pickAsset" data-field="frame.background" data-picker-type="image" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+              </div>
+              <div class="form-group">
+                <label>Переход</label>
+                <select name="frame.transition">
+                  {{#each transitionOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <label class="form-group icon-toggle-field" title="Очистить фон" aria-label="Очистить фон">
+                <span class="field-label-spacer" aria-hidden="true"></span>
+                <input type="checkbox" name="frame.clearBackground" {{#if selectedFrame.clearBackground}}checked{{/if}} />
+                <span class="icon-toggle"><i class="fa-solid fa-eraser"></i></span>
+              </label>
+            </div>
+  
+            <div class="fbl-vn-field-row row-character">
+              <div class="form-group">
+                <label>Пресет персонажа</label>
+                <select name="frame.characterId" data-character-select>
+                  {{#each characterOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Портрет пресета</label>
+                <select name="frame.portraitId" data-character-portrait-select>
+                  {{#each characterPortraitOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <button type="button" class="fbl-vn-row-icon unlabeled" data-action="saveCharacterPreset" title="Сохранить текущего говорящего и портрет как пресет персонажа" aria-label="Сохранить пресет персонажа"><i class="fa-solid fa-user-plus"></i></button>
+              <button type="button" class="fbl-vn-row-icon unlabeled" data-action="openCharacterManager" title="Редактировать пресеты персонажей" aria-label="Редактировать пресеты персонажей"><i class="fa-solid fa-users-gear"></i></button>
+            </div>
+  
+            <div class="fbl-vn-field-row row-portrait">
+              <div class="form-group">
+                <label>Говорящий</label>
+                <input type="text" name="frame.speaker" value="{{selectedFrame.speaker}}" placeholder="Имя персонажа" />
+              </div>
+              <div class="form-group path-field">
+                <label>Портрет / спрайт</label>
+                <input type="text" name="frame.portrait" value="{{selectedFrame.portrait}}" placeholder="Путь к изображению. Пусто = оставить предыдущий портрет." />
+                <button type="button" data-action="pickAsset" data-field="frame.portrait" data-picker-type="image" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+              </div>
+              <div class="form-group">
+                <label>Позиция</label>
+                <select name="frame.portraitPosition">
+                  {{#each positionOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <label class="form-group icon-toggle-field" title="Скрыть портрет" aria-label="Скрыть портрет">
+                <span class="field-label-spacer" aria-hidden="true"></span>
+                <input type="checkbox" name="frame.hidePortrait" {{#if selectedFrame.hidePortrait}}checked{{/if}} />
+                <span class="icon-toggle"><i class="fa-solid fa-user-slash"></i></span>
+              </label>
+            </div>
+  
+            <section class="fbl-vn-text-blocks">
+              <header>
+                <h4>Текстовые блоки</h4>
+                <button type="button" data-action="addTextBlock"><i class="fa-solid fa-plus"></i> Добавить</button>
+              </header>
+              <div class="fbl-vn-text-block-list">
+                {{#each selectedTextBlocks}}
+                  <div class="fbl-vn-text-block-row" data-text-block-row data-text-block-id="{{id}}">
+                    <div class="form-group text-field compact-text-field">
+                      <textarea data-text-block-text rows="4" placeholder="Текст реплики или наррации">{{text}}</textarea>
+                    </div>
+                    <div class="text-block-bottom">
+                      <div class="form-group path-field voice-field no-label">
+                        <input type="text" name="{{inputName}}" data-text-block-voice value="{{voice}}" placeholder="ogg/mp3/wav, пусто = без озвучки" />
+                        <button type="button" data-action="pickAsset" data-field="{{inputName}}" data-picker-type="audio" title="Выбрать файл озвучки"><i class="fa-solid fa-folder-open"></i></button>
+                      </div>
+                      <div class="text-block-actions">
+                        <button type="button" data-action="moveTextBlock" data-direction="up" data-text-block-id="{{id}}" title="Выше" aria-label="Выше"><i class="fa-solid fa-arrow-up"></i></button>
+                        <button type="button" data-action="moveTextBlock" data-direction="down" data-text-block-id="{{id}}" title="Ниже" aria-label="Ниже"><i class="fa-solid fa-arrow-down"></i></button>
+                        <button type="button" data-action="duplicateTextBlock" data-text-block-id="{{id}}" title="Дублировать" aria-label="Дублировать"><i class="fa-regular fa-copy"></i></button>
+                        <button type="button" data-action="deleteTextBlock" data-text-block-id="{{id}}" title="Удалить" aria-label="Удалить"><i class="fa-solid fa-xmark"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                {{/each}}
+              </div>
+            </section>
+  
+            <div class="fbl-vn-field-row row-audio">
+              <div class="form-group">
+                <label>Музыка</label>
+                <select name="frame.musicMode">
+                  {{#each musicModeOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div class="form-group path-field">
+                <label>Файл музыки</label>
+                <input type="text" name="frame.music" value="{{selectedFrame.music}}" placeholder="ogg/mp3/wav" />
+                <button type="button" data-action="pickAsset" data-field="frame.music" data-picker-type="audio" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+              </div>
+              <div class="form-group path-field">
+                <label>SFX</label>
+                <input type="text" name="frame.sfx" value="{{selectedFrame.sfx}}" placeholder="Звук кадра" />
+                <button type="button" data-action="pickAsset" data-field="frame.sfx" data-picker-type="audio" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+              </div>
+            </div>
+  
+            <div class="fbl-vn-field-row row-next-final">
+              <section class="fbl-vn-frame-route {{#if nextRoutingEnabled}}is-counter-routing{{/if}}" data-next-routing-shell>
+                <header class="fbl-vn-frame-route-header">
+                  <span class="fbl-vn-frame-route-title">Следующий кадр</span>
+                  <label class="fbl-vn-route-toggle" title="Выбрать следующий кадр по результату проверки счётчика.">
+                    <input type="checkbox" name="frame.nextRouting.enabled" {{#if nextRoutingEnabled}}checked{{/if}} />
+                    <span class="fbl-vn-route-toggle-box"><i class="fa-solid fa-code-branch"></i></span>
+                    <span>Проверка счётчика</span>
+                  </label>
+                </header>
+
+                <div class="fbl-vn-frame-route-next" data-frame-next-fields {{#if nextRoutingEnabled}}hidden{{/if}}>
+                  <div class="fbl-vn-target-picker {{#if frameNextInvalid}}is-invalid{{/if}}">
+                    <input type="hidden" name="frame.next" value="{{selectedFrame.next}}" />
+                    <input type="search" data-frame-target-search data-target-field="frame.next" data-empty-label="Следующий кадр по списку" list="fbl-vn-frame-targets" value="{{frameNextTarget}}" placeholder="Найти кадр" />
+                    <button type="button" data-action="clearFrameTarget" data-field="frame.next" data-empty-label="Следующий кадр по списку" title="Следующий кадр по списку" aria-label="Следующий кадр по списку"><i class="fa-solid fa-link-slash"></i></button>
+                  </div>
+                </div>
+
+                <div class="fbl-vn-frame-next-routing" data-next-routing-fields {{#unless nextRoutingEnabled}}hidden{{/unless}}>
+                  <div class="fbl-vn-route-condition-row">
+                    <div class="form-group slim">
+                      <label>Счётчик</label>
+                      <select name="frame.nextRouting.counterId">
+                        {{#each nextRoutingCounterOptions}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <div class="form-group slim">
+                      <label>Сравнение</label>
+                      <select name="frame.nextRouting.operator">
+                        {{#each nextRoutingOperatorOptions}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <div class="form-group slim fbl-vn-route-value">
+                      <label>Значение</label>
+                      <input type="number" step="1" name="frame.nextRouting.value" value="{{nextRouting.value}}" />
+                    </div>
+                  </div>
+
+                  <div class="fbl-vn-route-outcome-row">
+                    <label><i class="fa-solid fa-check"></i> Если да</label>
+                    <div class="fbl-vn-target-picker {{#if nextRoutingTrueInvalid}}is-invalid{{/if}}">
+                      <input type="hidden" name="frame.nextRouting.trueFrameId" value="{{nextRouting.trueFrameId}}" />
+                      <input type="search" data-frame-target-search data-target-field="frame.nextRouting.trueFrameId" data-empty-label="Следующий кадр по списку" list="fbl-vn-frame-targets" value="{{nextRoutingTrueTarget}}" placeholder="Найти кадр" />
+                      <button type="button" data-action="clearFrameTarget" data-field="frame.nextRouting.trueFrameId" data-empty-label="Следующий кадр по списку" title="Следующий кадр по списку" aria-label="Следующий кадр по списку"><i class="fa-solid fa-link-slash"></i></button>
+                    </div>
+                  </div>
+
+                  <div class="fbl-vn-route-outcome-row">
+                    <label><i class="fa-solid fa-xmark"></i> Если нет</label>
+                    <div class="fbl-vn-target-picker {{#if nextRoutingFalseInvalid}}is-invalid{{/if}}">
+                      <input type="hidden" name="frame.nextRouting.falseFrameId" value="{{nextRouting.falseFrameId}}" />
+                      <input type="search" data-frame-target-search data-target-field="frame.nextRouting.falseFrameId" data-empty-label="Следующий кадр по списку" list="fbl-vn-frame-targets" value="{{nextRoutingFalseTarget}}" placeholder="Найти кадр" />
+                      <button type="button" data-action="clearFrameTarget" data-field="frame.nextRouting.falseFrameId" data-empty-label="Следующий кадр по списку" title="Следующий кадр по списку" aria-label="Следующий кадр по списку"><i class="fa-solid fa-link-slash"></i></button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <label class="form-group final-toggle-field" title="Финальный кадр. После него катсцена завершится." aria-label="Финальный кадр">
+                <span>Финал</span>
+                <input type="checkbox" name="frame.isFinal" {{#if selectedFrame.isFinal}}checked{{/if}} />
+                <span class="icon-toggle"><i class="fa-solid fa-flag-checkered"></i></span>
+              </label>
+            </div>
+  
+            {{#if isChoice}}
+              <section class="fbl-vn-choices">
+                <header>
+                  <h4>Варианты выбора</h4>
+                  <button type="button" data-action="addChoice"><i class="fa-solid fa-plus"></i> Добавить</button>
+                </header>
+                <div class="fbl-vn-editor-choice-list">
+                  {{#each selectedChoices}}
+                    <div class="fbl-vn-choice-row {{#if hasError}}has-error{{/if}} {{#if hasWarning}}has-warning{{/if}}" data-choice-row data-choice-id="{{id}}">
+                      <div class="choice-index">{{index}})</div>
+                      <div class="choice-main-line">
+                        <div class="form-group choice-text">
+                          <label>Текст выбора</label>
+                          <input type="text" data-choice-text value="{{text}}" placeholder="Текст выбора" class="{{#if hasError}}is-invalid{{/if}}" />
+                        </div>
+                        <div class="form-group choice-target">
+                          <label>Переход</label>
+                          <div class="fbl-vn-target-picker {{#if brokenTarget}}is-invalid{{/if}}">
+                            <input type="hidden" data-choice-next value="{{next}}" />
+                            <input type="search" data-frame-target-search data-empty-label="Следующий кадр по списку" list="fbl-vn-frame-targets" value="{{targetLabel}}" placeholder="Найти кадр" />
+                            <button type="button" data-action="clearFrameTarget" data-empty-label="Следующий кадр по списку" title="Следующий кадр по списку" aria-label="Следующий кадр по списку"><i class="fa-solid fa-link-slash"></i></button>
+                          </div>
+                        </div>
+                        <div class="choice-actions">
+                          <button type="button" data-action="moveChoice" data-direction="up" data-choice-id="{{id}}" title="Выше" aria-label="Выше"><i class="fa-solid fa-arrow-up"></i></button>
+                          <button type="button" data-action="moveChoice" data-direction="down" data-choice-id="{{id}}" title="Ниже" aria-label="Ниже"><i class="fa-solid fa-arrow-down"></i></button>
+                          <button type="button" data-action="duplicateChoice" data-choice-id="{{id}}" title="Дублировать" aria-label="Дублировать"><i class="fa-regular fa-copy"></i></button>
+                          <button type="button" data-action="deleteChoice" data-choice-id="{{id}}" title="Удалить" aria-label="Удалить"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                      </div>
+                      <div class="choice-logic-line">
+                        <div class="choice-logic-block choice-condition-block">
+                          <span class="choice-logic-title">Доступность</span>
+                          <div class="form-group choice-condition-counter">
+                            <label>Счётчик</label>
+                            <select data-choice-condition-counter class="{{#if hasWarning}}is-warning{{/if}}">
+                              {{#each conditionCounterOptions}}
+                                <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                              {{/each}}
+                            </select>
+                          </div>
+                          <div class="form-group choice-condition-op">
+                            <label>Сравнение</label>
+                            <select data-choice-condition-operator>
+                              {{#each conditionOperatorOptions}}
+                                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                              {{/each}}
+                            </select>
+                          </div>
+                          <div class="form-group choice-condition-value">
+                            <label>Значение</label>
+                            <input type="number" step="1" data-choice-condition-value value="{{conditionValue}}" />
+                          </div>
+                        </div>
+                        <div class="choice-logic-block choice-effect-block">
+                          <span class="choice-logic-title">Изменение счётчика</span>
+                          <div class="form-group choice-effect-counter">
+                            <label>Счётчик</label>
+                            <select data-choice-effect-counter class="{{#if hasWarning}}is-warning{{/if}}">
+                              {{#each effectCounterOptions}}
+                                <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                              {{/each}}
+                            </select>
+                          </div>
+                          <div class="form-group choice-effect-op">
+                            <label>Операция</label>
+                            <select data-choice-effect-operation>
+                              {{#each effectOperationOptions}}
+                                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                              {{/each}}
+                            </select>
+                          </div>
+                          <div class="form-group choice-effect-value">
+                            <label>На</label>
+                            <input type="number" min="0" step="1" data-choice-effect-value value="{{effectValue}}" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  {{/each}}
+                </div>
+              </section>
+            {{/if}}
+          {{else}}
+            <p class="empty">Выберите кадр.</p>
+          {{/if}}
+  {{/if}}
+</section>

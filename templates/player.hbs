@@ -1,0 +1,80 @@
+<section class="fbl-vn-player {{#if loading}}is-loading{{/if}} {{#if started}}is-started{{/if}} {{#if reducedMotion}}is-reduced-motion{{/if}}" data-mode="{{mode}}">
+  {{#if loading}}
+    <div class="fbl-vn-loader">
+      <div class="mark">VN</div>
+      <h2>{{scene.title}}</h2>
+      <p>Предзагрузка ассетов: <span data-preload-label>{{preloadDone}} / {{preloadTotal}}</span></p>
+      <progress data-preload-progress max="{{preloadTotal}}" value="{{preloadDone}}"></progress>
+    </div>
+  {{else}}
+    {{#unless started}}
+      <div class="fbl-vn-loader">
+        <div class="mark">VN</div>
+        <h2>{{scene.title}}</h2>
+        <p>Готово. Ожидаю старт.</p>
+      </div>
+    {{/unless}}
+  {{/if}}
+
+  {{#if started}}
+    <div class="fbl-vn-bg {{transitionClass}}" data-background-src="{{backgroundSrc}}"></div>
+    <div class="fbl-vn-vignette"></div>
+
+    {{#if hasPortrait}}
+      <img class="fbl-vn-portrait {{portraitClass}} {{transitionClass}}" src="{{portraitSrc}}" alt="{{portraitAlt}}" />
+    {{/if}}
+
+    <div class="fbl-vn-dialogue" data-vn-advance-area>
+      {{#if hasSpeaker}}
+        <div class="fbl-vn-speaker">{{frame.speaker}}</div>
+      {{/if}}
+      {{#if hasTextCounter}}<div class="fbl-vn-text-counter">{{currentTextIndex}} / {{textBlockCount}}</div>{{/if}}
+      <div class="fbl-vn-text" data-vn-text>{{currentText}}</div>
+
+      {{#if showChoices}}
+        <div class="fbl-vn-player-choice-list">
+          {{#each choices}}
+            <button type="button" class="{{#if selected}}is-selected{{/if}} {{#if unavailable}}is-unavailable{{/if}}" data-action="choose" data-choice-id="{{id}}" {{#unless ../canAdvance}}disabled{{/unless}} {{#if ../localHasVoted}}disabled{{/if}} {{#unless available}}disabled{{/unless}}>
+              <span class="fbl-vn-choice-text">{{text}}</span>
+              {{#if ../isVoteMode}}<span class="fbl-vn-vote-count">{{voteCount}} / {{../voteTotal}}</span>{{/if}}
+            </button>
+          {{/each}}
+        </div>
+      {{else}}
+        {{#if canAdvance}}
+          <button type="button" class="fbl-vn-next {{#if localHasVoted}}is-voted{{/if}}" data-action="next" {{#if localHasVoted}}disabled{{/if}}>
+            {{#if isVoteMode}}
+              {{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}
+              <span class="fbl-vn-vote-count">{{voteCount}} / {{voteTotal}}</span>
+            {{else}}
+              Продолжить
+            {{/if}}
+          </button>
+        {{else}}
+          <div class="fbl-vn-wait">Ожидание ведущего</div>
+        {{/if}}
+      {{/if}}
+    </div>
+
+    <div class="fbl-vn-volume-widget">
+      {{#if volumePanelOpen}}
+        <div class="fbl-vn-volume-panel">
+          {{#each volumeLevels}}
+            <label class="fbl-vn-volume-row">
+              <span class="fbl-vn-volume-label">{{label}}</span>
+              <input type="range" min="0" max="1" step="0.05" value="{{value}}" data-vn-volume="{{key}}" />
+              <span class="fbl-vn-volume-value">{{percent}}%</span>
+            </label>
+          {{/each}}
+        </div>
+      {{/if}}
+      <button type="button" class="fbl-vn-volume-toggle" data-action="toggleVolumePanel" title="Громкость" aria-label="Громкость">
+        <i class="fa-solid fa-volume-high"></i>
+      </button>
+    </div>
+
+    {{#if isLeader}}
+      <button type="button" class="fbl-vn-close" data-action="closeCutscene" title="Закрыть"><i class="fa-solid fa-xmark"></i></button>
+    {{/if}}
+  {{/if}}
+</section>
