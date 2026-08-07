@@ -1,0 +1,61 @@
+.fbl-vn-character-manager {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.fbl-vn-character-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--vn-border);
+  background: var(--vn-surface-2);
+}
+
+.fbl-vn-character-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 8px;
+}
+
+.fbl-vn-character-card {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--vn-border);
+  border-radius: var(--vn-radius-md);
+  background: var(--vn-surface-1);
+}
+
+.fbl-vn-character-card > header {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 220px) 34px 34px;
+  gap: 6px;
+  align-items: end;
+}
+
+.fbl-vn-portrait-list {
+  display: grid;
+  gap: 5px;
+}
+
+.fbl-vn-portrait-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) 34px;
+  gap: 6px;
+  align-items: end;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--vn-radius-sm);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.fbl-vn-character-card > header > button,
+.fbl-vn-portrait-row > button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}

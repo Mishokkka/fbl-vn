@@ -1,0 +1,39 @@
+<section class="fbl-vn-ui fbl-vn-counter-manager">
+  <header class="fbl-vn-counter-manager-toolbar">
+    <div class="fbl-vn-counter-manager-title">
+      <strong>{{sceneTitle}}</strong>
+      <span>Счётчики существуют только внутри одного прохождения этой сцены.</span>
+    </div>
+    <div class="fbl-vn-counter-manager-actions">
+      <button type="button" data-action="addCounter"><i class="fa-solid fa-plus"></i> Добавить</button>
+      <button type="button" data-action="save"><i class="fa-solid fa-floppy-disk"></i> Сохранить</button>
+    </div>
+  </header>
+
+  <div class="fbl-vn-counter-manager-list">
+    {{#if hasCounters}}
+      <div class="fbl-vn-counter-manager-head" aria-hidden="true">
+        <span>#</span>
+        <span>Название</span>
+        <span>Старт</span>
+        <span>Использование</span>
+        <span></span>
+      </div>
+      {{#each counters}}
+        <div class="fbl-vn-counter-manager-row" data-counter-row data-counter-id="{{id}}">
+          <span class="fbl-vn-counter-manager-index">{{index}}</span>
+          <input type="text" data-counter-name value="{{name}}" placeholder="Название счётчика" />
+          <input type="number" step="1" data-counter-initial value="{{initial}}" title="Стартовое значение" />
+          <span class="fbl-vn-counter-manager-usage" title="{{usageLabel}}">{{usageLabel}}</span>
+          <button type="button" class="danger" data-action="deleteCounter" data-counter-id="{{id}}" title="Удалить счётчик" aria-label="Удалить счётчик"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      {{/each}}
+    {{else}}
+      <div class="fbl-vn-counter-manager-empty">
+        <i class="fa-solid fa-gauge-high"></i>
+        <strong>Счётчиков пока нет</strong>
+        <span>Добавьте счётчик, чтобы использовать его в вариантах выбора и в условном переходе между кадрами.</span>
+      </div>
+    {{/if}}
+  </div>
+</section>

@@ -1,0 +1,213 @@
+:where(.fbl-vn-editor-app, .fbl-vn-asset-picker-app, .fbl-vn-character-manager-app, .fbl-vn-counter-manager-app, .fbl-vn-graph-app) .window-content {
+  padding: 0;
+  overflow: hidden;
+  background: var(--vn-bg);
+  color: var(--vn-text);
+}
+
+.fbl-vn-ui,
+.fbl-vn-ui * {
+  box-sizing: border-box;
+}
+
+.fbl-vn-ui {
+  height: 100%;
+  min-height: 0;
+  background: var(--vn-bg);
+  color: var(--vn-text);
+  font-family: var(--font-primary, "Signika", Arial, sans-serif);
+  font-size: 14px;
+  line-height: 1.32;
+}
+
+.fbl-vn-ui h2,
+.fbl-vn-ui h3,
+.fbl-vn-ui h4,
+.fbl-vn-ui p {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fbl-vn-ui h2,
+.fbl-vn-ui h3,
+.fbl-vn-ui h4 {
+  color: var(--vn-text);
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.fbl-vn-ui h2 { font-size: 17px; }
+.fbl-vn-ui h3 { font-size: 15px; }
+.fbl-vn-ui h4 { font-size: 14px; }
+
+.fbl-vn-ui button,
+.fbl-vn-ui input,
+.fbl-vn-ui textarea,
+.fbl-vn-ui select {
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--vn-border);
+  border-radius: var(--vn-radius-sm);
+  background: var(--vn-control);
+  color: var(--vn-text);
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  outline: none;
+}
+
+.fbl-vn-ui input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.fbl-vn-ui select,
+.fbl-vn-ui button {
+  height: var(--vn-control-h);
+  min-height: var(--vn-control-h);
+  max-height: var(--vn-control-h);
+}
+
+.fbl-vn-ui input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.fbl-vn-ui textarea,
+.fbl-vn-ui select {
+  width: 100%;
+  padding: 6px 8px;
+}
+
+.fbl-vn-ui textarea {
+  min-height: 0;
+  resize: vertical;
+  scrollbar-gutter: stable;
+}
+
+.fbl-vn-ui select {
+  color-scheme: dark;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.fbl-vn-ui select option,
+.fbl-vn-ui select optgroup {
+  background: #101214;
+  color: var(--vn-text);
+}
+
+.fbl-vn-ui input::placeholder,
+.fbl-vn-ui textarea::placeholder {
+  color: var(--vn-faint);
+}
+
+.fbl-vn-ui :is(input, textarea, select):focus-visible,
+.fbl-vn-ui button:focus-visible {
+  border-color: rgba(182, 138, 74, 0.82);
+  box-shadow: 0 0 0 2px rgba(182, 138, 74, 0.18);
+}
+
+.fbl-vn-ui button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 0 10px;
+  background: linear-gradient(180deg, #2a2d31, #191b1e);
+  color: var(--vn-soft);
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.fbl-vn-ui button i {
+  pointer-events: none;
+}
+
+.fbl-vn-ui button:hover:not(:disabled) {
+  border-color: rgba(182, 138, 74, 0.72);
+  background: linear-gradient(180deg, #343840, #202328);
+  color: var(--vn-text);
+}
+
+.fbl-vn-ui button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.fbl-vn-ui button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.fbl-vn-ui button.danger {
+  border-color: rgba(178, 75, 75, 0.55);
+  color: #f0c1c1;
+}
+
+.fbl-vn-ui button.danger:hover:not(:disabled) {
+  border-color: rgba(214, 87, 87, 0.78);
+  background: linear-gradient(180deg, #3c2323, #251718);
+}
+
+.fbl-vn-ui .form-group {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: var(--vn-label-h) var(--vn-control-h);
+  row-gap: var(--vn-field-label-gap);
+  align-content: start;
+  margin: 0;
+}
+
+.fbl-vn-ui .form-group > label,
+.fbl-vn-ui .path-field > label {
+  display: block;
+  height: var(--vn-label-h);
+  margin: 0;
+  color: var(--vn-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: var(--vn-label-h);
+  overflow: hidden;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fbl-vn-ui .path-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-rows: var(--vn-label-h) var(--vn-control-h);
+  column-gap: 4px;
+  row-gap: var(--vn-field-label-gap);
+}
+
+.fbl-vn-ui .path-field > label {
+  grid-column: 1 / -1;
+}
+
+.fbl-vn-ui .path-field > button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
+
+.fbl-vn-ui .empty {
+  color: var(--vn-muted);
+  font-size: 13px;
+}
+
+.fbl-vn-ui ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.fbl-vn-ui ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.fbl-vn-ui ::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+  background: rgba(182, 138, 74, 0.55);
+}

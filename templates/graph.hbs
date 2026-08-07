@@ -1,0 +1,63 @@
+<section class="fbl-vn-ui fbl-vn-graph">
+  {{#if hasScene}}
+    <header class="fbl-vn-graph-head">
+      <div class="graph-title">
+        <h2>{{scene.title}}</h2>
+        <p>{{nodeCount}}{{#if compactGraph}} / {{totalFrameCount}}{{/if}} кадров, {{issueCount}} замечаний проверки.</p>
+      </div>
+      <span class="legend dialogue">Реплика</span>
+      <span class="legend narration">Наррация</span>
+      <span class="legend choice">Выбор</span>
+      <span class="legend"><i class="fa-solid fa-star"></i> старт</span>
+      <span class="legend warning"><i class="fa-solid fa-circle-exclamation"></i> нет входящих связей</span>
+      <label class="legend graph-toggle" title="Скрыть линейные кадры между началом, финалом и кадрами выбора">
+        <input type="checkbox" data-action="toggleLinearFrames" {{#if compactGraph}}checked{{/if}} />
+        <span>Убрать варианты между выборами</span>
+      </label>
+      <button type="button" class="legend graph-button" data-action="autoLayout" title="Пересчитать позиции узлов"><i class="fa-solid fa-wand-magic-sparkles"></i> Автораскладка</button>
+      <button type="button" class="legend graph-button" data-action="resetLayout" title="Очистить сохраненные позиции узлов"><i class="fa-solid fa-rotate-left"></i> Сбросить позиции</button>
+      <span class="legend graph-help">Колесо: масштаб, СКМ: перемещение поля, ЛКМ: перетащить кадр</span>
+      <span class="legend" data-zoom-label>100%</span>
+    </header>
+
+    <div class="fbl-vn-graph-body">
+      {{#if hasNodes}}
+        <div class="fbl-vn-graph-canvas" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;">
+          <svg class="fbl-vn-graph-lines" width="{{canvasWidth}}" height="{{canvasHeight}}" viewBox="0 0 {{canvasWidth}} {{canvasHeight}}" aria-hidden="true">
+            <defs>
+              <marker id="fbl-vn-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z"></path>
+              </marker>
+              <marker id="fbl-vn-arrow-broken" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z"></path>
+              </marker>
+            </defs>
+            {{#each edges}}
+              <path class="graph-edge {{#if isChoice}}is-choice{{/if}} {{#if isConditional}}is-conditional{{/if}} {{#if isBroken}}is-broken{{/if}} {{#if isTerminal}}is-terminal{{/if}}" d="{{path}}" data-edge-id="{{edgeId}}" data-source-id="{{sourceId}}" data-target-id="{{targetId}}" data-source-index="{{sourceIndex}}"></path>
+            {{/each}}
+          </svg>
+
+          {{#each edges}}
+            <div class="graph-edge-label {{#if isChoice}}is-choice{{/if}} {{#if isConditional}}is-conditional{{/if}} {{#if isBroken}}is-broken{{/if}} {{#if isTerminal}}is-terminal{{/if}}" style="{{labelStyle}}" title="{{label}}" data-edge-id="{{edgeId}}">{{label}}</div>
+          {{/each}}
+
+          {{#each nodes}}
+            <article id="{{domId}}" data-node-id="{{id}}" data-x="{{x}}" data-y="{{y}}" data-w="{{w}}" data-h="{{h}}" data-virtual="{{#if isVirtual}}true{{else}}false{{/if}}" class="fbl-vn-graph-node frame-type-{{type}} {{#if isStart}}is-start{{/if}} {{#if isUnreachable}}is-unreachable{{/if}} {{#if hasIssue}}has-issue{{/if}} {{#if isVirtual}}is-virtual{{/if}} {{#if isTerminal}}is-terminal{{/if}} {{#if isBroken}}is-broken{{/if}}" style="{{style}}">
+              <header>
+                <strong title="{{textLine}}">{{textLine}}</strong>
+                {{#if isStart}}<i class="fa-solid fa-star" title="Стартовый кадр"></i>{{/if}}
+                {{#if isUnreachable}}<i class="fa-solid fa-circle-exclamation" title="Нет входящих связей"></i>{{/if}}
+              </header>
+              <div class="node-speaker" title="{{speakerLine}}"><i class="fa-solid fa-user"></i><span>{{speakerLine}}</span></div>
+              <div class="node-background" title="{{backgroundLine}}"><i class="fa-regular fa-image"></i><span>{{backgroundLine}}</span></div>
+            </article>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="empty">В катсцене нет кадров.</p>
+      {{/if}}
+    </div>
+  {{else}}
+    <p class="empty">Катсцена не выбрана.</p>
+  {{/if}}
+</section>

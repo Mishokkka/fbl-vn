@@ -1,0 +1,23 @@
+<section class="fbl-vn-scene-head" {{#unless selectedScene}}hidden{{/unless}}>
+  {{#if selectedScene}}
+    <div class="form-group slim">
+      <label>Название</label>
+      <input type="text" name="scene.title" value="{{selectedScene.title}}" />
+    </div>
+    <div class="form-group slim">
+      <label>Режим по умолчанию</label>
+      <select name="scene.defaultMode">
+        {{#each modeOptions}}
+          <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </div>
+    <div class="form-group slim">
+      <label>Стартовый кадр</label>
+      <div class="fbl-vn-target-picker {{#if startFrameInvalid}}is-invalid{{/if}}">
+        <input type="hidden" name="scene.startFrame" value="{{selectedScene.startFrame}}" />
+        <input type="search" data-frame-target-search data-target-field="scene.startFrame" data-allow-empty="false" list="fbl-vn-frame-targets" value="{{startFrameTarget}}" placeholder="Найти стартовый кадр" />
+      </div>
+    </div>
+  {{/if}}
+</section>

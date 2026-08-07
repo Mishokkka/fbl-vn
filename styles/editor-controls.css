@@ -1,0 +1,92 @@
+.fbl-vn-editor .path-field input,
+.fbl-vn-editor .path-field button,
+.fbl-vn-editor .icon-toggle,
+.fbl-vn-frame-tools button {
+  height: var(--vn-control-h);
+  min-height: var(--vn-control-h);
+  max-height: var(--vn-control-h);
+}
+
+.fbl-vn-frame-tools button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
+
+.fbl-vn-editor .icon-toggle-field {
+  position: relative;
+  display: grid;
+  grid-template-rows: var(--vn-label-h) var(--vn-control-h);
+  row-gap: var(--vn-field-label-gap);
+  width: 34px;
+  min-width: 34px;
+  align-self: start;
+  cursor: pointer;
+}
+
+.fbl-vn-editor .field-label-spacer {
+  display: block;
+  height: var(--vn-label-h);
+}
+
+.fbl-vn-editor .icon-toggle-field input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fbl-vn-editor .icon-toggle {
+  width: 34px;
+  min-width: 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--vn-border);
+  border-radius: var(--vn-radius-sm);
+  background: var(--vn-control);
+  color: var(--vn-muted);
+}
+
+.fbl-vn-editor .icon-toggle-field:hover .icon-toggle {
+  border-color: rgba(182, 138, 74, 0.72);
+  background: var(--vn-control-hover);
+  color: var(--vn-text);
+}
+
+.fbl-vn-editor .icon-toggle-field input[type="checkbox"]:checked + .icon-toggle {
+  border-color: rgba(182, 138, 74, 0.85);
+  background: rgba(182, 138, 74, 0.20);
+  color: var(--vn-text);
+  box-shadow: inset 0 0 0 1px rgba(182, 138, 74, 0.24);
+}
+
+.fbl-vn-editor :is(input, select, textarea).is-invalid,
+.fbl-vn-editor .fbl-vn-target-picker.is-invalid input[type="search"] {
+  border-color: rgba(226, 95, 95, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(226, 95, 95, 0.24);
+}
+
+.fbl-vn-editor :is(input, select, textarea).is-warning {
+  border-color: rgba(216, 180, 110, 0.72);
+}
+
+.fbl-vn-editor option.is-invalid-option {
+  color: #ffb8b8;
+}
+
+.fbl-vn-editor .fbl-vn-row-icon {
+  width: 34px;
+  min-width: 34px;
+  height: var(--vn-control-h);
+  min-height: var(--vn-control-h);
+  max-height: var(--vn-control-h);
+  padding: 0;
+}
+
+.fbl-vn-editor .fbl-vn-row-icon.unlabeled {
+  align-self: end;
+}

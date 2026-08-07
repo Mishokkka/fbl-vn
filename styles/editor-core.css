@@ -1,0 +1,159 @@
+.fbl-vn-editor-app {
+  --vn-frame-row-h: 26px;
+  --vn-frame-col-w: 360px;
+  min-width: 1180px;
+  min-height: 660px;
+}
+
+.fbl-vn-editor-app .window-header {
+  gap: 6px;
+}
+
+.fbl-vn-editor-app .window-header .fbl-vn-editor-header-actions {
+  order: 90;
+}
+
+.fbl-vn-editor-app .window-header [data-action="close"],
+.fbl-vn-editor-app .window-header .header-control.close,
+.fbl-vn-editor-app .window-header .close,
+.fbl-vn-editor-app .window-header .window-controls {
+  order: 100;
+}
+
+.fbl-vn-editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.fbl-vn-editor-header-actions button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-color: rgba(226, 215, 196, 0.18);
+  background: rgba(12, 13, 15, 0.55);
+  color: var(--vn-soft, #d8cdbb);
+}
+
+.fbl-vn-editor-header-actions button > i {
+  color: currentColor;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
+}
+
+.fbl-vn-editor-header-actions button:hover,
+.fbl-vn-editor-header-actions button:focus-visible {
+  border-color: rgba(226, 215, 196, 0.42);
+  background: rgba(43, 46, 51, 0.92);
+  color: var(--vn-text, #f2eadc);
+}
+
+.fbl-vn-editor-header-actions button:focus-visible {
+  outline: 2px solid var(--vn-accent, #b68a4a);
+  outline-offset: 1px;
+}
+
+/* Lightweight modal dialogs used by branch controls */
+.fbl-vn-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.fbl-vn-modal-backdrop,
+.fbl-vn-modal-backdrop * {
+  box-sizing: border-box;
+}
+
+.fbl-vn-modal {
+  width: min(460px, calc(100vw - 48px));
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(226, 215, 196, 0.22);
+  border-radius: 8px;
+  background: #151719;
+  color: #efe8db;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.58);
+  font-family: var(--font-primary, "Signika", Arial, sans-serif);
+}
+
+.fbl-vn-modal header,
+.fbl-vn-modal footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #202328;
+}
+
+.fbl-vn-modal header {
+  border-bottom: 1px solid rgba(226, 215, 196, 0.14);
+}
+
+.fbl-vn-modal footer {
+  justify-content: flex-end;
+  border-top: 1px solid rgba(226, 215, 196, 0.14);
+}
+
+.fbl-vn-modal-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.fbl-vn-modal-field {
+  display: grid;
+  gap: 5px;
+}
+
+.fbl-vn-modal-field > span,
+.fbl-vn-modal-note {
+  color: #a79f91;
+  font-size: 12px;
+}
+
+.fbl-vn-modal-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #efe8db;
+}
+
+.fbl-vn-modal input:not([type="radio"]),
+.fbl-vn-modal select {
+  width: 100%;
+  height: 32px;
+  padding: 6px 8px;
+  border: 1px solid rgba(226, 215, 196, 0.18);
+  border-radius: 6px;
+  background: #090a0c;
+  color: #efe8db;
+  color-scheme: dark;
+}
+
+.fbl-vn-modal button {
+  min-width: 88px;
+  height: 32px;
+  border: 1px solid rgba(226, 215, 196, 0.18);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #2a2d31, #191b1e);
+  color: #d8cdbb;
+  cursor: pointer;
+}
+
+.fbl-vn-modal button.danger {
+  border-color: rgba(178, 75, 75, 0.55);
+  color: #f0c1c1;
+}
+
+
+@media (max-width: 1240px) {
+  .fbl-vn-editor-app { --vn-frame-col-w: 320px; }
+}

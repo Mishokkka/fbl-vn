@@ -1,0 +1,57 @@
+<section class="fbl-vn-ui fbl-vn-asset-picker">
+  <header class="fbl-vn-asset-current">
+    <div class="form-group path-field">
+      <label>{{fieldLabel}}</label>
+      <input type="text" data-current-path value="{{currentPath}}" placeholder="Путь к файлу" />
+      <button type="button" data-action="browse" title="Выбрать через FilePicker" aria-label="Выбрать через FilePicker"><i class="fa-solid fa-folder-open"></i></button>
+    </div>
+    <button type="button" data-action="useCurrent" title="Использовать этот путь"><i class="fa-solid fa-check"></i> Использовать</button>
+    <button type="button" data-action="addFavorite" title="Добавить в избранное"><i class="fa-solid fa-star"></i></button>
+  </header>
+
+  <main class="fbl-vn-asset-body">
+    <section class="fbl-vn-asset-section">
+      <h3>Избранное</h3>
+      <div class="fbl-vn-asset-list">
+        {{#if hasFavorites}}
+          {{#each favorites}}
+            <div class="fbl-vn-asset-row">
+              <button type="button" class="asset-main" data-action="selectAsset" data-path="{{path}}" data-label="{{label}}" title="{{path}}">
+                {{#if ../isImage}}<i class="fa-regular fa-image"></i>{{/if}}
+                {{#if ../isAudio}}<i class="fa-solid fa-music"></i>{{/if}}
+                <span>{{label}}</span>
+                <small>{{path}}</small>
+              </button>
+              <button type="button" data-action="toggleFavorite" data-asset-id="{{id}}" title="Убрать из избранного"><i class="fa-solid fa-star"></i></button>
+              <button type="button" data-action="deleteAsset" data-asset-id="{{id}}" title="Удалить из библиотеки"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          {{/each}}
+        {{else}}
+          <p class="empty">Избранных ассетов нет.</p>
+        {{/if}}
+      </div>
+    </section>
+
+    <section class="fbl-vn-asset-section">
+      <h3>Последние</h3>
+      <div class="fbl-vn-asset-list">
+        {{#if hasRecent}}
+          {{#each recent}}
+            <div class="fbl-vn-asset-row">
+              <button type="button" class="asset-main" data-action="selectAsset" data-path="{{path}}" data-label="{{label}}" title="{{path}}">
+                {{#if ../isImage}}<i class="fa-regular fa-image"></i>{{/if}}
+                {{#if ../isAudio}}<i class="fa-solid fa-music"></i>{{/if}}
+                <span>{{label}}</span>
+                <small>{{path}}</small>
+              </button>
+              <button type="button" data-action="toggleFavorite" data-asset-id="{{id}}" title="Избранное"><i class="{{#if favorite}}fa-solid{{else}}fa-regular{{/if}} fa-star"></i></button>
+              <button type="button" data-action="deleteAsset" data-asset-id="{{id}}" title="Удалить из библиотеки"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          {{/each}}
+        {{else}}
+          <p class="empty">История пуста. Выбери файл через папку или введи путь вручную.</p>
+        {{/if}}
+      </div>
+    </section>
+  </main>
+</section>
