@@ -168,6 +168,51 @@ await editor._enqueueEditorAction(() => {
 });
 assert.equal(queuedRenderFinished, true, "Editor action queue must wait for render work started by the action");
 
+// DOM event data used by queued editor work must be captured synchronously.
+let queuedCharacterOperation = null;
+let appliedCharacterId = null;
+const characterSelect = {
+  value: "character-a",
+  addEventListener(type, listener) { if (type === "change") this.listener = listener; }
+};
+const portraitSelect = {
+  value: "portrait-a",
+  addEventListener(type, listener) { if (type === "change") this.listener = listener; }
+};
+editor._enqueueEditorAction = operation => { queuedCharacterOperation = operation; return Promise.resolve(); };
+editor._applyCharacterPreset = async characterId => { appliedCharacterId = characterId; };
+editor._applyCharacterPortrait = async () => {};
+editor._enableCharacterControls({
+  querySelector(selector) {
+    if (selector === "[data-character-select]") return characterSelect;
+    if (selector === "[data-character-portrait-select]") return portraitSelect;
+    return null;
+  }
+});
+characterSelect.listener({ currentTarget: characterSelect });
+characterSelect.value = "character-b";
+await queuedCharacterOperation();
+assert.equal(appliedCharacterId, "character-a", "Queued character selection must use the value captured during the change event");
+
+const savedOpenGraph = VNEditorApp._onOpenGraph;
+let headerTargetSeen = null;
+VNEditorApp._onOpenGraph = async (_event, target) => { headerTargetSeen = target; };
+const headerTarget = { dataset: { vnHeaderAction: "graph" } };
+const deferredHeaderEvent = { currentTarget: null, preventDefault() {}, stopPropagation() {} };
+await editor._handleHeaderAction(deferredHeaderEvent, headerTarget);
+assert.equal(headerTargetSeen, headerTarget, "Queued header actions must use the captured button rather than event.currentTarget");
+VNEditorApp._onOpenGraph = savedOpenGraph;
+
+const unsavedPresetScene = structuredClone(scene);
+unsavedPresetScene.frames[0].speaker = "";
+let invalidPresetRenders = 0;
+const presetEditor = Object.create(VNEditorApp.prototype);
+presetEditor.selectedFrameId = unsavedPresetScene.frames[0].id;
+presetEditor._commitFromForm = async () => unsavedPresetScene;
+presetEditor._renderEditorParts = () => { invalidPresetRenders += 1; };
+await VNEditorApp._onSaveCharacterPreset.call(presetEditor, { preventDefault() {} }, {});
+assert.equal(invalidPresetRenders, 0, "Invalid character preset save must not re-render away pending form edits");
+
 const largeScene = structuredClone(scene);
 largeScene.frameFolders = [];
 largeScene.frames = [];
@@ -274,6 +319,19 @@ assert.equal(player._getNextFrameId(nested), "frame-root", "Matched routing must
 player.counterState = { [routeCounter.id]: 1 };
 assert.equal(player._getNextFrameId(nested), null, "An empty outcome on the last frame must fall back to sequential end");
 
+const closePolicyPlayer = Object.create(VNPlayerApp.prototype);
+const savedCurrentUser = game.user;
+const closePolicyUser = { id: "player-close", isGM: false };
+game.user = closePolicyUser;
+closePolicyPlayer.leaderId = "gm-close";
+closePolicyPlayer.mode = PLAYER_MODES.INDIVIDUAL;
+assert.equal(closePolicyPlayer._canCloseLocally(), true, "A non-leader player must be able to exit a shared INDIVIDUAL cutscene locally");
+closePolicyPlayer.mode = PLAYER_MODES.GM;
+assert.equal(closePolicyPlayer._canCloseLocally(), false, "A non-leader player must not gain the synchronized GM close authority");
+closePolicyPlayer.leaderId = closePolicyUser.id;
+assert.equal(closePolicyPlayer._canCloseLocally(), true, "The session leader must retain the close affordance");
+game.user = savedCurrentUser;
+
 const graph = Object.create(VNGraphApp.prototype);
 graph.hideLinearFrames = false;
 const graphData = graph._buildGraph(scene);
@@ -321,7 +379,7 @@ const interleavedIssues = validateScene(interleaved);
 assert.equal(interleavedIssues.some(issue => issue.code === "terminal-frame" && issue.frameId === a1.id), false, "A non-terminal frame must find the next frame inside its own branch");
 assert.equal(interleavedIssues.some(issue => issue.code === "terminal-frame" && issue.frameId === b1.id), false, "Interleaved branch frames must use branch-local sequential routing");
 
-// Native socket trust guards prevent accidental authority conflicts, but are not a cryptographic sender proof.
+// GM-command authorization is checked against the server-supplied socket callback sender id.
 const gm1 = { id: "gm-1", isGM: true, active: true };
 const gm2 = { id: "gm-2", isGM: true, active: true };
 const playerUser = { id: "player-1", isGM: false, active: true };
@@ -338,6 +396,47 @@ assert.equal(VNSocket._isTrustedGmCommand("open", { sceneId: "scene-new" }, play
 assert.equal(VNSceneStore._isStorageAuthority(), true, "Foundry activeGM should own private storage initialization");
 game.user = gm2;
 assert.equal(VNSceneStore._isStorageAuthority(), false, "A second GM must not race private storage creation");
+game.user = gm1;
+
+// Concurrent storage initialization must share a single in-flight operation.
+const savedReady = game.ready;
+const savedJournal = game.journal;
+const savedInitializeStorageInner = VNSceneStore._initializeStorageInner;
+game.ready = true;
+game.journal = {};
+VNSceneStore._storageReady = false;
+VNSceneStore._storageDocument = null;
+VNSceneStore._storageInitPromise = null;
+let storageInitCalls = 0;
+const storageDocument = { id: "storage-test" };
+VNSceneStore._initializeStorageInner = async () => {
+  storageInitCalls += 1;
+  await new Promise(resolve => setTimeout(resolve, 5));
+  return storageDocument;
+};
+const [storageA, storageB] = await Promise.all([VNSceneStore.initializeStorage(), VNSceneStore.initializeStorage()]);
+assert.equal(storageInitCalls, 1, "Concurrent storage initialization must execute only once");
+assert.equal(storageA, storageDocument);
+assert.equal(storageB, storageDocument);
+VNSceneStore._initializeStorageInner = savedInitializeStorageInner;
+VNSceneStore._storageInitPromise = null;
+VNSceneStore._storageReady = false;
+VNSceneStore._storageDocument = null;
+game.ready = savedReady;
+game.journal = savedJournal;
+
+// Privileged socket commands must use Foundry's callback sender id, not a spoofable payload field.
+let trustedAdvanceCalls = 0;
+VNSocket.handlers = { advance: () => { trustedAdvanceCalls += 1; } };
+VNSocket.activeLeaders.clear();
+VNSocket.activeLeaders.set("scene-auth", gm1.id);
+game.user = gm2;
+VNSocket._onMessage({ type: "advance", senderId: gm1.id, data: { sceneId: "scene-auth" } }, playerUser.id);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(trustedAdvanceCalls, 0, "A forged payload senderId must not authorize a player command");
+VNSocket._onMessage({ type: "advance", senderId: playerUser.id, data: { sceneId: "scene-auth" } }, gm1.id);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(trustedAdvanceCalls, 1, "The server-supplied GM sender id must authorize the active leader");
 game.user = gm1;
 
 const votePlayer = Object.create(VNPlayerApp.prototype);

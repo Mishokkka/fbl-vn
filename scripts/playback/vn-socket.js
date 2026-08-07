@@ -4,7 +4,7 @@ import { wait } from "../utils/foundry-helpers.js";
 export class VNSocket {
     static registerHandlers(handlers) {
         this.handlers = handlers ?? {};
-        game.socket.on(SOCKET_NAME, payload => this._onMessage(payload));
+        game.socket.on(SOCKET_NAME, (payload, senderId) => this._onMessage(payload, senderId));
         if (!this._userConnectedHookId) {
             this._userConnectedHookId = Hooks.on("userConnected", (user, connected) => this._onUserConnected(user, connected));
         }
@@ -13,15 +13,14 @@ export class VNSocket {
     static emit(type, data = {}) {
         game.socket.emit(SOCKET_NAME, {
             type,
-            senderId: game.user.id,
             timestamp: Date.now(),
             data
         });
     }
 
-    static _onMessage(payload) {
-        if (!payload || payload.senderId === game.user.id) return;
-        const { type, data = {}, senderId } = payload;
+    static _onMessage(payload, senderId) {
+        if (!payload || !senderId || senderId === game.user.id) return;
+        const { type, data = {} } = payload;
         if (!this._isTargeted(data)) return;
         switch (type) {
             case "open":

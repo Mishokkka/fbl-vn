@@ -1,4 +1,4 @@
-# FBL Visual Novel Cutscenes 1.0.2
+# FBL Visual Novel Cutscenes 1.0.3
 
 Модуль для Foundry VTT v13, добавляющий редактор и синхронный полноэкранный плеер катсцен в стиле визуальных новелл. Целевая среда: Foundry VTT 13.351 и Forbidden Lands 13.0.5.
 
