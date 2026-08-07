@@ -59,7 +59,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._keyboardElement = null;
         this._onKeyboardKeydown = event => {
             if (event.repeat || this._isKeyboardControlTarget(event.target)) return;
-            if (event.key === "Escape" && this._isLeader()) {
+            if (event.key === "Escape" && this._canCloseLocally()) {
                 event.preventDefault();
                 void this.finish();
                 return;
@@ -349,6 +349,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
+    _canCloseLocally() {
+        return this._isLeader() || this.mode === PLAYER_MODES.INDIVIDUAL;
+    }
+
     async _prepareContext(options) {
         const context = await super._prepareContext(options);
         const frame = this._getFrame(this.currentFrameId);
@@ -384,6 +388,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             isGmMode: this.mode === PLAYER_MODES.GM,
             isVoteMode,
             isLeader: this._isLeader(),
+            canClose: this._canCloseLocally(),
             portraitClass: `portrait-${portraitPosition}`,
             portraitSrc: this.visualState.portrait,
             portraitAlt: frame && frame.speaker ? frame.speaker : "",

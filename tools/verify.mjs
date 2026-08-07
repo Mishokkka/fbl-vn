@@ -75,8 +75,20 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.0.2") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.0.2")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.0.3") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.0.3")) errors.push("README release heading is out of sync with manifest");
+for (const forbidden of [
+  "_applyCharacterPreset(event.currentTarget",
+  "_applyCharacterPortrait(event.currentTarget",
+  "_handleHeaderAction(event))",
+  "_onSelectBranch.call(this, event, event.currentTarget"
+]) {
+  if (editorSource.includes(forbidden)) errors.push(`Queued editor callback still depends on event.currentTarget: ${forbidden}`);
+}
+const socketSource = read("scripts/playback/vn-socket.js");
+if (!/game\.socket\.on\(SOCKET_NAME, \(payload, senderId\) => this\._onMessage\(payload, senderId\)\)/.test(socketSource)) errors.push("Socket listener does not consume Foundry's trusted sender id callback argument");
+if (/senderId\s*:\s*game\.user\.id/.test(socketSource)) errors.push("Socket payload still publishes a client-supplied senderId");
+if (/clip\s*:\s*rect\(/.test(read("styles/editor-components.css"))) errors.push("Deprecated CSS clip property remains");
 
 function splitSelectors(header) {
   const result = [];

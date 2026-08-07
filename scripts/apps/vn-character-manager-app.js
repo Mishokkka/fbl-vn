@@ -131,7 +131,9 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
             current: input.value || "",
             label: "Портрет",
             onSelect: async (path) => {
-                input.value = path;
+                const freshInput = this.element ? this.element.querySelector(`[name='${inputName}']`) : null;
+                if (!freshInput) return;
+                freshInput.value = path;
                 await this._commitCharacters();
                 this._refreshEditor();
             }

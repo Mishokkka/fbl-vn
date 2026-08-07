@@ -141,6 +141,14 @@ export class VNSceneStore {
         }
         if (this._storageReady && this._storageDocument) return this._storageDocument;
         if (!game.ready || !game.journal) return null;
+        if (this._storageInitPromise) return this._storageInitPromise;
+        this._storageInitPromise = this._initializeStorageInner().finally(() => {
+            this._storageInitPromise = null;
+        });
+        return this._storageInitPromise;
+    }
+
+    static async _initializeStorageInner() {
         this._bindStorageHooks();
         let document = this._findStorageDocument();
         const legacyStored = game.settings.get(MODULE_ID, SETTINGS.DATA) || duplicateData(DEFAULT_DATA);
@@ -496,5 +504,6 @@ VNSceneStore._characterById = null;
 VNSceneStore._storageDocument = null;
 VNSceneStore._storageReady = false;
 VNSceneStore._storageHooksBound = false;
+VNSceneStore._storageInitPromise = null;
 
 VNSceneStore._mutationQueue = Promise.resolve();

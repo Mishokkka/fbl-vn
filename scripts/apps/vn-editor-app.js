@@ -651,11 +651,13 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!root) return;
         const characterSelect = root.querySelector("[data-character-select]");
         const portraitSelect = root.querySelector("[data-character-portrait-select]");
-        if (characterSelect) characterSelect.addEventListener("change", event => {
-            void this._enqueueEditorAction(() => this._applyCharacterPreset(event.currentTarget.value, ""));
+        if (characterSelect) characterSelect.addEventListener("change", () => {
+            const characterId = characterSelect.value;
+            void this._enqueueEditorAction(() => this._applyCharacterPreset(characterId, ""));
         });
-        if (portraitSelect) portraitSelect.addEventListener("change", event => {
-            void this._enqueueEditorAction(() => this._applyCharacterPortrait(event.currentTarget.value));
+        if (portraitSelect) portraitSelect.addEventListener("change", () => {
+            const portraitId = portraitSelect.value;
+            void this._enqueueEditorAction(() => this._applyCharacterPortrait(portraitId));
         });
     }
 
@@ -760,7 +762,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             button.setAttribute("aria-label", spec[1]);
             button.innerHTML = `<i class="${spec[2]}"></i>`;
             button.addEventListener("click", event => {
-                void this._enqueueEditorAction(() => this._handleHeaderAction(event));
+                event.preventDefault();
+                event.stopPropagation();
+                void this._enqueueEditorAction(() => this._handleHeaderAction(event, button));
             });
             bar.appendChild(button);
         }
@@ -800,17 +804,17 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return control;
     }
 
-    async _handleHeaderAction(event) {
+    async _handleHeaderAction(event, target) {
         event.preventDefault();
         event.stopPropagation();
-        const action = event.currentTarget ? event.currentTarget.dataset.vnHeaderAction : "";
-        if (action === "save") return VNEditorApp._onSave.call(this, event, event.currentTarget);
-        if (action === "counters") return VNEditorApp._onOpenCounterManager.call(this, event, event.currentTarget);
-        if (action === "preview") return VNEditorApp._onPreview.call(this, event, event.currentTarget);
-        if (action === "startIndividual") return VNEditorApp._onStartIndividual.call(this, event, event.currentTarget);
-        if (action === "startGm") return VNEditorApp._onStartGm.call(this, event, event.currentTarget);
-        if (action === "startVote") return VNEditorApp._onStartVote.call(this, event, event.currentTarget);
-        if (action === "graph") return VNEditorApp._onOpenGraph.call(this, event, event.currentTarget);
+        const action = target ? target.dataset.vnHeaderAction : "";
+        if (action === "save") return VNEditorApp._onSave.call(this, event, target);
+        if (action === "counters") return VNEditorApp._onOpenCounterManager.call(this, event, target);
+        if (action === "preview") return VNEditorApp._onPreview.call(this, event, target);
+        if (action === "startIndividual") return VNEditorApp._onStartIndividual.call(this, event, target);
+        if (action === "startGm") return VNEditorApp._onStartGm.call(this, event, target);
+        if (action === "startVote") return VNEditorApp._onStartVote.call(this, event, target);
+        if (action === "graph") return VNEditorApp._onOpenGraph.call(this, event, target);
     }
 
     _enableBranchControls(root = this.element) {
@@ -819,7 +823,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const select = root.querySelector("[data-branch-select]");
         if (select) {
             select.addEventListener("change", event => {
-                void this._enqueueEditorAction(() => VNEditorApp._onSelectBranch.call(this, event, event.currentTarget));
+                const branchId = select.value;
+                void this._enqueueEditorAction(() => VNEditorApp._onSelectBranch.call(this, event, select, branchId));
             });
         }
         if (!panel) return;
@@ -1649,11 +1654,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._renderEditorParts(["frames"]);
     }
 
-    static async _onSelectBranch(event, target) {
+    static async _onSelectBranch(event, target, requestedBranchId = null) {
         event.preventDefault();
         const scene = await this._commitFromForm();
         if (!scene) return;
-        const branchId = target.dataset.branchId || target.value || "";
+        const branchId = requestedBranchId !== null ? requestedBranchId : (target.dataset.branchId || target.value || "");
         const branch = (scene.branches || []).find(item => item.id === branchId);
         if (!branch) return;
         this.selectedBranchId = branch.id;
@@ -2035,7 +2040,6 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         frame.portrait = String(frame.portrait || "").trim();
         if (!frame.speaker) {
             notifyWarn("VN: укажи имя говорящего перед сохранением пресета.");
-            this._renderEditorParts(["frames", "framePanel"]);
             return;
         }
         const portraitLabel = frame.portrait ? this._labelFromPath(frame.portrait, "Основной") : "Без портрета";
