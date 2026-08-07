@@ -52,8 +52,8 @@ export class VNAudioController {
     playSfx(path) {
         if (!path) return;
         const volume = this.getSfxVolume();
-        if (foundry.audio && foundry.audio.AudioHelper && foundry.audio.AudioHelper.play) {
-            foundry.audio.AudioHelper.play({ src: path, volume, autoplay: true, loop: false }, true);
+        if (foundry.audio?.AudioHelper?.play) {
+            foundry.audio.AudioHelper.play({ src: path, volume, autoplay: true, loop: false }, false);
             return;
         }
         const audio = new Audio(path);
@@ -116,35 +116,7 @@ export class VNAudioController {
         if (this._externalPaused) return;
         this._externalPaused = true;
         this._externalSnapshots = [];
-        this._pauseDomMedia();
         this._pauseFoundrySounds();
-    }
-
-    _pauseDomMedia() {
-        const media = typeof document !== "undefined" ? [...document.querySelectorAll("audio, video")] : [];
-        for (const item of media) {
-            if (!item || item === this.music || item === this.voice || item.paused) continue;
-            const currentTime = Number(item.currentTime || 0);
-            try {
-                item.pause();
-                this._externalSnapshots.push({
-                    type: "media",
-                    resume: () => {
-                        try {
-                            if (Number.isFinite(currentTime)) item.currentTime = currentTime;
-                            const result = item.play?.();
-                            if (result && typeof result.catch === "function") result.catch(error => console.warn(`${MODULE_ID} | Failed to resume external media.`, error));
-                        }
-                        catch (error) {
-                            console.warn(`${MODULE_ID} | Failed to resume external media.`, error);
-                        }
-                    }
-                });
-            }
-            catch (error) {
-                console.warn(`${MODULE_ID} | Failed to pause external media.`, error);
-            }
-        }
     }
 
     _pauseFoundrySounds() {
@@ -155,8 +127,7 @@ export class VNAudioController {
             if (!sound || seen.has(sound)) continue;
             seen.add(sound);
             if (sound === this.music || sound === this.voice) continue;
-            const isPlaying = sound.playing === true || sound.paused === false || sound.loaded === true;
-            if (!isPlaying || typeof sound.pause !== "function") continue;
+            if (sound.playing !== true || typeof sound.pause !== "function") continue;
             try {
                 sound.pause();
                 this._externalSnapshots.push({

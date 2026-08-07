@@ -34,7 +34,7 @@
                         <button type="button" class="folder-toggle" data-action="toggleFolder" data-folder-id="{{id}}" title="Скрыть / раскрыть папку" aria-label="Скрыть / раскрыть папку">
                           {{#if collapsed}}<i class="fa-solid fa-caret-right"></i>{{else}}<i class="fa-solid fa-caret-down"></i>{{/if}}
                         </button>
-                        <button type="button" class="folder-select" data-action="selectFolder" data-folder-id="{{id}}" title="Выбрать папку"><i class="fa-solid fa-folder"></i><strong>{{name}}</strong></button>
+                        <button type="button" class="folder-select" data-action="selectFolder" data-folder-id="{{id}}" title="Выбрать папку" aria-label="Выбрать папку"><i class="fa-solid fa-folder"></i><strong>{{name}}</strong></button>
                       </div>
                       <button type="button" class="tree-icon" data-action="addFolder" data-parent-id="{{id}}" title="Создать подпапку" aria-label="Создать подпапку"><i class="fa-solid fa-folder-plus"></i></button>
                       <button type="button" class="tree-icon" data-action="editFolder" data-folder-id="{{id}}" title="Редактировать папку" aria-label="Редактировать папку"><i class="fa-solid fa-pen"></i></button>
@@ -43,7 +43,7 @@
                   </div>
                 {{/if}}
                 {{#if isFrame}}
-                  <button type="button" draggable="true" class="fbl-vn-tree-item fbl-vn-frame frame-type-{{type}} {{#if selected}}is-selected{{/if}}" data-tree-item data-item-type="frame" data-item-id="{{id}}" data-action="selectFrame" data-frame-id="{{id}}" title="{{label}}" style="--depth: {{depth}}; --indent: {{indent}}px;">
+                  <button type="button" draggable="true" class="fbl-vn-tree-item fbl-vn-frame frame-type-{{type}} {{#if selected}}is-selected{{/if}}" data-tree-item data-item-type="frame" data-item-id="{{id}}" data-action="selectFrame" data-frame-id="{{id}}" title="{{label}}" style="--depth: {{depth}}; --indent: {{indent}}px;" aria-label="{{label}}">
                     <span class="folder-indent"></span>
                     <span class="index">{{index}})</span>
                     <strong>{{label}}</strong>

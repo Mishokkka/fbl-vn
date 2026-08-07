@@ -32,8 +32,8 @@ export class VNAssetPickerApp extends HandlebarsApplicationMixin(ApplicationV2) 
         });
     }
 
-    _onRender(context, options) {
-        super._onRender(context, options);
+    async _onRender(context, options) {
+        await super._onRender(context, options);
         const input = this.element ? this.element.querySelector("[data-current-path]") : null;
         if (input && input.dataset.vnPathBound !== "true") {
             input.dataset.vnPathBound = "true";
@@ -76,7 +76,8 @@ export class VNAssetPickerApp extends HandlebarsApplicationMixin(ApplicationV2) 
             current: this._readCurrentPath(),
             callback: async (path) => {
                 this.currentPath = path || "";
-                this.render();
+                const input = this.element?.querySelector("[data-current-path]");
+                if (input) input.value = this.currentPath;
             }
         }).render(true);
     }

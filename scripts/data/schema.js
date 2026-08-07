@@ -540,8 +540,8 @@ export function createCharacterPreset(name, portraitLabel, portraitPath, default
 export function sanitizeCharacter(character) {
     const clean = duplicateData(character !== null && character !== void 0 ? character : {});
     clean.id || (clean.id = randomId("character"));
-    clean.name = clean.name || "Без имени";
-    clean.defaultPosition = clean.defaultPosition || "center";
+    clean.name = String(clean.name || "Без имени");
+    clean.defaultPosition = String(clean.defaultPosition || "center");
     clean.portraits = Array.isArray(clean.portraits) ? clean.portraits.map(sanitizeCharacterPortrait).filter(portrait => portrait.path || portrait.label) : [];
     return clean;
 }
@@ -660,6 +660,14 @@ export function validateScene(scene) {
     const folderMap = new Map(Array.isArray(scene.frameFolders) ? scene.frameFolders.map(folder => [folder.id, folder]) : []);
     const folderIds = new Set(folderMap.keys());
     const counterIds = new Set(Array.isArray(scene.counters) ? scene.counters.map(counter => counter.id) : []);
+    const nextSequentialById = new Map();
+    const previousByBranch = new Map();
+    for (const frame of frames) {
+        const branchId = frame.branchId || "";
+        const previous = previousByBranch.get(branchId);
+        if (previous?.id && frame.id) nextSequentialById.set(previous.id, frame.id);
+        previousByBranch.set(branchId, frame);
+    }
 
     for (let index = 0; index < frames.length; index += 1) {
         const frame = frames[index];
@@ -713,8 +721,8 @@ export function validateScene(scene) {
             continue;
         }
         if (frame.type !== FRAME_TYPES.CHOICE) {
-            const isLast = index >= frames.length - 1;
-            if (!nextRouting.enabled && !frame.next && isLast) {
+            const hasSequentialNext = nextSequentialById.has(frame.id);
+            if (!nextRouting.enabled && !frame.next && !hasSequentialNext) {
                 issues.push(issue(ISSUE_SEVERITY.WARNING, "terminal-frame", `Кадр «${label}» не имеет следующего кадра и завершит катсцену.`, { frameId: frame.id, field: "frame.next" }));
             }
             continue;
@@ -748,7 +756,7 @@ export function validateScene(scene) {
             if (choice.next && !ids.has(choice.next)) {
                 issues.push(issue(ISSUE_SEVERITY.ERROR, "broken-choice-next", `В кадре «${label}» битый переход у варианта «${choice.text || choiceLabel}»: ${choice.next}.`, { frameId: frame.id, choiceId: choice.id, field: "choice.next", targetId: choice.next }));
             }
-            if (!choice.next && !nextRouting.enabled && index >= frames.length - 1) {
+            if (!choice.next && !nextRouting.enabled && !nextSequentialById.has(frame.id)) {
                 issues.push(issue(ISSUE_SEVERITY.WARNING, "choice-terminal", `В кадре «${label}» вариант «${choice.text || choiceLabel}» не имеет целевого кадра и завершит катсцену.`, { frameId: frame.id, choiceId: choice.id, field: "choice.next" }));
             }
         }

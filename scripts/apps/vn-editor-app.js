@@ -24,6 +24,11 @@ const EDITOR_PART_IDS = Object.freeze([
 ]);
 const EDITOR_WORKSPACE_PART_IDS = Object.freeze(["resources", "scenes", "frames", "sceneHead", "framePanel"]);
 
+function queuedEditorAction(handler) {
+    return function queuedAction(event, target) {
+        return this._enqueueEditorAction(() => handler.call(this, event, target));
+    };
+}
 
 export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     constructor(options = {}) {
@@ -39,6 +44,24 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._dragFrameId = null;
         this._dragTreeItem = null;
         this._pendingRenderParts = new Set();
+        this._actionQueue = Promise.resolve();
+        this._renderQueue = Promise.resolve();
+        this._lastValidationSnapshot = null;
+        this._lastFrameTargetSceneId = null;
+        this._lastFrameTargetEntries = null;
+    }
+
+    _enqueueEditorAction(operation) {
+        const execute = async () => {
+            const result = await operation();
+            await this._renderQueue;
+            return result;
+        };
+        const run = this._actionQueue.then(execute, execute);
+        this._actionQueue = run.catch(error => {
+            console.error(`${MODULE_ID} | Editor action failed.`, error);
+        });
+        return run;
     }
 
     get selectedScene() {
@@ -55,6 +78,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     async _prepareContext(options) {
         const context = await super._prepareContext(options);
         const state = this._prepareEditorState();
+        const issues = state.selectedScene ? this._issuesForState(state) : [];
+        this._lastValidationSnapshot = { sceneId: state.selectedScene?.id || null, issues };
         Object.defineProperty(context, EDITOR_CONTEXT_STATE, { value: state, configurable: true });
         return Object.assign(context, {
             selectedScene: state.selectedScene,
@@ -117,6 +142,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _renderIndexForState(state) {
         if (!state.renderIndex) state.renderIndex = this._buildRenderIndex(state.selectedScene, this._issuesForState(state));
+        this._lastFrameTargetSceneId = state.selectedScene?.id || null;
+        this._lastFrameTargetEntries = state.renderIndex.frameTargetEntries;
         return state.renderIndex;
     }
 
@@ -564,8 +591,20 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         for (const partId of this._pendingRenderParts || []) requestedSet.add(partId);
         if (this._pendingRenderParts) this._pendingRenderParts.clear();
         const requested = [...requestedSet].filter(partId => EDITOR_PART_IDS.includes(partId));
-        if (!requested.length || !this.rendered || !this.element) return this.render();
-        return this.render({ parts: requested });
+        const perform = () => {
+            if (!requested.length || !this.rendered || !this.element) return this.render();
+            return this.render({ parts: requested });
+        };
+        const run = this._renderQueue.then(perform, perform);
+        this._renderQueue = run.catch(error => {
+            console.error(`${MODULE_ID} | Editor render failed.`, error);
+        });
+        return run;
+    }
+
+    _renderPendingEditorParts() {
+        if (!(this._pendingRenderParts && this._pendingRenderParts.size)) return Promise.resolve(this);
+        return this._renderEditorParts([]);
     }
 
     _markRenderParts(parts) {
@@ -612,12 +651,16 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!root) return;
         const characterSelect = root.querySelector("[data-character-select]");
         const portraitSelect = root.querySelector("[data-character-portrait-select]");
-        if (characterSelect) characterSelect.addEventListener("change", event => this._applyCharacterPreset(event.currentTarget.value, ""));
-        if (portraitSelect) portraitSelect.addEventListener("change", event => this._applyCharacterPortrait(event.currentTarget.value));
+        if (characterSelect) characterSelect.addEventListener("change", event => {
+            void this._enqueueEditorAction(() => this._applyCharacterPreset(event.currentTarget.value, ""));
+        });
+        if (portraitSelect) portraitSelect.addEventListener("change", event => {
+            void this._enqueueEditorAction(() => this._applyCharacterPortrait(event.currentTarget.value));
+        });
     }
 
     async _applyCharacterPreset(characterId, portraitId) {
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         if (!scene || !frame) return;
         const character = VNSceneStore.getCharacter(characterId);
@@ -644,7 +687,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     async _applyCharacterPortrait(portraitId) {
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         if (!scene || !frame || !frame.characterId) return;
         const character = VNSceneStore.getCharacter(frame.characterId);
@@ -716,7 +759,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             button.title = spec[1];
             button.setAttribute("aria-label", spec[1]);
             button.innerHTML = `<i class="${spec[2]}"></i>`;
-            button.addEventListener("click", event => this._handleHeaderAction(event));
+            button.addEventListener("click", event => {
+                void this._enqueueEditorAction(() => this._handleHeaderAction(event));
+            });
             bar.appendChild(button);
         }
         const close = header.querySelector("[data-action='close'], .header-control.close, .close");
@@ -729,7 +774,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _buildHeaderValidationControl() {
         const scene = this.selectedScene;
         if (!scene) return null;
-        const issues = validateScene(scene);
+        const cached = this._lastValidationSnapshot;
+        const issues = cached?.sceneId === scene.id ? cached.issues : validateScene(scene);
         const errors = issues.filter(issue => issue.severity === "error");
         const warnings = issues.filter(issue => issue.severity === "warning");
         const control = document.createElement("button");
@@ -773,7 +819,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const select = root.querySelector("[data-branch-select]");
         if (select) {
             select.addEventListener("change", event => {
-                VNEditorApp._onSelectBranch.call(this, event, event.currentTarget);
+                void this._enqueueEditorAction(() => VNEditorApp._onSelectBranch.call(this, event, event.currentTarget));
             });
         }
         if (!panel) return;
@@ -781,11 +827,13 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             button.addEventListener("click", event => {
                 event.preventDefault();
                 event.stopPropagation();
-                const action = button.dataset.branchAction;
-                if (action === "renameBranch") return VNEditorApp._onRenameBranch.call(this, event, button);
-                if (action === "duplicateBranch") return VNEditorApp._onDuplicateBranch.call(this, event, button);
-                if (action === "deleteBranch") return VNEditorApp._onDeleteBranch.call(this, event, button);
-                if (action === "addBranch") return VNEditorApp._onAddBranch.call(this, event, button);
+                void this._enqueueEditorAction(() => {
+                    const action = button.dataset.branchAction;
+                    if (action === "renameBranch") return VNEditorApp._onRenameBranch.call(this, event, button);
+                    if (action === "duplicateBranch") return VNEditorApp._onDuplicateBranch.call(this, event, button);
+                    if (action === "deleteBranch") return VNEditorApp._onDeleteBranch.call(this, event, button);
+                    if (action === "addBranch") return VNEditorApp._onAddBranch.call(this, event, button);
+                });
             });
         }
     }
@@ -793,9 +841,13 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _enableFrameTargetControls(root = this.element) {
         if (!root) return;
         const scene = this.selectedScene;
-        const entries = this._frameTargetEntries(scene);
-        const byLabel = new Map(entries.map(entry => [entry.label, entry.id]));
+        const entries = this._lastFrameTargetSceneId === scene?.id && Array.isArray(this._lastFrameTargetEntries)
+            ? this._lastFrameTargetEntries
+            : this._frameTargetEntries(scene);
         const byId = new Map(entries.map(entry => [entry.id, entry.label]));
+        const labelCounts = new Map();
+        for (const entry of entries) labelCounts.set(entry.label, (labelCounts.get(entry.label) || 0) + 1);
+        const byLabel = new Map(entries.filter(entry => labelCounts.get(entry.label) === 1).map(entry => [entry.label, entry.id]));
         const bindSearch = (input) => {
             if (!input) return;
             const resolveHidden = () => {
@@ -812,8 +864,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     if (input.dataset.allowEmpty !== "false") hidden.value = "";
                     return;
                 }
-                if (byLabel.has(raw)) hidden.value = byLabel.get(raw);
-                else if (byId.has(raw)) hidden.value = raw;
+                if (byId.has(raw)) hidden.value = raw;
+                else if (byLabel.has(raw)) hidden.value = byLabel.get(raw);
             };
             const normalize = () => {
                 const hidden = resolveHidden();
@@ -935,8 +987,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
-    async _moveTreeItem(sourceType, sourceId, targetType, targetId, placement) {
-        const scene = await this._commitFromForm();
+    async _moveTreeItem(sourceType, sourceId, targetType, targetId, placement, sceneOverride = null) {
+        const scene = sceneOverride || await this._commitFromForm({ persist: false });
         if (!scene || !sourceType || !sourceId) return;
         if (sourceType === targetType && sourceId === targetId) return;
         scene.frameFolders = Array.isArray(scene.frameFolders) ? scene.frameFolders : [];
@@ -1203,7 +1255,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return !this._sameData(sanitizeScene(current), cleanScene);
     }
 
-    async _commitFromForm() {
+    async _commitFromForm({ persist = true } = {}) {
         const originalScene = this.selectedScene;
         const scene = duplicateData(originalScene);
         if (!scene || !this.element) return scene;
@@ -1272,7 +1324,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         const clean = sanitizeScene(scene);
         this._trackCommittedFormChanges(originalScene, clean, this.selectedFrameId);
-        const saved = this._sceneChanged(clean) ? await VNSceneStore.upsertScene(clean) : clean;
+        const changed = this._sceneChanged(clean);
+        const saved = persist && changed ? await VNSceneStore.upsertScene(clean) : clean;
         this.selectedSceneId = saved.id;
         const currentFrame = saved.frames.find(item => item.id === this.selectedFrameId);
         if (!currentFrame) this.selectedFrameId = saved.frames[0] ? saved.frames[0].id : null;
@@ -1304,7 +1357,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async _saveAndRender() {
         await this._commitFromForm();
-        await this._renderEditorParts();
+        await this._renderPendingEditorParts();
     }
 
     _firstErrorFrameId(scene) {
@@ -1453,7 +1506,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onAddFrame(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene) return;
         const type = target.dataset.type || FRAME_TYPES.DIALOGUE;
         const frame = createFrame(type);
@@ -1488,7 +1541,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDuplicateFrame(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         if (!scene || !frame) return;
         const copy = duplicateData(frame);
@@ -1508,7 +1561,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDeleteFrame(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene || scene.frames.length <= 1) {
             notifyWarn("VN: в катсцене должен остаться хотя бы один кадр.");
             return;
@@ -1534,7 +1587,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onMoveFrame(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const direction = target.dataset.direction === "up" ? -1 : 1;
         if (!scene || !this.selectedFrameId) return;
         const rows = this._buildFrameTreeRows(scene, this._buildFrameViews(scene, new Map()));
@@ -1543,12 +1596,12 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const targetRow = rows[index + direction];
         if (!targetRow) return;
         const placement = direction < 0 ? "before" : "after";
-        await this._moveTreeItem("frame", this.selectedFrameId, targetRow.isFolder ? "folder" : "frame", targetRow.id, placement);
+        await this._moveTreeItem("frame", this.selectedFrameId, targetRow.isFolder ? "folder" : "frame", targetRow.id, placement, scene);
     }
 
     static async _onToggleFolder(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene) return;
         const folderId = target.dataset.folderId || this.selectedFolderId || "";
         const folder = (scene.frameFolders || []).find(item => item.id === folderId);
@@ -1579,7 +1632,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onSaveFolderEdit(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene) return;
         const row = target.closest ? target.closest("[data-tree-item]") : null;
         const folderId = target.dataset.folderId || (row ? row.dataset.itemId : "") || this.editingFolderId || this.selectedFolderId || "";
@@ -1612,7 +1665,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onAddBranch(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene) return;
         scene.branches = Array.isArray(scene.branches) ? scene.branches : [];
         let number = scene.branches.length + 1;
@@ -1634,7 +1687,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onRenameBranch(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene) return;
         const branchId = target.dataset.branchId || this.selectedBranchId || "";
         const branch = (scene.branches || []).find(item => item.id === branchId);
@@ -1660,7 +1713,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDuplicateBranch(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene) return;
         const branchId = target.dataset.branchId || this.selectedBranchId || "";
         const root = (scene.branches || []).find(branch => branch.id === branchId);
@@ -1716,7 +1769,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDeleteBranch(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene) return;
         const branchId = target.dataset.branchId || this.selectedBranchId || "";
         const branch = (scene.branches || []).find(item => item.id === branchId);
@@ -1729,7 +1782,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frameCount = (scene.frames || []).filter(frame => frame.branchId === branchId).length;
         const options = candidates.map((item, index) => `<option value="${escapeHtml(item.id)}" ${index === 0 ? "selected" : ""}>${escapeHtml(item.name || `Ветка ${index + 1}`)}</option>`).join("");
         const result = await formDialog({
-            title: `Удаление ветки «${escapeHtml(branch.name || "Ветка")}»`,
+            title: `Удаление ветки «${branch.name || "Ветка"}»`,
             submitLabel: "Выполнить",
             cancelLabel: "Отмена",
             danger: true,
@@ -1777,7 +1830,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onAddFolder(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         if (!scene) return;
         scene.frameFolders = Array.isArray(scene.frameFolders) ? scene.frameFolders : [];
         const branchId = this.selectedBranchId || (scene.branches && scene.branches[0] ? scene.branches[0].id : "");
@@ -1805,7 +1858,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDeleteFolder(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         const folderId = target.dataset.folderId || this.selectedFolderId || (frame ? frame.folderId : "");
         if (!scene || !folderId) {
@@ -1837,7 +1890,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onAddTextBlock(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         if (!scene || !frame) return;
         frame.textBlocks = Array.isArray(frame.textBlocks) ? frame.textBlocks : [];
@@ -1848,7 +1901,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDeleteTextBlock(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         if (!scene || !frame) return;
         if (!Array.isArray(frame.textBlocks) || frame.textBlocks.length <= 1) {
@@ -1863,7 +1916,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDuplicateTextBlock(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         if (!scene || !frame || !Array.isArray(frame.textBlocks)) return;
         const index = frame.textBlocks.findIndex(block => block.id === target.dataset.textBlockId);
@@ -1877,7 +1930,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onMoveTextBlock(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         if (!scene || !frame || !Array.isArray(frame.textBlocks)) return;
         const direction = target.dataset.direction === "up" ? -1 : 1;
@@ -1892,7 +1945,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onAddChoice(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
         if (!frame) return;
         frame.type = FRAME_TYPES.CHOICE;
@@ -1904,7 +1957,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDeleteChoice(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
         if (!frame) return;
         frame.choices = (frame.choices || []).filter(choice => choice.id !== target.dataset.choiceId);
@@ -1914,7 +1967,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onDuplicateChoice(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
         if (!frame || !Array.isArray(frame.choices)) return;
         const index = frame.choices.findIndex(choice => choice.id === target.dataset.choiceId);
@@ -1929,7 +1982,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onMoveChoice(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
         if (!frame || !Array.isArray(frame.choices)) return;
         const direction = target.dataset.direction === "up" ? -1 : 1;
@@ -1963,16 +2016,19 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             current: input.value || "",
             label: target.dataset.label || target.title || "Ассет",
             onSelect: async (path) => {
-                input.value = path;
-                await VNSceneStore.rememberAsset(type, path, path.split("/").pop());
-                await this._saveAndRender();
+                await this._enqueueEditorAction(async () => {
+                    const freshInput = this.element ? this.element.querySelector(`[name='${field}']`) : null;
+                    if (!freshInput) return;
+                    freshInput.value = path;
+                    await this._saveAndRender();
+                });
             }
         }).render(true);
     }
 
     static async _onSaveCharacterPreset(event, target) {
         event.preventDefault();
-        const scene = await this._commitFromForm();
+        const scene = await this._commitFromForm({ persist: false });
         const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
         if (!scene || !frame) return;
         frame.speaker = String(frame.speaker || "").trim();
@@ -2011,7 +2067,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         event.preventDefault();
         await this._commitFromForm();
         notify("VN: сохранено.");
-        this._renderEditorParts();
+        await this._renderPendingEditorParts();
     }
 
     static async _onOpenCounterManager(event, target) {
@@ -2074,51 +2130,51 @@ VNEditorApp.DEFAULT_OPTIONS = {
         height: 860
     },
     actions: {
-        createScene: VNEditorApp._onCreateScene,
-        createSample: VNEditorApp._onCreateSample,
-        selectScene: VNEditorApp._onSelectScene,
-        duplicateScene: VNEditorApp._onDuplicateScene,
-        deleteScene: VNEditorApp._onDeleteScene,
-        exportScene: VNEditorApp._onExportScene,
-        exportAll: VNEditorApp._onExportAll,
-        importJson: VNEditorApp._onImportJson,
-        addFrame: VNEditorApp._onAddFrame,
-        selectFrame: VNEditorApp._onSelectFrame,
-        selectFolder: VNEditorApp._onSelectFolder,
-        duplicateFrame: VNEditorApp._onDuplicateFrame,
-        deleteFrame: VNEditorApp._onDeleteFrame,
-        moveFrame: VNEditorApp._onMoveFrame,
-        selectBranch: VNEditorApp._onSelectBranch,
-        addBranch: VNEditorApp._onAddBranch,
-        renameBranch: VNEditorApp._onRenameBranch,
-        duplicateBranch: VNEditorApp._onDuplicateBranch,
-        deleteBranch: VNEditorApp._onDeleteBranch,
-        addFolder: VNEditorApp._onAddFolder,
-        toggleFolder: VNEditorApp._onToggleFolder,
-        editFolder: VNEditorApp._onEditFolder,
-        saveFolderEdit: VNEditorApp._onSaveFolderEdit,
-        cancelFolderEdit: VNEditorApp._onCancelFolderEdit,
-        renameFolder: VNEditorApp._onRenameFolder,
-        deleteFolder: VNEditorApp._onDeleteFolder,
-        addTextBlock: VNEditorApp._onAddTextBlock,
-        deleteTextBlock: VNEditorApp._onDeleteTextBlock,
-        duplicateTextBlock: VNEditorApp._onDuplicateTextBlock,
-        moveTextBlock: VNEditorApp._onMoveTextBlock,
-        addChoice: VNEditorApp._onAddChoice,
-        deleteChoice: VNEditorApp._onDeleteChoice,
-        duplicateChoice: VNEditorApp._onDuplicateChoice,
-        moveChoice: VNEditorApp._onMoveChoice,
-        clearFrameTarget: VNEditorApp._onClearFrameTarget,
-        pickAsset: VNEditorApp._onPickAsset,
-        saveCharacterPreset: VNEditorApp._onSaveCharacterPreset,
-        openCharacterManager: VNEditorApp._onOpenCharacterManager,
-        openCounterManager: VNEditorApp._onOpenCounterManager,
-        openGraph: VNEditorApp._onOpenGraph,
-        save: VNEditorApp._onSave,
-        preview: VNEditorApp._onPreview,
-        startIndividual: VNEditorApp._onStartIndividual,
-        startGm: VNEditorApp._onStartGm,
-        startVote: VNEditorApp._onStartVote
+        createScene: queuedEditorAction(VNEditorApp._onCreateScene),
+        createSample: queuedEditorAction(VNEditorApp._onCreateSample),
+        selectScene: queuedEditorAction(VNEditorApp._onSelectScene),
+        duplicateScene: queuedEditorAction(VNEditorApp._onDuplicateScene),
+        deleteScene: queuedEditorAction(VNEditorApp._onDeleteScene),
+        exportScene: queuedEditorAction(VNEditorApp._onExportScene),
+        exportAll: queuedEditorAction(VNEditorApp._onExportAll),
+        importJson: queuedEditorAction(VNEditorApp._onImportJson),
+        addFrame: queuedEditorAction(VNEditorApp._onAddFrame),
+        selectFrame: queuedEditorAction(VNEditorApp._onSelectFrame),
+        selectFolder: queuedEditorAction(VNEditorApp._onSelectFolder),
+        duplicateFrame: queuedEditorAction(VNEditorApp._onDuplicateFrame),
+        deleteFrame: queuedEditorAction(VNEditorApp._onDeleteFrame),
+        moveFrame: queuedEditorAction(VNEditorApp._onMoveFrame),
+        selectBranch: queuedEditorAction(VNEditorApp._onSelectBranch),
+        addBranch: queuedEditorAction(VNEditorApp._onAddBranch),
+        renameBranch: queuedEditorAction(VNEditorApp._onRenameBranch),
+        duplicateBranch: queuedEditorAction(VNEditorApp._onDuplicateBranch),
+        deleteBranch: queuedEditorAction(VNEditorApp._onDeleteBranch),
+        addFolder: queuedEditorAction(VNEditorApp._onAddFolder),
+        toggleFolder: queuedEditorAction(VNEditorApp._onToggleFolder),
+        editFolder: queuedEditorAction(VNEditorApp._onEditFolder),
+        saveFolderEdit: queuedEditorAction(VNEditorApp._onSaveFolderEdit),
+        cancelFolderEdit: queuedEditorAction(VNEditorApp._onCancelFolderEdit),
+        renameFolder: queuedEditorAction(VNEditorApp._onRenameFolder),
+        deleteFolder: queuedEditorAction(VNEditorApp._onDeleteFolder),
+        addTextBlock: queuedEditorAction(VNEditorApp._onAddTextBlock),
+        deleteTextBlock: queuedEditorAction(VNEditorApp._onDeleteTextBlock),
+        duplicateTextBlock: queuedEditorAction(VNEditorApp._onDuplicateTextBlock),
+        moveTextBlock: queuedEditorAction(VNEditorApp._onMoveTextBlock),
+        addChoice: queuedEditorAction(VNEditorApp._onAddChoice),
+        deleteChoice: queuedEditorAction(VNEditorApp._onDeleteChoice),
+        duplicateChoice: queuedEditorAction(VNEditorApp._onDuplicateChoice),
+        moveChoice: queuedEditorAction(VNEditorApp._onMoveChoice),
+        clearFrameTarget: queuedEditorAction(VNEditorApp._onClearFrameTarget),
+        pickAsset: queuedEditorAction(VNEditorApp._onPickAsset),
+        saveCharacterPreset: queuedEditorAction(VNEditorApp._onSaveCharacterPreset),
+        openCharacterManager: queuedEditorAction(VNEditorApp._onOpenCharacterManager),
+        openCounterManager: queuedEditorAction(VNEditorApp._onOpenCounterManager),
+        openGraph: queuedEditorAction(VNEditorApp._onOpenGraph),
+        save: queuedEditorAction(VNEditorApp._onSave),
+        preview: queuedEditorAction(VNEditorApp._onPreview),
+        startIndividual: queuedEditorAction(VNEditorApp._onStartIndividual),
+        startGm: queuedEditorAction(VNEditorApp._onStartGm),
+        startVote: queuedEditorAction(VNEditorApp._onStartVote)
     }
 };
 

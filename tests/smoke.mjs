@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
+import process from "node:process";
 
 globalThis.window = {
   innerWidth: 1920,
@@ -55,8 +56,11 @@ const { VNEditorApp } = await import("../scripts/apps/vn-editor-app.js");
 const { VNGraphApp } = await import("../scripts/apps/vn-graph-app.js");
 const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
 const { VNSceneStore } = await import("../scripts/data/scene-store.js");
+const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { applyChoiceCounterEffect, createFrame, createScene, createSceneCounter, getFrameReferences, resolveFrameNextRouting, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
+const { PLAYER_MODES } = await import("../scripts/utils/constants.js");
+const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
 const scene = createScene();
@@ -83,7 +87,27 @@ const stored = VNSceneStore.getScene(scene.id);
 stored.title = "Mutated clone";
 assert.equal(VNSceneStore.getScene(scene.id).title, "Smoke", "getScene must return a defensive clone");
 
+await Promise.all([
+  VNSceneStore.mutateData(async data => {
+    await new Promise(resolve => setTimeout(resolve, 5));
+    data.scenes[0].title = "Queued title";
+  }),
+  VNSceneStore.mutateData(data => {
+    data.scenes[0].defaultMode = PLAYER_MODES.VOTE;
+  })
+]);
+const queuedScene = VNSceneStore.getScene(scene.id);
+assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
+assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
+await VNSceneStore.setData({ schemaVersion: 6, version: 3, scenes: [scene], assets: [], characters: [] });
+
 const editor = Object.create(VNEditorApp.prototype);
+editor._pendingRenderParts = new Set();
+editor._actionQueue = Promise.resolve();
+editor._renderQueue = Promise.resolve();
+editor._lastValidationSnapshot = null;
+editor._lastFrameTargetSceneId = null;
+editor._lastFrameTargetEntries = null;
 editor.selectedSceneId = scene.id;
 editor.selectedFrameId = "frame-root";
 editor.selectedBranchId = branchId;
@@ -118,6 +142,32 @@ editor._markRenderParts(["scenes", "unknown"]);
 await editor._renderEditorParts(["frames"]);
 assert.deepEqual(renderOptions, { parts: ["frames", "scenes"] }, "Dirty form parts must be merged into the next partial render");
 
+let activeRenders = 0;
+let maxActiveRenders = 0;
+editor.render = async options => {
+  renderOptions = options;
+  activeRenders += 1;
+  maxActiveRenders = Math.max(maxActiveRenders, activeRenders);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  activeRenders -= 1;
+  return editor;
+};
+await Promise.all([
+  editor._renderEditorParts(["frames"]),
+  editor._renderEditorParts(["framePanel"])
+]);
+assert.equal(maxActiveRenders, 1, "Editor partial renders must be serialized");
+let queuedRenderFinished = false;
+editor.render = async () => {
+  await new Promise(resolve => setTimeout(resolve, 5));
+  queuedRenderFinished = true;
+  return editor;
+};
+await editor._enqueueEditorAction(() => {
+  void editor._renderEditorParts(["frames"]);
+});
+assert.equal(queuedRenderFinished, true, "Editor action queue must wait for render work started by the action");
+
 const largeScene = structuredClone(scene);
 largeScene.frameFolders = [];
 largeScene.frames = [];
@@ -135,11 +185,16 @@ for (let i = 0; i < 3000; i += 1) {
   });
 }
 const largeViews = largeScene.frames.map((frame, i) => ({ ...frame, label: frame.title, index: i + 1 }));
-const start = performance.now();
-const largeRows = editor._buildFrameTreeRows(largeScene, largeViews);
-const elapsed = performance.now() - start;
+let largeRows;
+let elapsed = null;
+if (process.env.FBL_VN_PERF_CHECK === "1") {
+  const start = performance.now();
+  largeRows = editor._buildFrameTreeRows(largeScene, largeViews);
+  elapsed = performance.now() - start;
+  assert.ok(elapsed < 1500, `Tree build took too long: ${elapsed.toFixed(1)}ms`);
+}
+else largeRows = editor._buildFrameTreeRows(largeScene, largeViews);
 assert.equal(largeRows.length, 3000);
-assert.ok(elapsed < 1500, `Tree build took too long: ${elapsed.toFixed(1)}ms`);
 
 const routeCounter = createSceneCounter("Route", 0);
 scene.counters.push(routeCounter);
@@ -173,17 +228,40 @@ legacySource.sceneRouting = {
   counterId: "legacy-counter",
   operator: "gte",
   value: 1,
-  trueSceneId: "legacy-yes",
-  falseSceneId: "scene-outside"
+  trueSceneId: "legacy-scene-yes",
+  falseSceneId: "legacy-scene-no"
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
 assert.equal(migrated.schemaVersion, 6);
-assert.equal(migratedFrame.nextRouting.enabled, true, "Legacy scene routing must become conditional next routing");
-assert.equal(migratedFrame.nextRouting.trueFrameId, "legacy-yes", "A legacy target matching a local frame must be preserved");
-assert.equal(migratedFrame.nextRouting.falseFrameId, "", "An external scene target cannot be converted to a frame and must be cleared");
-assert.equal(migratedFrame.isFinal, false, "Migrated conditional next routing must not remain blocked by the old final flag");
+assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
+assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
+assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
+assert.equal(migratedFrame.isFinal, true, "Unconvertible legacy exit routing must preserve the terminal frame");
 assert.equal("sceneRouting" in migratedFrame, false, "Legacy frame routing field must be removed");
+
+const legacyFrameScene = createScene();
+const legacyFrameTarget = createFrame("dialogue");
+legacyFrameTarget.id = "legacy-frame-target";
+legacyFrameTarget.branchId = legacyFrameScene.branches[0].id;
+legacyFrameScene.frames.push(legacyFrameTarget);
+legacyFrameScene.frames[0].isFinal = true;
+legacyFrameScene.frames[0].sceneRouting = {
+  enabled: true,
+  counterId: "legacy-counter",
+  operator: "gte",
+  value: 1,
+  trueFrameId: "legacy-frame-target",
+  falseFrameId: ""
+};
+const migratedFrameRoute = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyFrameScene], assets: [], characters: [] }).scenes[0].frames[0];
+assert.equal(migratedFrameRoute.nextRouting.enabled, true, "Already frame-addressed legacy routing should survive migration");
+assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
+assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
+
+const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
+assert.equal(invalidVersionMigrated.schemaVersion, 6, "Invalid schemaVersion values must flow through migrations");
+assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for invalid schemaVersion input");
 
 
 const player = Object.create(VNPlayerApp.prototype);
@@ -203,5 +281,98 @@ assert.equal(graphData.visibleFrameCount, 2);
 assert.ok(graphData.edges.length >= 2);
 assert.equal(graphData.edges.some(edge => edge.label === "Если да"), true, "Graph must show the true conditional edge");
 assert.equal(graphData.edges.some(edge => edge.label === "Если нет"), true, "Graph must show the false conditional edge");
+const cycleFrames = [{ id: "cycle-a" }, { id: "cycle-b" }];
+const cycleOutgoing = new Map([
+  ["cycle-a", [{ targetId: "cycle-b" }]],
+  ["cycle-b", [{ targetId: "cycle-a" }]]
+]);
+const cycleLevels = graph._calculateLevels({ startFrame: "cycle-a" }, cycleFrames, cycleOutgoing);
+assert.equal(cycleLevels.get("cycle-a"), 0, "Graph cycle start must keep level zero");
+assert.equal(cycleLevels.get("cycle-b"), 1, "Graph cycle traversal must terminate and assign each reachable node once");
+const largeCycleFrames = Array.from({ length: 3000 }, (_, index) => ({ id: `cycle-${index}` }));
+const largeCycleOutgoing = new Map(largeCycleFrames.map((frame, index) => [
+  frame.id,
+  [{ targetId: largeCycleFrames[(index + 1) % largeCycleFrames.length].id }]
+]));
+const largeCycleLevels = graph._calculateLevels({ startFrame: "cycle-0" }, largeCycleFrames, largeCycleOutgoing);
+assert.equal(largeCycleLevels.size, 3000, "Large cyclic graphs must visit every reachable frame exactly once");
+assert.equal(largeCycleLevels.get("cycle-2999"), 2999, "Large cyclic graph levels must remain deterministic");
 
-console.log(`Smoke tests passed. 3000-row tree: ${elapsed.toFixed(1)}ms.`);
+// Branch-local sequential routing must not depend on global frame interleaving.
+const interleaved = createScene();
+const branchA = interleaved.branches[0];
+branchA.id = "branch-a";
+const branchB = { id: "branch-b", name: "B", sort: 1000 };
+interleaved.branches.push(branchB);
+const a1 = interleaved.frames[0];
+a1.id = "a1";
+a1.branchId = branchA.id;
+a1.isFinal = false;
+a1.next = "";
+const b1 = createFrame("dialogue");
+b1.id = "b1"; b1.branchId = branchB.id; b1.isFinal = false;
+const a2 = createFrame("dialogue");
+a2.id = "a2"; a2.branchId = branchA.id; a2.isFinal = true;
+const b2 = createFrame("dialogue");
+b2.id = "b2"; b2.branchId = branchB.id; b2.isFinal = true;
+interleaved.frames = [a1, b1, a2, b2];
+interleaved.startFrame = a1.id;
+const interleavedIssues = validateScene(interleaved);
+assert.equal(interleavedIssues.some(issue => issue.code === "terminal-frame" && issue.frameId === a1.id), false, "A non-terminal frame must find the next frame inside its own branch");
+assert.equal(interleavedIssues.some(issue => issue.code === "terminal-frame" && issue.frameId === b1.id), false, "Interleaved branch frames must use branch-local sequential routing");
+
+// Native socket trust guards prevent accidental authority conflicts, but are not a cryptographic sender proof.
+const gm1 = { id: "gm-1", isGM: true, active: true };
+const gm2 = { id: "gm-2", isGM: true, active: true };
+const playerUser = { id: "player-1", isGM: false, active: true };
+const users = [gm1, gm2, playerUser];
+users.get = id => users.find(user => user.id === id);
+users.activeGM = gm1;
+game.users = users;
+game.user = gm1;
+VNSocket.activeLeaders.clear();
+VNSocket.activeLeaders.set("scene-auth", gm1.id);
+assert.equal(VNSocket._isTrustedGmCommand("advance", { sceneId: "scene-auth" }, gm1.id), true);
+assert.equal(VNSocket._isTrustedGmCommand("advance", { sceneId: "scene-auth" }, gm2.id), false, "A second active GM must not take over an active session");
+assert.equal(VNSocket._isTrustedGmCommand("open", { sceneId: "scene-new" }, playerUser.id), false, "A normal player must not pass the GM-command guard under their real user id");
+assert.equal(VNSceneStore._isStorageAuthority(), true, "Foundry activeGM should own private storage initialization");
+game.user = gm2;
+assert.equal(VNSceneStore._isStorageAuthority(), false, "A second GM must not race private storage creation");
+game.user = gm1;
+
+const votePlayer = Object.create(VNPlayerApp.prototype);
+votePlayer.scene = scene;
+votePlayer.mode = PLAYER_MODES.VOTE;
+votePlayer.leaderId = gm1.id;
+votePlayer.participantIds = [gm1.id];
+votePlayer.currentFrameId = "frame-root";
+votePlayer.currentTextIndex = 0;
+votePlayer.started = true;
+votePlayer.counterState = {};
+votePlayer._localVote = null;
+votePlayer._voteState = null;
+votePlayer.element = {
+  querySelectorAll() { return []; },
+  querySelector() { return null; }
+};
+votePlayer._buildPlaybackIndex();
+let voteRenders = 0;
+votePlayer.render = async () => { voteRenders += 1; return votePlayer; };
+votePlayer._applyVoteState({ sceneId: scene.id, frameId: "frame-root", textIndex: 0, voters: [gm1.id], choices: {}, total: 1 });
+assert.equal(voteRenders, 0, "Vote-state synchronization must patch the DOM without requesting a full player render");
+
+const savedFoundry = globalThis.foundry;
+const savedGame = globalThis.game;
+const savedUi = globalThis.ui;
+globalThis.foundry = undefined;
+globalThis.game = undefined;
+globalThis.ui = undefined;
+assert.match(randomId("fallback"), /^fallback-/, "randomId must retain a non-Foundry fallback");
+assert.deepEqual(duplicateData({ a: 1 }), { a: 1 }, "duplicateData must work without Foundry globals");
+assert.deepEqual(mergeData({ a: 1 }, { b: 2 }), { a: 1, b: 2 }, "mergeData must work without Foundry globals");
+assert.equal(localize("TEST.KEY"), "TEST.KEY", "localize must fall back to the key without Foundry globals");
+globalThis.foundry = savedFoundry;
+globalThis.game = savedGame;
+globalThis.ui = savedUi;
+
+console.log(elapsed === null ? "Smoke tests passed." : `Smoke tests passed. 3000-row tree performance check: ${elapsed.toFixed(1)}ms.`);

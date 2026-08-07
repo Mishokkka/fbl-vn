@@ -12,14 +12,14 @@ const walk = (dir, extension) => {
   const out = [];
   for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
     const full = path.join(base, entry.name);
-    if (entry.isDirectory()) out.push(...walk(path.relative(root, full), extension));
+    if (entry.isDirectory() && entry.name !== ".git") out.push(...walk(path.relative(root, full), extension));
     else if (!extension || entry.name.endsWith(extension)) out.push(path.relative(root, full).replaceAll("\\", "/"));
   }
   return out;
 };
 
 const manifest = JSON.parse(read("module.json"));
-for (const file of [...(manifest.styles || []), ...(manifest.scripts || []), manifest.readme, "LICENSE"].filter(Boolean)) {
+for (const file of [...(manifest.styles || []), ...(manifest.scripts || []), ...(manifest.esmodules || []), manifest.readme, "LICENSE"].filter(Boolean)) {
   if (!exists(file)) errors.push(`Manifest references missing file: ${file}`);
 }
 
@@ -57,7 +57,7 @@ for (const file of walk("templates", ".hbs")) {
 const actionHandlers = new Set();
 for (const file of walk("scripts/apps", ".js")) {
   const source = read(file);
-  for (const match of source.matchAll(/^\s*([A-Za-z][A-Za-z0-9_]*)\s*:\s*[A-Za-z0-9_$.]+,?\s*$/gm)) actionHandlers.add(match[1]);
+  for (const match of source.matchAll(/^\s*([A-Za-z][A-Za-z0-9_]*)\s*:\s*(?:queuedEditorAction\()?\s*[A-Za-z0-9_$.]+\)?\s*,?\s*$/gm)) actionHandlers.add(match[1]);
 }
 for (const action of templateActions) {
   if (!actionHandlers.has(action)) errors.push(`Template action has no handler: ${action}`);
@@ -75,8 +75,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.0.0") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.0.0")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.0.2") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.0.2")) errors.push("README release heading is out of sync with manifest");
 
 function splitSelectors(header) {
   const result = [];
@@ -160,6 +160,7 @@ for (const file of walk("styles", ".css")) {
     errors.push(`${file}: ${error.message}`);
   }
   for (const selector of selectors) {
+    if (!selector.includes(".fbl-vn-")) errors.push(`Unscoped CSS selector in ${file}: ${selector}`);
     if (!selectorOwners.has(selector)) selectorOwners.set(selector, new Set());
     selectorOwners.get(selector).add(file);
   }

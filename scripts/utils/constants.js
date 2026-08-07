@@ -2,6 +2,7 @@ export const MODULE_ID = "fbl-vn-cutscenes";
 export const MODULE_TITLE = "FBL Visual Novel Cutscenes";
 export const SETTINGS = {
     DATA: "data",
+    STORAGE_JOURNAL_ID: "storageJournalId",
     PRELOAD_WAIT_MS: "preloadWaitMs",
     MUSIC_VOLUME: "musicVolume",
     VOICE_VOLUME: "voiceVolume",

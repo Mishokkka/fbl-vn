@@ -288,20 +288,15 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const startId = scene && scene.startFrame ? scene.startFrame : frames[0].id;
         levels.set(startId, 0);
         const queue = [startId];
-        let safety = 0;
-        while (queue.length && safety < frames.length * 8) {
-            safety += 1;
-            const id = queue.shift();
-            const level = levels.has(id) ? levels.get(id) : 0;
+        let cursor = 0;
+        while (cursor < queue.length) {
+            const id = queue[cursor++];
+            const level = levels.get(id) ?? 0;
             const links = outgoing.get(id) || [];
             for (const link of links) {
-                if (!link.targetId) continue;
-                if (!outgoing.has(link.targetId)) continue;
-                const nextLevel = Math.max(0, level + 1);
-                if (!levels.has(link.targetId) || nextLevel > levels.get(link.targetId)) {
-                    levels.set(link.targetId, nextLevel);
-                    queue.push(link.targetId);
-                }
+                if (!link.targetId || levels.has(link.targetId) || !outgoing.has(link.targetId)) continue;
+                levels.set(link.targetId, Math.max(0, level + 1));
+                queue.push(link.targetId);
             }
         }
         let fallbackLevel = 0;
@@ -334,8 +329,8 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         };
     }
 
-    _onRender(context, options) {
-        super._onRender(context, options);
+    async _onRender(context, options) {
+        await super._onRender(context, options);
         this._applyGraphTransform();
         this._bindGraphInteraction();
         this._cacheGraphDom();

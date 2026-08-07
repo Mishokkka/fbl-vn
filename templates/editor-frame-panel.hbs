@@ -3,44 +3,44 @@
           {{#if selectedFrame}}
             <div class="fbl-vn-field-row row-frame-title">
               <div class="form-group">
-                <label>Тип</label>
-                <select name="frame.type">
+                <label for="fbl-vn-frame-type">Тип</label>
+                <select id="fbl-vn-frame-type" name="frame.type">
                   {{#each frameTypeOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
                   {{/each}}
                 </select>
               </div>
               <div class="form-group">
-                <label>Ветка</label>
-                <select name="frame.branchId">
+                <label for="fbl-vn-frame-branch">Ветка</label>
+                <select id="fbl-vn-frame-branch" name="frame.branchId">
                   {{#each frameBranchOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                   {{/each}}
                 </select>
               </div>
               <div class="form-group">
-                <label>Папка</label>
-                <select name="frame.folderId">
+                <label for="fbl-vn-frame-folder">Папка</label>
+                <select id="fbl-vn-frame-folder" name="frame.folderId">
                   {{#each folderOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                   {{/each}}
                 </select>
               </div>
               <div class="form-group">
-                <label>Техническое имя кадра</label>
-                <input type="text" name="frame.title" value="{{selectedFrame.title}}" placeholder="Например: Вход в церковь" />
+                <label for="fbl-vn-frame-title">Техническое имя кадра</label>
+                <input id="fbl-vn-frame-title" type="text" name="frame.title" value="{{selectedFrame.title}}" placeholder="Например: Вход в церковь" />
               </div>
             </div>
   
             <div class="fbl-vn-field-row row-background">
               <div class="form-group path-field">
-                <label>Фон</label>
-                <input type="text" name="frame.background" value="{{selectedFrame.background}}" placeholder="Путь к изображению. Пусто = оставить предыдущий фон." />
-                <button type="button" data-action="pickAsset" data-field="frame.background" data-picker-type="image" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                <label for="fbl-vn-frame-background">Фон</label>
+                <input id="fbl-vn-frame-background" type="text" name="frame.background" value="{{selectedFrame.background}}" placeholder="Путь к изображению. Пусто = оставить предыдущий фон." />
+                <button type="button" data-action="pickAsset" data-field="frame.background" data-picker-type="image" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
               </div>
               <div class="form-group">
-                <label>Переход</label>
-                <select name="frame.transition">
+                <label for="fbl-vn-frame-transition">Переход</label>
+                <select id="fbl-vn-frame-transition" name="frame.transition">
                   {{#each transitionOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
                   {{/each}}
@@ -55,16 +55,16 @@
   
             <div class="fbl-vn-field-row row-character">
               <div class="form-group">
-                <label>Пресет персонажа</label>
-                <select name="frame.characterId" data-character-select>
+                <label for="fbl-vn-frame-character">Пресет персонажа</label>
+                <select id="fbl-vn-frame-character" name="frame.characterId" data-character-select>
                   {{#each characterOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                   {{/each}}
                 </select>
               </div>
               <div class="form-group">
-                <label>Портрет пресета</label>
-                <select name="frame.portraitId" data-character-portrait-select>
+                <label for="fbl-vn-frame-portrait-preset">Портрет пресета</label>
+                <select id="fbl-vn-frame-portrait-preset" name="frame.portraitId" data-character-portrait-select>
                   {{#each characterPortraitOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                   {{/each}}
@@ -76,17 +76,17 @@
   
             <div class="fbl-vn-field-row row-portrait">
               <div class="form-group">
-                <label>Говорящий</label>
-                <input type="text" name="frame.speaker" value="{{selectedFrame.speaker}}" placeholder="Имя персонажа" />
+                <label for="fbl-vn-frame-speaker">Говорящий</label>
+                <input id="fbl-vn-frame-speaker" type="text" name="frame.speaker" value="{{selectedFrame.speaker}}" placeholder="Имя персонажа" />
               </div>
               <div class="form-group path-field">
-                <label>Портрет / спрайт</label>
-                <input type="text" name="frame.portrait" value="{{selectedFrame.portrait}}" placeholder="Путь к изображению. Пусто = оставить предыдущий портрет." />
-                <button type="button" data-action="pickAsset" data-field="frame.portrait" data-picker-type="image" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                <label for="fbl-vn-frame-portrait">Портрет / спрайт</label>
+                <input id="fbl-vn-frame-portrait" type="text" name="frame.portrait" value="{{selectedFrame.portrait}}" placeholder="Путь к изображению. Пусто = оставить предыдущий портрет." />
+                <button type="button" data-action="pickAsset" data-field="frame.portrait" data-picker-type="image" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
               </div>
               <div class="form-group">
-                <label>Позиция</label>
-                <select name="frame.portraitPosition">
+                <label for="fbl-vn-frame-position">Позиция</label>
+                <select id="fbl-vn-frame-position" name="frame.portraitPosition">
                   {{#each positionOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
                   {{/each}}
@@ -113,7 +113,7 @@
                     <div class="text-block-bottom">
                       <div class="form-group path-field voice-field no-label">
                         <input type="text" name="{{inputName}}" data-text-block-voice value="{{voice}}" placeholder="ogg/mp3/wav, пусто = без озвучки" />
-                        <button type="button" data-action="pickAsset" data-field="{{inputName}}" data-picker-type="audio" title="Выбрать файл озвучки"><i class="fa-solid fa-folder-open"></i></button>
+                        <button type="button" data-action="pickAsset" data-field="{{inputName}}" data-picker-type="audio" title="Выбрать файл озвучки" aria-label="Выбрать файл озвучки"><i class="fa-solid fa-folder-open"></i></button>
                       </div>
                       <div class="text-block-actions">
                         <button type="button" data-action="moveTextBlock" data-direction="up" data-text-block-id="{{id}}" title="Выше" aria-label="Выше"><i class="fa-solid fa-arrow-up"></i></button>
@@ -139,12 +139,12 @@
               <div class="form-group path-field">
                 <label>Файл музыки</label>
                 <input type="text" name="frame.music" value="{{selectedFrame.music}}" placeholder="ogg/mp3/wav" />
-                <button type="button" data-action="pickAsset" data-field="frame.music" data-picker-type="audio" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                <button type="button" data-action="pickAsset" data-field="frame.music" data-picker-type="audio" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
               </div>
               <div class="form-group path-field">
                 <label>SFX</label>
                 <input type="text" name="frame.sfx" value="{{selectedFrame.sfx}}" placeholder="Звук кадра" />
-                <button type="button" data-action="pickAsset" data-field="frame.sfx" data-picker-type="audio" title="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                <button type="button" data-action="pickAsset" data-field="frame.sfx" data-picker-type="audio" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
               </div>
             </div>
   
