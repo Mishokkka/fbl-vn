@@ -4,7 +4,7 @@ import vm from "node:vm";
 
 const bootSource = fs.readFileSync(new URL("../scripts/boot.js", import.meta.url), "utf8");
 const hooks = new Map();
-const moduleRecord = { active: true, version: "1.0.3" };
+const moduleRecord = { active: true, version: "1.0.4" };
 const context = {
   URL,
   console: { log() {}, error() {}, warn() {} },

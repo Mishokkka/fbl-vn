@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+
+- Исправлен критический сбой загрузки runtime на фазе `init`: top-level проверка `Hooks.events.init` больше не обращается к несуществующей временной переменной `_a`.
+- Добавлен smoke-test для boot-пути `game.ready === false`, чтобы аналогичный runtime ReferenceError не проходил только через `node --check`.
+
 ## 1.0.3
 
 - Исправлены отложенные editor actions, которые читали очищенный браузером `event.currentTarget`.

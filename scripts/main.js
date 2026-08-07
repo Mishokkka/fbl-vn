@@ -177,6 +177,6 @@ if (globalThis.game) {
     };
     if (game.ready)
         runBootstrap();
-    else if ((_a = Hooks === null || Hooks === void 0 ? void 0 : Hooks.events) === null || _a === void 0 ? void 0 : _a.init)
+    else if (globalThis.Hooks?.events?.init)
         runBootstrap();
 }
