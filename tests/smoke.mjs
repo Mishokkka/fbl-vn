@@ -379,7 +379,7 @@ const interleavedIssues = validateScene(interleaved);
 assert.equal(interleavedIssues.some(issue => issue.code === "terminal-frame" && issue.frameId === a1.id), false, "A non-terminal frame must find the next frame inside its own branch");
 assert.equal(interleavedIssues.some(issue => issue.code === "terminal-frame" && issue.frameId === b1.id), false, "Interleaved branch frames must use branch-local sequential routing");
 
-// GM-command authorization is checked against the server-supplied socket callback sender id.
+// GM-command authorization is checked against the sender id carried by the socket envelope.
 const gm1 = { id: "gm-1", isGM: true, active: true };
 const gm2 = { id: "gm-2", isGM: true, active: true };
 const playerUser = { id: "player-1", isGM: false, active: true };
@@ -425,18 +425,18 @@ VNSceneStore._storageDocument = null;
 game.ready = savedReady;
 game.journal = savedJournal;
 
-// Privileged socket commands must use Foundry's callback sender id, not a spoofable payload field.
+// Privileged socket commands must use the sender id from the module envelope.
 let trustedAdvanceCalls = 0;
 VNSocket.handlers = { advance: () => { trustedAdvanceCalls += 1; } };
 VNSocket.activeLeaders.clear();
 VNSocket.activeLeaders.set("scene-auth", gm1.id);
 game.user = gm2;
-VNSocket._onMessage({ type: "advance", senderId: gm1.id, data: { sceneId: "scene-auth" } }, playerUser.id);
+VNSocket._onMessage({ type: "advance", senderId: playerUser.id, data: { sceneId: "scene-auth" } });
 await new Promise(resolve => setTimeout(resolve, 0));
-assert.equal(trustedAdvanceCalls, 0, "A forged payload senderId must not authorize a player command");
-VNSocket._onMessage({ type: "advance", senderId: playerUser.id, data: { sceneId: "scene-auth" } }, gm1.id);
+assert.equal(trustedAdvanceCalls, 0, "A non-GM envelope sender id must not authorize a GM command");
+VNSocket._onMessage({ type: "advance", senderId: gm1.id, data: { sceneId: "scene-auth" } });
 await new Promise(resolve => setTimeout(resolve, 0));
-assert.equal(trustedAdvanceCalls, 1, "The server-supplied GM sender id must authorize the active leader");
+assert.equal(trustedAdvanceCalls, 1, "The active GM envelope sender id must authorize the leader command");
 game.user = gm1;
 
 const votePlayer = Object.create(VNPlayerApp.prototype);
