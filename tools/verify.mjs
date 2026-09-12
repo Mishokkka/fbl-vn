@@ -86,8 +86,9 @@ for (const forbidden of [
   if (editorSource.includes(forbidden)) errors.push(`Queued editor callback still depends on event.currentTarget: ${forbidden}`);
 }
 const socketSource = read("scripts/playback/vn-socket.js");
-if (!/game\.socket\.on\(SOCKET_NAME, \(payload, senderId\) => this\._onMessage\(payload, senderId\)\)/.test(socketSource)) errors.push("Socket listener does not consume Foundry's trusted sender id callback argument");
-if (/senderId\s*:\s*game\.user\.id/.test(socketSource)) errors.push("Socket payload still publishes a client-supplied senderId");
+if (!/socketMessageHandler\s*=\s*payload\s*=>\s*this\._onMessage\(payload\)/.test(socketSource) || !/game\.socket\.on\(SOCKET_NAME,\s*socketMessageHandler\)/.test(socketSource)) errors.push("Socket listener must consume the module payload as Foundry's single callback argument");
+if (!/const senderId\s*=\s*game\.user\?\.id/.test(socketSource) || !/senderId,\s*\n\s*data/.test(socketSource)) errors.push("Socket payload must publish the current Foundry user id in the module envelope");
+if (/game\.socket\.on\(SOCKET_NAME,\s*\(payload,\s*senderId\)/.test(socketSource)) errors.push("Socket listener still relies on a second callback sender-id argument");
 if (/clip\s*:\s*rect\(/.test(read("styles/editor-components.css"))) errors.push("Deprecated CSS clip property remains");
 
 function splitSelectors(header) {
