@@ -4,23 +4,38 @@ import { wait } from "../utils/foundry-helpers.js";
 export class VNSocket {
     static registerHandlers(handlers) {
         this.handlers = handlers ?? {};
-        game.socket.on(SOCKET_NAME, (payload, senderId) => this._onMessage(payload, senderId));
+        if (!this._socketMessageHandler) {
+            if (typeof game.socket?.on !== "function") throw new Error("Foundry module socket is unavailable.");
+            const socketMessageHandler = payload => this._onMessage(payload);
+            game.socket.on(SOCKET_NAME, socketMessageHandler);
+            this._socketMessageHandler = socketMessageHandler;
+        }
         if (!this._userConnectedHookId) {
             this._userConnectedHookId = Hooks.on("userConnected", (user, connected) => this._onUserConnected(user, connected));
         }
     }
 
     static emit(type, data = {}) {
+        const senderId = game.user?.id;
+        if (!senderId || typeof game.socket?.emit !== "function") {
+            console.warn(`${MODULE_ID} | Socket emit skipped because the Foundry socket or current user is unavailable.`, { type });
+            return false;
+        }
         game.socket.emit(SOCKET_NAME, {
             type,
             timestamp: Date.now(),
+            senderId,
             data
         });
+        return true;
     }
 
-    static _onMessage(payload, senderId) {
-        if (!payload || !senderId || senderId === game.user.id) return;
+    static _onMessage(payload, senderIdOverride = null) {
+        if (!payload || typeof payload !== "object") return;
+        const senderId = typeof senderIdOverride === "string" && senderIdOverride ? senderIdOverride : payload.senderId;
+        if (!senderId || senderId === game.user?.id) return;
         const { type, data = {} } = payload;
+        if (typeof type !== "string" || !data || typeof data !== "object") return;
         if (!this._isTargeted(data)) return;
         switch (type) {
             case "open":
@@ -261,5 +276,6 @@ VNSocket.activeTargets = new Map();
 VNSocket.activeParticipants = new Map();
 VNSocket.activeLeaders = new Map();
 VNSocket.activeSessions = new Map();
+VNSocket._socketMessageHandler = null;
 VNSocket._userConnectedHookId = null;
 VNSocket._launchInProgress = false;
