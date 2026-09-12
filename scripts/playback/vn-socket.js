@@ -30,9 +30,9 @@ export class VNSocket {
         return true;
     }
 
-    static _onMessage(payload, senderIdOverride = null) {
+    static _onMessage(payload) {
         if (!payload || typeof payload !== "object") return;
-        const senderId = typeof senderIdOverride === "string" && senderIdOverride ? senderIdOverride : payload.senderId;
+        const senderId = payload.senderId;
         if (!senderId || senderId === game.user?.id) return;
         const { type, data = {} } = payload;
         if (typeof type !== "string" || !data || typeof data !== "object") return;
