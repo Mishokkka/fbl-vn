@@ -46,9 +46,11 @@ function registerMenuOnce() {
     }
 }
 function registerSocketOnce() {
-    if (socketRegistered || !game.socket)
+    if (socketRegistered)
         return;
-    socketRegistered = true;
+    if (typeof game.socket?.on !== "function" || typeof game.socket?.emit !== "function") {
+        throw new Error("Foundry module socket is unavailable during VN initialization.");
+    }
     VNSocket.registerHandlers({
         open: payload => VNPlayerApp.openScene(payload),
         start: payload => VNPlayerApp.startScene(payload.sceneId),
@@ -60,6 +62,7 @@ function registerSocketOnce() {
         getSyncState: sceneId => VNPlayerApp.getSyncState(sceneId),
         ready: () => { }
     });
+    socketRegistered = true;
 }
 
 function requireGmAction(actionName) {
