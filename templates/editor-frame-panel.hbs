@@ -123,6 +123,8 @@
                         <button type="button" data-rich-command="italic" title="Курсив" aria-label="Курсив"><i class="fa-solid fa-italic"></i></button>
                         <button type="button" data-rich-command="underline" title="Подчёркнутый" aria-label="Подчёркнутый"><i class="fa-solid fa-underline"></i></button>
                         <button type="button" data-rich-command="strikeThrough" title="Зачёркнутый" aria-label="Зачёркнутый"><i class="fa-solid fa-strikethrough"></i></button>
+                        <button type="button" data-rich-command="subscript" title="Нижний индекс" aria-label="Нижний индекс">x<sub>2</sub></button>
+                        <button type="button" data-rich-command="superscript" title="Верхний индекс" aria-label="Верхний индекс">x<sup>2</sup></button>
 
                         <span class="fbl-vn-rich-toolbar-separator" aria-hidden="true"></span>
 
@@ -151,8 +153,10 @@
                         </select>
 
                         <label class="fbl-vn-rich-color" title="Цвет текста">
-                          <span class="sr-only">Цвет текста</span>
                           <input type="color" data-rich-color value="#efe8db" aria-label="Цвет текста" />
+                        </label>
+                        <label class="fbl-vn-rich-color" title="Цвет фона текста">
+                          <input type="color" data-rich-highlight value="#5a4528" aria-label="Цвет фона текста" />
                         </label>
 
                         <span class="fbl-vn-rich-toolbar-separator" aria-hidden="true"></span>
