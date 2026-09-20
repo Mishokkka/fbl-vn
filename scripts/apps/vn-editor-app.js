@@ -6,8 +6,9 @@ import { VNAssetPickerApp } from "./asset-picker-app.js";
 import { VNCharacterManagerApp } from "./vn-character-manager-app.js";
 import { VNCounterManagerApp } from "./vn-counter-manager-app.js";
 import { VNGraphApp } from "./vn-graph-app.js";
-import { COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, MUSIC_MODES, PLAYER_MODES } from "../utils/constants.js";
+import { COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, MUSIC_MODES, PLAYER_MODES, TEXT_PRESENTATIONS } from "../utils/constants.js";
 import { confirmDialog, downloadJson, duplicateData, escapeHtml, formDialog, notify, notifyError, notifyWarn, randomId, readJsonFile } from "../utils/foundry-helpers.js";
+import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
 const ApplicationV2 = foundry.applications.api.ApplicationV2;
 const HandlebarsApplicationMixin = foundry.applications.api.HandlebarsApplicationMixin;
@@ -239,6 +240,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     ["fade", "Fade"],
                     ["dark", "Затемнение"]
                 ], frame ? frame.transition : undefined),
+                textPresentationOptions: this._options([
+                    [TEXT_PRESENTATIONS.BOX, "Обычная панель"],
+                    [TEXT_PRESENTATIONS.CENTER, "Текст по центру без панели"]
+                ], frame ? frame.textPresentation : TEXT_PRESENTATIONS.BOX),
+                richTextFontOptions: this._richTextFontOptions(),
                 characters,
                 hasCharacters: characters.length > 0,
                 characterOptions: this._characterOptions(characters, frame ? frame.characterId : ""),
@@ -485,10 +491,30 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return blocks.map((block, index) => ({
             id: block.id,
             text: block.text,
+            richText: block.richText || richTextFromPlainText(block.text || ""),
             voice: block.voice,
             index: index + 1,
             inputName: `text-voice-${block.id}`
         }));
+    }
+
+    _richTextFontOptions() {
+        const names = [
+            "Georgia",
+            "Times New Roman",
+            "Arial",
+            "Verdana",
+            "Trebuchet MS",
+            "Courier New",
+            "serif",
+            "sans-serif",
+            "monospace"
+        ];
+        const definitions = globalThis.CONFIG?.fontDefinitions;
+        if (definitions && typeof definitions === "object") names.push(...Object.keys(definitions));
+        return [...new Set(names.filter(name => typeof name === "string" && name.trim()).map(name => name.trim()))]
+            .sort((left, right) => left.localeCompare(right))
+            .map(name => ({ value: name, label: name }));
     }
 
 
@@ -581,6 +607,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         if (partId === "framePanel") {
             this._enableCharacterControls(htmlElement);
+            this._enableRichTextEditors(htmlElement);
             this._enableFrameTargetControls(htmlElement);
             this._enableNextRoutingControls(htmlElement);
         }
@@ -659,6 +686,93 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const portraitId = portraitSelect.value;
             void this._enqueueEditorAction(() => this._applyCharacterPortrait(portraitId));
         });
+    }
+
+    _enableRichTextEditors(root = this.element) {
+        if (!root) return;
+        for (const shell of root.querySelectorAll("[data-rich-text-editor]")) {
+            const editor = shell.querySelector("[data-text-block-rich]");
+            const toolbar = shell.querySelector("[data-rich-toolbar]");
+            if (!editor || !toolbar || shell.dataset.richTextBound === "true") continue;
+            shell.dataset.richTextBound = "true";
+
+            let savedRange = null;
+            const rangeBelongsToEditor = range => {
+                if (!range) return false;
+                const container = range.commonAncestorContainer;
+                const element = container?.nodeType === 1 ? container : container?.parentElement;
+                return Boolean(element && (element === editor || editor.contains(element)));
+            };
+            const saveSelection = () => {
+                const selection = globalThis.getSelection?.();
+                if (!selection || !selection.rangeCount) return;
+                const range = selection.getRangeAt(0);
+                if (rangeBelongsToEditor(range)) savedRange = range.cloneRange();
+            };
+            const restoreSelection = () => {
+                editor.focus();
+                const selection = globalThis.getSelection?.();
+                if (!selection) return;
+                selection.removeAllRanges();
+                if (savedRange && rangeBelongsToEditor(savedRange)) selection.addRange(savedRange);
+                else {
+                    const range = document.createRange();
+                    range.selectNodeContents(editor);
+                    range.collapse(false);
+                    selection.addRange(range);
+                }
+            };
+            const exec = (command, value = null) => {
+                restoreSelection();
+                try {
+                    document.execCommand(command, false, value);
+                }
+                catch (error) {
+                    console.warn(`${MODULE_ID} | Rich text command failed: ${command}`, error);
+                }
+                saveSelection();
+            };
+
+            editor.addEventListener("keyup", saveSelection);
+            editor.addEventListener("mouseup", saveSelection);
+            editor.addEventListener("focus", saveSelection);
+            editor.addEventListener("input", saveSelection);
+            editor.addEventListener("paste", event => {
+                const clipboard = event.clipboardData;
+                if (!clipboard) return;
+                const html = clipboard.getData("text/html");
+                const plain = clipboard.getData("text/plain");
+                if (!html) return;
+                event.preventDefault();
+                const safe = sanitizeRichTextHtml(html, { fallbackText: plain });
+                restoreSelection();
+                document.execCommand("insertHTML", false, safe);
+                saveSelection();
+            });
+
+            toolbar.addEventListener("mousedown", saveSelection, true);
+
+            for (const button of toolbar.querySelectorAll("[data-rich-command]")) {
+                button.addEventListener("click", event => {
+                    event.preventDefault();
+                    exec(button.dataset.richCommand || "");
+                });
+            }
+
+            for (const select of toolbar.querySelectorAll("[data-rich-command-select]")) {
+                select.addEventListener("change", () => {
+                    const command = select.dataset.richCommandSelect || "";
+                    const value = select.value;
+                    if (command && value) exec(command, value);
+                    select.selectedIndex = 0;
+                });
+            }
+
+            const color = toolbar.querySelector("[data-rich-color]");
+            if (color) color.addEventListener("change", () => exec("foreColor", color.value || "#efe8db"));
+            const highlight = toolbar.querySelector("[data-rich-highlight]");
+            if (highlight) highlight.addEventListener("change", () => exec("backColor", highlight.value || "#5a4528"));
+        }
     }
 
     async _applyCharacterPreset(characterId, portraitId) {
@@ -1293,6 +1407,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const hidePortraitInput = this.element.querySelector("[name='frame.hidePortrait']");
             frame.hidePortrait = Boolean(hidePortraitInput && hidePortraitInput.checked);
             frame.portraitPosition = this._readValue("frame.portraitPosition", frame.portraitPosition);
+            frame.textPresentation = this._readValue("frame.textPresentation", frame.textPresentation || TEXT_PRESENTATIONS.BOX);
             frame.musicMode = this._readValue("frame.musicMode", frame.musicMode);
             frame.music = this._readValue("frame.music", frame.music);
             frame.sfx = this._readValue("frame.sfx", frame.sfx);
@@ -1352,11 +1467,17 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _readTextBlocks() {
         if (!this.element) return [];
         const rows = [...this.element.querySelectorAll("[data-text-block-row]")];
-        return rows.map(row => ({
-            id: row.dataset.textBlockId || randomId("text"),
-            text: this._readRowValue(row, "[data-text-block-text]", ""),
-            voice: this._readRowValue(row, "[data-text-block-voice]", "")
-        }));
+        return rows.map(row => {
+            const editor = row.querySelector("[data-text-block-rich]");
+            const fallbackText = editor ? editor.textContent || "" : "";
+            const richText = sanitizeRichTextHtml(editor ? editor.innerHTML : "", { fallbackText });
+            return {
+                id: row.dataset.textBlockId || randomId("text"),
+                text: richTextToPlainText(richText),
+                richText,
+                voice: this._readRowValue(row, "[data-text-block-voice]", "")
+            };
+        });
     }
 
 
@@ -1442,7 +1563,12 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 id: randomId("choice"),
                 next: choice.next && idMap.has(choice.next) ? idMap.get(choice.next) : choice.next
             }));
-            frame.textBlocks = (frame.textBlocks || []).map(block => ({ id: randomId("text"), text: block.text || "", voice: block.voice || "" }));
+            frame.textBlocks = (frame.textBlocks || []).map(block => ({
+                id: randomId("text"),
+                text: block.text || "",
+                richText: block.richText || richTextFromPlainText(block.text || ""),
+                voice: block.voice || ""
+            }));
         }
         copy.startFrame = idMap.get(copy.startFrame) || (copy.frames[0] ? copy.frames[0].id : "");
         await VNSceneStore.upsertScene(copy);

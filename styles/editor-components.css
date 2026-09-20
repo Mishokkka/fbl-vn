@@ -310,6 +310,159 @@ button.fbl-vn-validation-item.warning i {
   align-content: start;
 }
 
+.fbl-vn-text-block-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fbl-vn-text-presentation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--vn-muted);
+  font-size: 11px;
+}
+
+.fbl-vn-text-presentation select {
+  width: auto;
+  min-width: 180px;
+  height: var(--vn-control-h);
+}
+
+.fbl-vn-rich-text-editor {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--vn-radius-sm);
+  background: var(--vn-control);
+}
+
+.fbl-vn-rich-toolbar {
+  min-height: 34px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.2);
+}
+
+.fbl-vn-rich-toolbar button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  padding: 0;
+}
+
+.fbl-vn-rich-toolbar select {
+  width: auto;
+  max-width: 150px;
+  height: 28px;
+  min-height: 28px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 11px;
+}
+
+.fbl-vn-rich-toolbar-separator {
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: rgba(255,255,255,0.1);
+}
+
+.fbl-vn-rich-color {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border: 1px solid var(--vn-border);
+  border-radius: var(--vn-radius-sm);
+  background: rgba(255,255,255,0.025);
+  cursor: pointer;
+}
+
+.fbl-vn-rich-color input[type="color"] {
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fbl-vn-rich-editable {
+  min-height: 104px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 9px 10px;
+  color: var(--vn-text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  outline: none;
+}
+
+.fbl-vn-rich-editable:focus {
+  box-shadow: inset 0 0 0 1px rgba(182, 138, 74, 0.55);
+}
+
+.fbl-vn-rich-editable:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(226, 215, 196, 0.38);
+  pointer-events: none;
+}
+
+.fbl-vn-rich-editable p,
+.fbl-vn-rich-editable div,
+.fbl-vn-rich-editable blockquote {
+  margin: 0 0 0.45em;
+}
+
+.fbl-vn-rich-editable p:last-child,
+.fbl-vn-rich-editable div:last-child,
+.fbl-vn-rich-editable blockquote:last-child {
+  margin-bottom: 0;
+}
+
+.fbl-vn-rich-editable ul,
+.fbl-vn-rich-editable ol {
+  margin: 0.35em 0;
+  padding-left: 1.6em;
+}
+
+.fbl-vn-rich-editable blockquote {
+  padding-left: 0.8em;
+  border-left: 2px solid rgba(182, 138, 74, 0.55);
+  color: var(--vn-soft);
+}
+
+@media (max-width: 1240px) {
+  .fbl-vn-text-blocks header {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .fbl-vn-text-block-header-actions {
+    flex-wrap: wrap;
+  }
+
+  .fbl-vn-text-presentation select {
+    min-width: 150px;
+  }
+}
+
 .fbl-vn-frame-folder-head button {
   width: 20px;
   min-width: 20px;

@@ -102,13 +102,70 @@
             <section class="fbl-vn-text-blocks">
               <header>
                 <h4>Текстовые блоки</h4>
-                <button type="button" data-action="addTextBlock"><i class="fa-solid fa-plus"></i> Добавить</button>
+                <div class="fbl-vn-text-block-header-actions">
+                  <label class="fbl-vn-text-presentation">
+                    <span>Показ</span>
+                    <select name="frame.textPresentation" title="Как показывать текст в плеере">
+                      {{#each textPresentationOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <button type="button" data-action="addTextBlock"><i class="fa-solid fa-plus"></i> Добавить</button>
+                </div>
               </header>
               <div class="fbl-vn-text-block-list">
                 {{#each selectedTextBlocks}}
                   <div class="fbl-vn-text-block-row" data-text-block-row data-text-block-id="{{id}}">
-                    <div class="form-group text-field compact-text-field">
-                      <textarea data-text-block-text rows="4" placeholder="Текст реплики или наррации">{{text}}</textarea>
+                    <div class="fbl-vn-rich-text-editor" data-rich-text-editor>
+                      <div class="fbl-vn-rich-toolbar" data-rich-toolbar aria-label="Форматирование текста">
+                        <button type="button" data-rich-command="bold" title="Жирный" aria-label="Жирный"><i class="fa-solid fa-bold"></i></button>
+                        <button type="button" data-rich-command="italic" title="Курсив" aria-label="Курсив"><i class="fa-solid fa-italic"></i></button>
+                        <button type="button" data-rich-command="underline" title="Подчёркнутый" aria-label="Подчёркнутый"><i class="fa-solid fa-underline"></i></button>
+                        <button type="button" data-rich-command="strikeThrough" title="Зачёркнутый" aria-label="Зачёркнутый"><i class="fa-solid fa-strikethrough"></i></button>
+                        <button type="button" data-rich-command="subscript" title="Нижний индекс" aria-label="Нижний индекс">x<sub>2</sub></button>
+                        <button type="button" data-rich-command="superscript" title="Верхний индекс" aria-label="Верхний индекс">x<sup>2</sup></button>
+
+                        <span class="fbl-vn-rich-toolbar-separator" aria-hidden="true"></span>
+
+                        <select data-rich-command-select="fontName" title="Шрифт" aria-label="Шрифт">
+                          <option value="">Шрифт</option>
+                          {{#each ../richTextFontOptions}}
+                            <option value="{{value}}">{{label}}</option>
+                          {{/each}}
+                        </select>
+
+                        <select data-rich-command-select="fontSize" title="Размер текста" aria-label="Размер текста">
+                          <option value="">Размер</option>
+                          <option value="1">Очень мелкий</option>
+                          <option value="2">Мелкий</option>
+                          <option value="3">Обычный</option>
+                          <option value="4">Крупный</option>
+                          <option value="5">Большой</option>
+                          <option value="6">Очень большой</option>
+                          <option value="7">Огромный</option>
+                        </select>
+
+                        <label class="fbl-vn-rich-color" title="Цвет текста">
+                          <input type="color" data-rich-color value="#efe8db" aria-label="Цвет текста" />
+                        </label>
+                        <label class="fbl-vn-rich-color" title="Цвет фона текста">
+                          <input type="color" data-rich-highlight value="#5a4528" aria-label="Цвет фона текста" />
+                        </label>
+
+                        <span class="fbl-vn-rich-toolbar-separator" aria-hidden="true"></span>
+
+                        <button type="button" data-rich-command="justifyLeft" title="По левому краю" aria-label="По левому краю"><i class="fa-solid fa-align-left"></i></button>
+                        <button type="button" data-rich-command="justifyCenter" title="По центру" aria-label="По центру"><i class="fa-solid fa-align-center"></i></button>
+                        <button type="button" data-rich-command="justifyRight" title="По правому краю" aria-label="По правому краю"><i class="fa-solid fa-align-right"></i></button>
+                        <button type="button" data-rich-command="justifyFull" title="По ширине" aria-label="По ширине"><i class="fa-solid fa-align-justify"></i></button>
+                        <button type="button" data-rich-command="insertUnorderedList" title="Маркированный список" aria-label="Маркированный список"><i class="fa-solid fa-list-ul"></i></button>
+                        <button type="button" data-rich-command="insertOrderedList" title="Нумерованный список" aria-label="Нумерованный список"><i class="fa-solid fa-list-ol"></i></button>
+                        <button type="button" data-rich-command="removeFormat" title="Очистить форматирование" aria-label="Очистить форматирование"><i class="fa-solid fa-eraser"></i></button>
+                        <button type="button" data-rich-command="undo" title="Отменить" aria-label="Отменить"><i class="fa-solid fa-rotate-left"></i></button>
+                        <button type="button" data-rich-command="redo" title="Повторить" aria-label="Повторить"><i class="fa-solid fa-rotate-right"></i></button>
+                      </div>
+                      <div class="fbl-vn-rich-editable" contenteditable="true" role="textbox" aria-label="Текст реплики или наррации" aria-multiline="true" spellcheck="true" data-text-block-rich data-placeholder="Текст реплики или наррации">{{{richText}}}</div>
                     </div>
                     <div class="text-block-bottom">
                       <div class="form-group path-field voice-field no-label">

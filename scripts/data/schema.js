@@ -1,15 +1,22 @@
-import { COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MUSIC_MODES, PLAYER_MODES } from "../utils/constants.js";
+import { COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MUSIC_MODES, PLAYER_MODES, TEXT_PRESENTATIONS } from "../utils/constants.js";
 import { duplicateData, randomId } from "../utils/foundry-helpers.js";
+import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
 export const ISSUE_SEVERITY = {
     ERROR: "error",
     WARNING: "warning"
 };
 
-export function createTextBlock(text, voice) {
+export function createTextBlock(text, voice, richText) {
+    const plainText = text !== undefined && text !== null ? String(text) : "";
+    const safeRichText = sanitizeRichTextHtml(
+        richText !== undefined && richText !== null ? richText : richTextFromPlainText(plainText),
+        { fallbackText: plainText }
+    );
     return {
         id: randomId("text"),
-        text: text !== undefined && text !== null ? String(text) : "",
+        text: richTextToPlainText(safeRichText),
+        richText: safeRichText,
         voice: voice || ""
     };
 }
@@ -71,6 +78,7 @@ export function createFrame(type = FRAME_TYPES.DIALOGUE) {
         portrait: "",
         hidePortrait: false,
         portraitPosition: "center",
+        textPresentation: TEXT_PRESENTATIONS.BOX,
         text: "",
         textBlocks: [createTextBlock("")],
         musicMode: MUSIC_MODES.KEEP,
@@ -336,6 +344,7 @@ export function sanitizeFrame(frame) {
     clean.portrait || (clean.portrait = "");
     clean.hidePortrait = clean.hidePortrait === true;
     clean.portraitPosition || (clean.portraitPosition = "center");
+    clean.textPresentation = Object.values(TEXT_PRESENTATIONS).includes(clean.textPresentation) ? clean.textPresentation : TEXT_PRESENTATIONS.BOX;
     clean.text || (clean.text = "");
     clean.textBlocks = Array.isArray(clean.textBlocks) ? clean.textBlocks.map(sanitizeTextBlock) : [];
     if (!clean.textBlocks.length) clean.textBlocks.push(createTextBlock(clean.text || "", ""));
@@ -356,7 +365,12 @@ export function sanitizeTextBlock(block) {
     const clean = duplicateData(block !== null && block !== void 0 ? block : {});
     clean.id || (clean.id = randomId("text"));
     if (clean.text === undefined || clean.text === null) clean.text = "";
-    clean.text = String(clean.text);
+    const fallbackText = String(clean.text);
+    clean.richText = sanitizeRichTextHtml(
+        clean.richText !== undefined && clean.richText !== null ? clean.richText : richTextFromPlainText(fallbackText),
+        { fallbackText }
+    );
+    clean.text = richTextToPlainText(clean.richText);
     clean.voice || (clean.voice = "");
     return clean;
 }

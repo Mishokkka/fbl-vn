@@ -1,4 +1,4 @@
-<section class="fbl-vn-player {{#if loading}}is-loading{{/if}} {{#if started}}is-started{{/if}} {{#if reducedMotion}}is-reduced-motion{{/if}}" data-mode="{{mode}}">
+<section class="fbl-vn-player {{#if loading}}is-loading{{/if}} {{#if started}}is-started{{/if}} {{#if reducedMotion}}is-reduced-motion{{/if}} {{#if contentHidden}}is-content-hidden{{/if}}" data-mode="{{mode}}">
   {{#if loading}}
     <div class="fbl-vn-loader">
       <div class="mark">VN</div>
@@ -24,11 +24,14 @@
       <img class="fbl-vn-portrait {{portraitClass}} {{transitionClass}}" src="{{portraitSrc}}" alt="{{portraitAlt}}" />
     {{/if}}
 
-    <div class="fbl-vn-dialogue" data-vn-advance-area>
+    <div class="fbl-vn-dialogue {{#if isCenteredText}}is-centered-text{{/if}}" data-vn-advance-area>
+      {{#unless isCenteredText}}
+        <button type="button" class="fbl-vn-hide-content" data-action="hideContent" title="Скрыть текст и персонажей" aria-label="Скрыть текст и персонажей" aria-expanded="true"><i class="fa-solid fa-eye-slash"></i></button>
+      {{/unless}}
       {{#if hasSpeaker}}
         <div class="fbl-vn-speaker">{{frame.speaker}}</div>
       {{/if}}
-      <div class="fbl-vn-text" data-vn-text>{{currentText}}</div>
+      <div class="fbl-vn-text" data-vn-text></div>
 
       {{#if showChoices}}
         <div class="fbl-vn-player-choice-list">
@@ -54,6 +57,10 @@
         {{/if}}
       {{/if}}
     </div>
+
+    {{#unless isCenteredText}}
+      <button type="button" class="fbl-vn-show-content" data-action="showContent" title="Показать текст и персонажей" aria-label="Показать текст и персонажей" aria-hidden="true"><i class="fa-solid fa-eye"></i></button>
+    {{/unless}}
 
     <div class="fbl-vn-volume-widget">
       {{#if volumePanelOpen}}

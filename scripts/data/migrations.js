@@ -1,5 +1,6 @@
 import { DATA_SCHEMA_VERSION, DEFAULT_DATA } from "../utils/constants.js";
 import { duplicateData, randomId } from "../utils/foundry-helpers.js";
+import { richTextFromPlainText } from "../utils/rich-text.js";
 
 export function migrateData(source) {
     const data = duplicateData(source && typeof source === "object" ? source : DEFAULT_DATA);
@@ -28,6 +29,10 @@ export function migrateData(source) {
     if (schemaVersion < 6) {
         migrateToV6(data);
         schemaVersion = 6;
+    }
+    if (schemaVersion < 7) {
+        migrateToV7(data);
+        schemaVersion = 7;
     }
     data.schemaVersion = DATA_SCHEMA_VERSION;
     return data;
@@ -216,5 +221,26 @@ function migrateToV6(data) {
             delete frame.sceneRouting;
         }
         delete scene.exitRouting;
+    }
+}
+
+
+function migrateToV7(data) {
+    data.scenes = Array.isArray(data.scenes) ? data.scenes : [];
+    for (const scene of data.scenes) {
+        if (!scene || typeof scene !== "object") continue;
+        scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
+        for (const frame of scene.frames) {
+            if (!frame || typeof frame !== "object") continue;
+            frame.textPresentation = frame.textPresentation === "center" ? "center" : "box";
+            frame.textBlocks = Array.isArray(frame.textBlocks) ? frame.textBlocks : [];
+            for (const block of frame.textBlocks) {
+                if (!block || typeof block !== "object") continue;
+                const text = block.text === undefined || block.text === null ? "" : String(block.text);
+                if (block.richText === undefined || block.richText === null || block.richText === "") {
+                    block.richText = richTextFromPlainText(text);
+                }
+            }
+        }
     }
 }

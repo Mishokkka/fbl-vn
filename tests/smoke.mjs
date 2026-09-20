@@ -57,9 +57,10 @@ const { VNGraphApp } = await import("../scripts/apps/vn-graph-app.js");
 const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
 const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
-const { applyChoiceCounterEffect, createFrame, createScene, createSceneCounter, getFrameReferences, resolveFrameNextRouting, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, createFrame, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { PLAYER_MODES } = await import("../scripts/utils/constants.js");
+const { PLAYER_MODES, TEXT_PRESENTATIONS } = await import("../scripts/utils/constants.js");
+const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
@@ -75,13 +76,19 @@ scene.frames[0].branchId = branchId;
 scene.frames[0].folderId = "";
 scene.frames[0].sort = 1000;
 const nested = createFrame("dialogue");
+assert.equal(nested.textPresentation, TEXT_PRESENTATIONS.BOX, "New frames must use the normal dialogue box by default");
+const formattedBlock = createTextBlock("Hello\nworld");
+assert.equal(formattedBlock.text, "Hello\nworld", "Rich text blocks must retain a plain-text representation");
+assert.equal(formattedBlock.richText, richTextFromPlainText("Hello\nworld"), "Plain text must be migrated into safe rich text");
+assert.equal(richTextToPlainText("<b>Hello</b><br>world"), "Hello\nworld", "Rich text plain-text conversion must preserve line breaks");
+assert.equal(sanitizeRichTextHtml("<script>alert(1)</script><b>Hello</b>", { fallbackText: "Hello" }).includes("<script"), false, "Rich text sanitizer must never retain script markup");
 nested.id = "frame-nested";
 nested.branchId = branchId;
 nested.folderId = "folder-b";
 nested.sort = 0;
 scene.frames.push(nested);
 scene.startFrame = "frame-root";
-await VNSceneStore.setData({ schemaVersion: 6, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 7, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const stored = VNSceneStore.getScene(scene.id);
 stored.title = "Mutated clone";
@@ -99,7 +106,7 @@ await Promise.all([
 const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
-await VNSceneStore.setData({ schemaVersion: 6, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 7, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const editor = Object.create(VNEditorApp.prototype);
 editor._pendingRenderParts = new Set();
@@ -131,6 +138,8 @@ assert.deepEqual(framesContext.branchOptions.map(option => option.value), [branc
 assert.equal("branches" in framesContext, false, "Unused branch view payload must not return");
 assert.equal("branchMoveOptions" in framesContext, false, "Unused branch move payload must not return");
 assert.equal(panelContext.selectedTextBlocks.length >= 1, true, "Frame panel must receive text blocks");
+assert.equal(typeof panelContext.selectedTextBlocks[0].richText, "string", "Frame panel text blocks must expose rich text");
+assert.equal(panelContext.textPresentationOptions.some(option => option.value === TEXT_PRESENTATIONS.CENTER), true, "Frame panel must offer centered text presentation");
 assert.deepEqual(Object.keys(VNEditorApp.PARTS), ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"]);
 let renderOptions = null;
 editor.rendered = true;
@@ -267,6 +276,8 @@ legacyYes.id = "legacy-yes";
 legacyYes.branchId = legacyScene.branches[0].id;
 legacyScene.frames.push(legacyYes);
 const legacySource = legacyScene.frames[0];
+delete legacySource.textPresentation;
+for (const block of legacySource.textBlocks || []) delete block.richText;
 legacySource.isFinal = true;
 legacySource.sceneRouting = {
   enabled: true,
@@ -278,12 +289,14 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 6);
+assert.equal(migrated.schemaVersion, 7);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.isFinal, true, "Unconvertible legacy exit routing must preserve the terminal frame");
 assert.equal("sceneRouting" in migratedFrame, false, "Legacy frame routing field must be removed");
+assert.equal(migratedFrame.textPresentation, TEXT_PRESENTATIONS.BOX, "Legacy frames must migrate to normal box presentation");
+assert.equal(typeof migratedFrame.textBlocks[0].richText, "string", "Legacy text blocks must gain rich text storage");
 
 const legacyFrameScene = createScene();
 const legacyFrameTarget = createFrame("dialogue");
@@ -305,7 +318,7 @@ assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
 assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 6, "Invalid schemaVersion values must flow through migrations");
+assert.equal(invalidVersionMigrated.schemaVersion, 7, "Invalid schemaVersion values must flow through migrations");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for invalid schemaVersion input");
 
 
@@ -331,6 +344,25 @@ assert.equal(closePolicyPlayer._canCloseLocally(), false, "A non-leader player m
 closePolicyPlayer.leaderId = closePolicyUser.id;
 assert.equal(closePolicyPlayer._canCloseLocally(), true, "The session leader must retain the close affordance");
 game.user = savedCurrentUser;
+
+let focusHidden = false;
+const showControl = { setAttribute(name, value) { this[name] = value; } };
+const hideControl = { setAttribute(name, value) { this[name] = value; } };
+const focusPlayer = Object.create(VNPlayerApp.prototype);
+focusPlayer.element = {
+  matches(selector) { return selector === ".fbl-vn-player"; },
+  classList: { toggle(name, enabled) { if (name === "is-content-hidden") focusHidden = enabled; } },
+  querySelector(selector) {
+    if (selector === ".fbl-vn-show-content") return showControl;
+    if (selector === ".fbl-vn-hide-content") return hideControl;
+    return null;
+  }
+};
+focusPlayer._setContentHidden(true);
+assert.equal(focusHidden, true, "Focus view must hide the dialogue UI locally");
+assert.equal(focusPlayer._contentHidden, true);
+focusPlayer._setContentHidden(false);
+assert.equal(focusHidden, false, "Focus view must be reversible");
 
 const graph = Object.create(VNGraphApp.prototype);
 graph.hideLinearFrames = false;
