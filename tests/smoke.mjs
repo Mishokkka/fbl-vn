@@ -138,6 +138,8 @@ assert.deepEqual(framesContext.branchOptions.map(option => option.value), [branc
 assert.equal("branches" in framesContext, false, "Unused branch view payload must not return");
 assert.equal("branchMoveOptions" in framesContext, false, "Unused branch move payload must not return");
 assert.equal(panelContext.selectedTextBlocks.length >= 1, true, "Frame panel must receive text blocks");
+assert.equal(typeof panelContext.selectedTextBlocks[0].richText, "string", "Frame panel text blocks must expose rich text");
+assert.equal(panelContext.textPresentationOptions.some(option => option.value === TEXT_PRESENTATIONS.CENTER), true, "Frame panel must offer centered text presentation");
 assert.deepEqual(Object.keys(VNEditorApp.PARTS), ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"]);
 let renderOptions = null;
 editor.rendered = true;
@@ -274,6 +276,8 @@ legacyYes.id = "legacy-yes";
 legacyYes.branchId = legacyScene.branches[0].id;
 legacyScene.frames.push(legacyYes);
 const legacySource = legacyScene.frames[0];
+delete legacySource.textPresentation;
+for (const block of legacySource.textBlocks || []) delete block.richText;
 legacySource.isFinal = true;
 legacySource.sceneRouting = {
   enabled: true,
@@ -340,6 +344,25 @@ assert.equal(closePolicyPlayer._canCloseLocally(), false, "A non-leader player m
 closePolicyPlayer.leaderId = closePolicyUser.id;
 assert.equal(closePolicyPlayer._canCloseLocally(), true, "The session leader must retain the close affordance");
 game.user = savedCurrentUser;
+
+let focusHidden = false;
+const showControl = { setAttribute(name, value) { this[name] = value; } };
+const hideControl = { setAttribute(name, value) { this[name] = value; } };
+const focusPlayer = Object.create(VNPlayerApp.prototype);
+focusPlayer.element = {
+  matches(selector) { return selector === ".fbl-vn-player"; },
+  classList: { toggle(name, enabled) { if (name === "is-content-hidden") focusHidden = enabled; } },
+  querySelector(selector) {
+    if (selector === ".fbl-vn-show-content") return showControl;
+    if (selector === ".fbl-vn-hide-content") return hideControl;
+    return null;
+  }
+};
+focusPlayer._setContentHidden(true);
+assert.equal(focusHidden, true, "Focus view must hide the dialogue UI locally");
+assert.equal(focusPlayer._contentHidden, true);
+focusPlayer._setContentHidden(false);
+assert.equal(focusHidden, false, "Focus view must be reversible");
 
 const graph = Object.create(VNGraphApp.prototype);
 graph.hideLinearFrames = false;
