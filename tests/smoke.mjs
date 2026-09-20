@@ -460,6 +460,12 @@ assert.equal(audio.music.size, 0, "Stop-all must clear every music channel");
 assert.equal(audio.sfx.size, 0, "Stop-all must clear every SFX channel");
 audio.destroy();
 
+const visualStatePlayer = Object.create(VNPlayerApp.prototype);
+visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portrait.png", portraitPosition: "center" };
+visualStatePlayer._applyVisualState({ background: "", clearBackground: false, portrait: "", hidePortrait: false, portraitPosition: "right" });
+assert.equal(visualStatePlayer.visualState.portrait, "old-portrait.png", "A frame without a new portrait must keep the previous portrait image");
+assert.equal(visualStatePlayer.visualState.portraitPosition, "right", "Portrait position must update even when the frame keeps the previous portrait image");
+
 const player = Object.create(VNPlayerApp.prototype);
 player.scene = scene;
 player.counterState = { [routeCounter.id]: 3 };
