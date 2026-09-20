@@ -437,6 +437,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._bindKeyboard();
         this._bindClickAdvance();
         this._bindVolumeControls();
+        this._setContentHidden(this._contentHidden);
         if (context.started && context.frame) this._typeText(context.currentRichText, context.currentText);
     }
 
