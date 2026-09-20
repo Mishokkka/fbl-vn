@@ -46,6 +46,14 @@
                   {{/each}}
                 </select>
               </div>
+              <div class="form-group">
+                <label for="fbl-vn-frame-vignette">Виньетка</label>
+                <select id="fbl-vn-frame-vignette" name="frame.vignetteMode" title="Авто: по краям для обычной панели, вокруг текста для центрального текста">
+                  {{#each vignetteOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
               <label class="form-group icon-toggle-field" title="Очистить фон" aria-label="Очистить фон">
                 <span class="field-label-spacer" aria-hidden="true"></span>
                 <input type="checkbox" name="frame.clearBackground" {{#if selectedFrame.clearBackground}}checked{{/if}} />
