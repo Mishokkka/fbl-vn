@@ -382,3 +382,140 @@
     max-height: 56vh;
   }
 }
+
+
+/* Rich text, centered narration, and local focus view */
+.fbl-vn-text p,
+.fbl-vn-text div,
+.fbl-vn-text blockquote {
+  margin: 0 0 0.45em;
+}
+
+.fbl-vn-text p:last-child,
+.fbl-vn-text div:last-child,
+.fbl-vn-text blockquote:last-child {
+  margin-bottom: 0;
+}
+
+.fbl-vn-text ul,
+.fbl-vn-text ol {
+  margin: 0.35em 0;
+  padding-left: 1.6em;
+}
+
+.fbl-vn-text blockquote {
+  padding-left: 0.8em;
+  border-left: 2px solid rgba(231, 197, 141, 0.5);
+  color: rgba(239, 232, 219, 0.9);
+}
+
+.fbl-vn-dialogue.is-centered-text {
+  left: 50%;
+  right: auto;
+  top: 50%;
+  bottom: auto;
+  width: min(78vw, 1100px);
+  min-height: 0;
+  max-height: 78vh;
+  padding: 22px 26px;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  text-align: center;
+}
+
+.fbl-vn-dialogue.is-centered-text .fbl-vn-text {
+  min-height: 0;
+  font-size: clamp(24px, 2.2vw, 42px);
+  line-height: 1.35;
+  text-align: center;
+  text-shadow:
+    0 2px 3px rgba(0, 0, 0, 0.95),
+    0 0 18px rgba(0, 0, 0, 0.8);
+}
+
+.fbl-vn-dialogue.is-centered-text .fbl-vn-next,
+.fbl-vn-dialogue.is-centered-text .fbl-vn-wait {
+  position: static;
+  width: fit-content;
+  margin: 24px auto 0;
+}
+
+.fbl-vn-dialogue.is-centered-text .fbl-vn-player-choice-list {
+  width: min(100%, 760px);
+  margin: 24px auto 0;
+  text-align: left;
+}
+
+.fbl-vn-hide-content,
+.fbl-vn-show-content {
+  z-index: 5;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(201, 167, 111, 0.42);
+  border-radius: 9px;
+  background: rgba(15, 13, 10, 0.82);
+  color: #e7c58d;
+  cursor: pointer;
+}
+
+.fbl-vn-hide-content {
+  position: sticky;
+  top: 0;
+  float: right;
+  margin: -12px -18px 4px 12px;
+}
+
+.fbl-vn-show-content {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  display: none;
+  transform: translateX(-50%);
+  background: rgba(15, 13, 10, 0.68);
+}
+
+.fbl-vn-hide-content:hover,
+.fbl-vn-show-content:hover {
+  background: rgba(61, 45, 23, 0.96);
+}
+
+.fbl-vn-player.is-content-hidden .fbl-vn-dialogue:not(.is-centered-text),
+.fbl-vn-player.is-content-hidden .fbl-vn-portrait {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.fbl-vn-player.is-content-hidden .fbl-vn-show-content {
+  display: grid;
+}
+
+.fbl-vn-player.is-reduced-motion .fbl-vn-dialogue,
+.fbl-vn-player.is-reduced-motion .fbl-vn-portrait {
+  transition: none;
+}
+
+.fbl-vn-dialogue,
+.fbl-vn-portrait {
+  transition: opacity 140ms ease, visibility 140ms ease;
+}
+
+@media (max-width: 1000px), (max-height: 620px) {
+  .fbl-vn-dialogue.is-centered-text {
+    width: min(90vw, 920px);
+    max-height: 82vh;
+    padding: 18px 20px;
+  }
+
+  .fbl-vn-dialogue.is-centered-text .fbl-vn-text {
+    font-size: clamp(21px, 3.2vw, 34px);
+  }
+}
