@@ -101,19 +101,6 @@ function sanitizeStyle(styleText) {
     return declarations.join("; ");
 }
 
-function sanitizeElementAttributes(element) {
-    const tag = element.tagName.toLowerCase();
-    for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name);
-
-    const sourceStyle = element.getAttribute?.("style");
-    if (sourceStyle) {
-        const cleanStyle = sanitizeStyle(sourceStyle);
-        if (cleanStyle) element.setAttribute("style", cleanStyle);
-    }
-
-    if (tag !== "font") return;
-}
-
 function sanitizeTree(root) {
     const visit = node => {
         for (const child of [...node.childNodes]) {
