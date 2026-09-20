@@ -488,7 +488,8 @@
 }
 
 .fbl-vn-player.is-content-hidden .fbl-vn-dialogue:not(.is-centered-text),
-.fbl-vn-player.is-content-hidden .fbl-vn-portrait {
+.fbl-vn-player.is-content-hidden .fbl-vn-portrait,
+.fbl-vn-player.is-content-hidden .fbl-vn-vignette {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -504,7 +505,8 @@
 }
 
 .fbl-vn-dialogue,
-.fbl-vn-portrait {
+.fbl-vn-portrait,
+.fbl-vn-vignette {
   transition: opacity 140ms ease, visibility 140ms ease;
 }
 
