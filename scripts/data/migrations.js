@@ -5,6 +5,9 @@ import { richTextFromPlainText } from "../utils/rich-text.js";
 export function migrateData(source) {
     const data = duplicateData(source && typeof source === "object" ? source : DEFAULT_DATA);
     const parsedVersion = Number(data.schemaVersion);
+    if (Number.isFinite(parsedVersion) && (!Number.isInteger(parsedVersion) || parsedVersion < 0 || parsedVersion > DATA_SCHEMA_VERSION)) {
+        throw new Error(`VN: unsupported schemaVersion "${data.schemaVersion}". Expected an integer from 0 to ${DATA_SCHEMA_VERSION}.`);
+    }
     let schemaVersion = Number.isFinite(parsedVersion) ? parsedVersion : 0;
     if (schemaVersion < 1) {
         migrateToV1(data);
