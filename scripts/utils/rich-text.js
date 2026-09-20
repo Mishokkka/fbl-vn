@@ -64,7 +64,7 @@ function sanitizeColor(value) {
 function sanitizeFontFamily(value) {
     const clean = String(value || "").trim();
     if (!clean || clean.length > 120) return "";
-    if (!/^[a-z0-9 _,'".\-]+$/i.test(clean)) return "";
+    if (!/^[\p{L}\p{N} _,'".\-]+$/u.test(clean)) return "";
     return clean;
 }
 
