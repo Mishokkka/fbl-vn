@@ -6,7 +6,9 @@ export function migrateData(source) {
     const data = duplicateData(source && typeof source === "object" ? source : DEFAULT_DATA);
     const parsedVersion = Number(data.schemaVersion);
     if (Number.isFinite(parsedVersion) && (!Number.isInteger(parsedVersion) || parsedVersion < 0 || parsedVersion > DATA_SCHEMA_VERSION)) {
-        throw new Error(`VN: unsupported schemaVersion "${data.schemaVersion}". Expected an integer from 0 to ${DATA_SCHEMA_VERSION}.`);
+        const error = new RangeError(`VN: unsupported schemaVersion "${data.schemaVersion}". Expected an integer from 0 to ${DATA_SCHEMA_VERSION}.`);
+        error.code = "FBL_VN_UNSUPPORTED_SCHEMA_VERSION";
+        throw error;
     }
     let schemaVersion = Number.isFinite(parsedVersion) ? parsedVersion : 0;
     if (schemaVersion < 1) {
