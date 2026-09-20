@@ -34,6 +34,10 @@ export function migrateData(source) {
         migrateToV7(data);
         schemaVersion = 7;
     }
+    if (schemaVersion < 8) {
+        migrateToV8(data);
+        schemaVersion = 8;
+    }
     data.schemaVersion = DATA_SCHEMA_VERSION;
     return data;
 }
@@ -241,6 +245,60 @@ function migrateToV7(data) {
                     block.richText = richTextFromPlainText(text);
                 }
             }
+        }
+    }
+}
+
+
+function migrateToV8(data) {
+    data.scenes = Array.isArray(data.scenes) ? data.scenes : [];
+    for (const scene of data.scenes) {
+        if (!scene || typeof scene !== "object") continue;
+        scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
+        for (const frame of scene.frames) {
+            if (!frame || typeof frame !== "object") continue;
+
+            if (!Array.isArray(frame.musicCues)) {
+                frame.musicCues = [];
+                const mode = String(frame.musicMode || "keep");
+                const path = String(frame.music || "");
+                if (mode === "play" && path) {
+                    frame.musicCues.push({
+                        id: randomId("audio"),
+                        action: "play",
+                        channel: "music-1",
+                        src: path,
+                        loop: true
+                    });
+                }
+                else if (mode === "stop") {
+                    frame.musicCues.push({
+                        id: randomId("audio"),
+                        action: "stop-all",
+                        channel: "",
+                        src: "",
+                        loop: false
+                    });
+                }
+            }
+
+            if (!Array.isArray(frame.sfxCues)) {
+                frame.sfxCues = [];
+                const path = String(frame.sfx || "");
+                if (path) {
+                    frame.sfxCues.push({
+                        id: randomId("audio"),
+                        action: "play",
+                        channel: `legacy-sfx-${frame.id || randomId("frame")}`,
+                        src: path,
+                        loop: false
+                    });
+                }
+            }
+
+            delete frame.musicMode;
+            delete frame.music;
+            delete frame.sfx;
         }
     }
 }
