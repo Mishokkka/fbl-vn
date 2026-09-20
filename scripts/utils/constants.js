@@ -34,17 +34,23 @@ export const COUNTER_EFFECTS = {
     ADD: "add",
     SUBTRACT: "subtract"
 };
+// Retained for migration of scenes created before schema v8.
 export const MUSIC_MODES = {
     KEEP: "keep",
     PLAY: "play",
     STOP: "stop"
+};
+export const AUDIO_ACTIONS = {
+    PLAY: "play",
+    STOP: "stop",
+    STOP_ALL: "stop-all"
 };
 export const PLAYER_MODES = {
     INDIVIDUAL: "individual",
     GM: "gm",
     VOTE: "vote"
 };
-export const DATA_SCHEMA_VERSION = 7;
+export const DATA_SCHEMA_VERSION = 8;
 export const DEFAULT_DATA = {
     schemaVersion: DATA_SCHEMA_VERSION,
     version: 3,
