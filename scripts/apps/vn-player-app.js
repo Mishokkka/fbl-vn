@@ -704,14 +704,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!frame) return;
         if (frame.clearBackground === true) this.visualState.background = "";
         if (frame.background) this.visualState.background = frame.background;
-        if (frame.hidePortrait === true) {
-            this.visualState.portrait = "";
-            this.visualState.portraitPosition = frame.portraitPosition || "center";
-        }
-        else if (frame.portrait) {
-            this.visualState.portrait = frame.portrait;
-            this.visualState.portraitPosition = frame.portraitPosition || "center";
-        }
+        this.visualState.portraitPosition = ["left", "center", "right"].includes(frame.portraitPosition)
+            ? frame.portraitPosition
+            : "left";
+        if (frame.hidePortrait === true) this.visualState.portrait = "";
+        else if (frame.portrait) this.visualState.portrait = frame.portrait;
     }
 
     _resetVoteForStep(frameId, textIndex = 0) {
