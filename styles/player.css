@@ -497,10 +497,11 @@
   top: 50%;
   bottom: auto;
   width: min(78vw, 1100px);
+  height: auto;
   min-height: 0;
   max-height: 78vh;
   padding: 22px 26px;
-  overflow: auto;
+  overflow: visible;
   transform: translate(-50%, -50%);
   border: 0;
   border-radius: 0;
