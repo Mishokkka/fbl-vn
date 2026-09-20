@@ -75,7 +75,7 @@ const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
 const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
-const { applyChoiceCounterEffect, collectAssetPaths, createAudioCue, createFrame, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, collectAssetPaths, createAudioCue, createFrame, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
 const { AUDIO_ACTIONS, PLAYER_MODES, TEXT_PRESENTATIONS } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } = await import("../scripts/utils/rich-text.js");
@@ -362,10 +362,33 @@ assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
 assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 8, "Invalid schemaVersion values must flow through migrations");
-assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for invalid schemaVersion input");
+assert.equal(invalidVersionMigrated.schemaVersion, 8, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
+for (const invalidSchemaVersion of [-1, 7.5, 9]) {
+  assert.throws(
+    () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
+    /unsupported schemaVersion/,
+    `Unsupported numeric schemaVersion ${invalidSchemaVersion} must be rejected instead of relabeled`
+  );
+}
 
-
+const malformedAudioFrame = createFrame("dialogue");
+malformedAudioFrame.musicCues = [
+  { id: "duplicate-audio", action: AUDIO_ACTIONS.PLAY, channel: "score", src: "score-a.ogg", loop: true },
+  { id: "duplicate-audio", action: AUDIO_ACTIONS.PLAY, channel: "drone", src: "drone-a.ogg", loop: true },
+  "broken-cue",
+  []
+];
+malformedAudioFrame.sfxCues = [
+  { id: "duplicate-sfx", action: AUDIO_ACTIONS.PLAY, channel: "rain", src: "rain-a.ogg", loop: true },
+  { id: "duplicate-sfx", action: AUDIO_ACTIONS.PLAY, channel: "bell", src: "bell-a.wav", loop: false }
+];
+const sanitizedAudioFrame = sanitizeFrame(malformedAudioFrame);
+assert.equal(new Set(sanitizedAudioFrame.musicCues.map(cue => cue.id)).size, sanitizedAudioFrame.musicCues.length, "Music cue IDs must be unique after sanitization");
+assert.equal(new Set(sanitizedAudioFrame.sfxCues.map(cue => cue.id)).size, sanitizedAudioFrame.sfxCues.length, "SFX cue IDs must be unique after sanitization");
+assert.equal(sanitizedAudioFrame.musicCues.every(cue => cue && typeof cue === "object" && !Array.isArray(cue)), true, "Malformed primitive or array music cues must normalize into cue objects");
+assert.equal(sanitizedAudioFrame.musicCues[0].id, "duplicate-audio", "The first valid unique cue ID should be preserved");
+assert.notEqual(sanitizedAudioFrame.musicCues[1].id, "duplicate-audio", "A duplicate cue ID must be regenerated");
 
 const audio = new VNAudioController();
 await audio.applyFrame({
