@@ -76,7 +76,7 @@ for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteB
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
 if (manifest.version !== "1.2.0") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.1.0")) errors.push("README release heading is out of sync with manifest");
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.2.0")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
