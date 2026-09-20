@@ -24,13 +24,16 @@
       <img class="fbl-vn-portrait {{portraitClass}} {{transitionClass}}" src="{{portraitSrc}}" alt="{{portraitAlt}}" />
     {{/if}}
 
-    <div class="fbl-vn-dialogue {{#if isCenteredText}}is-centered-text{{/if}}" data-vn-advance-area>
+    <div class="fbl-vn-dialogue-stack {{#if isCenteredText}}is-centered-text{{/if}}">
       {{#unless isCenteredText}}
-        <button type="button" class="fbl-vn-hide-content" data-action="hideContent" title="Скрыть текст и персонажей" aria-label="Скрыть текст и персонажей" aria-expanded="true"><i class="fa-solid fa-eye-slash"></i></button>
+        {{#if hasSpeaker}}
+          <div class="fbl-vn-speaker">{{frame.speaker}}</div>
+        {{/if}}
       {{/unless}}
-      {{#if hasSpeaker}}
-        <div class="fbl-vn-speaker">{{frame.speaker}}</div>
-      {{/if}}
+      <div class="fbl-vn-dialogue {{#if isCenteredText}}is-centered-text{{/if}}" data-vn-advance-area>
+        {{#unless isCenteredText}}
+          <button type="button" class="fbl-vn-hide-content" data-action="hideContent" title="Скрыть текст и персонажей" aria-label="Скрыть текст и персонажей" aria-expanded="true"><i class="fa-solid fa-eye-slash"></i></button>
+        {{/unless}}
       <div class="fbl-vn-text" data-vn-text></div>
 
       {{#if showChoices}}
@@ -56,6 +59,7 @@
           <div class="fbl-vn-wait">Ожидание ведущего</div>
         {{/if}}
       {{/if}}
+      </div>
     </div>
 
     {{#unless isCenteredText}}
