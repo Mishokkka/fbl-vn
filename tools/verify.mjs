@@ -34,6 +34,15 @@ for (const file of walk("scripts", ".js")) {
 }
 
 const editorSource = read("scripts/apps/vn-editor-app.js");
+const playerTemplateSource = read("templates/player.hbs");
+const playerCssSource = read("styles/player.css");
+if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
+if (!playerTemplateSource.includes("fbl-vn-dialogue-actions")) errors.push("Player dialogue must contain a fixed action row");
+if (!playerTemplateSource.includes("fbl-vn-choice-overlay")) errors.push("Choice buttons must render outside the dialogue box");
+if (!/--vn-dialogue-height:\s*240px/.test(playerCssSource)) errors.push("Player dialogue must define a stable desktop height");
+if (!/\.fbl-vn-portrait\s*\{[\s\S]*?bottom:\s*var\(--vn-dialogue-height\)/.test(playerCssSource)) errors.push("Portrait bottom must align to dialogue top");
+if (!/\.fbl-vn-dialogue-scroll\s*\{[\s\S]*?overflow-y:\s*auto/.test(playerCssSource)) errors.push("Dialogue scroll region must retain vertical scrolling");
+if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
 for (const partId of expectedEditorParts) {
