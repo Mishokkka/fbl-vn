@@ -500,7 +500,8 @@
 }
 
 .fbl-vn-player.is-reduced-motion .fbl-vn-dialogue,
-.fbl-vn-player.is-reduced-motion .fbl-vn-portrait {
+.fbl-vn-player.is-reduced-motion .fbl-vn-portrait,
+.fbl-vn-player.is-reduced-motion .fbl-vn-vignette {
   transition: none;
 }
 
