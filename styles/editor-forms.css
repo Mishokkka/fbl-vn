@@ -12,7 +12,7 @@
 }
 
 .fbl-vn-field-row.row-background {
-  grid-template-columns: minmax(260px, 1fr) minmax(130px, 160px) 34px;
+  grid-template-columns: minmax(260px, 1fr) minmax(120px, 150px) minmax(150px, 180px) 34px;
 }
 
 .fbl-vn-field-row.row-character {
