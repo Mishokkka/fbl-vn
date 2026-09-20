@@ -94,12 +94,20 @@
   right: 8vw;
 }
 
-.fbl-vn-dialogue {
+.fbl-vn-dialogue-stack:not(.is-centered-text) {
   position: absolute;
-  box-sizing: border-box;
   left: 7vw;
   right: 7vw;
   bottom: 5vh;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.fbl-vn-dialogue {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
   min-height: 150px;
   max-height: min(56vh, 520px);
   padding: 24px 30px 58px;
@@ -115,16 +123,15 @@
 }
 
 .fbl-vn-speaker {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 2;
   width: fit-content;
   min-width: 180px;
-  max-width: calc(100% - 12px);
-  margin: -12px 0 12px -6px;
+  max-width: calc(100% - 36px);
+  margin: 0 0 -1px 18px;
   padding: 8px 18px;
   border: 1px solid rgba(201, 167, 111, 0.5);
-  border-radius: 10px;
+  border-radius: 10px 10px 4px 4px;
   background: rgba(15, 13, 10, 0.96);
   color: #e7c58d;
   font-size: 20px;
@@ -353,17 +360,20 @@
 }
 
 @media (max-width: 1000px), (max-height: 620px) {
-  .fbl-vn-dialogue {
+  .fbl-vn-dialogue-stack:not(.is-centered-text) {
     left: 3vw;
     right: 3vw;
     bottom: 2vh;
+  }
+
+  .fbl-vn-dialogue-stack:not(.is-centered-text) .fbl-vn-dialogue {
     max-height: 60vh;
     padding: 20px 22px 54px;
   }
 
   .fbl-vn-speaker {
-    max-width: calc(100% - 12px);
-    margin-left: -4px;
+    max-width: calc(100% - 24px);
+    margin-left: 12px;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -410,6 +420,7 @@
 }
 
 .fbl-vn-dialogue.is-centered-text {
+  position: absolute;
   left: 50%;
   right: auto;
   top: 50%;
@@ -487,7 +498,7 @@
   background: rgba(61, 45, 23, 0.96);
 }
 
-.fbl-vn-player.is-content-hidden .fbl-vn-dialogue:not(.is-centered-text),
+.fbl-vn-player.is-content-hidden .fbl-vn-dialogue-stack:not(.is-centered-text),
 .fbl-vn-player.is-content-hidden .fbl-vn-portrait,
 .fbl-vn-player.is-content-hidden .fbl-vn-vignette {
   opacity: 0;
@@ -499,12 +510,14 @@
   display: grid;
 }
 
+.fbl-vn-player.is-reduced-motion .fbl-vn-dialogue-stack,
 .fbl-vn-player.is-reduced-motion .fbl-vn-dialogue,
 .fbl-vn-player.is-reduced-motion .fbl-vn-portrait,
 .fbl-vn-player.is-reduced-motion .fbl-vn-vignette {
   transition: none;
 }
 
+.fbl-vn-dialogue-stack,
 .fbl-vn-dialogue,
 .fbl-vn-portrait,
 .fbl-vn-vignette {
