@@ -228,6 +228,10 @@ export class VNSceneStore {
             migrated = migrateData(data || DEFAULT_DATA);
         }
         catch (error) {
+            if (error?.code === "FBL_VN_UNSUPPORTED_SCHEMA_VERSION") {
+                console.error(`${MODULE_ID} | Stored VN data uses an unsupported schema version. Refusing to reinterpret or overwrite it.`, error);
+                throw error;
+            }
             console.warn(`${MODULE_ID} | Stored VN data is damaged. Falling back to empty data.`, error);
             migrated = duplicateData(DEFAULT_DATA);
         }

@@ -49,7 +49,24 @@ globalThis.game = {
 };
 globalThis.Hooks = { callAll() {} };
 globalThis.ui = { notifications: { info() {}, warn() {}, error() {} } };
-globalThis.Audio = class {};
+globalThis.Audio = class {
+  constructor(src = "") {
+    this.src = src;
+    this.paused = true;
+    this.currentTime = 0;
+    this.loop = false;
+    this.volume = 1;
+    this._listeners = new Map();
+  }
+  addEventListener(type, listener) { this._listeners.set(type, listener); }
+  removeEventListener(type, listener) {
+    if (this._listeners.get(type) === listener) this._listeners.delete(type);
+  }
+  async play() { this.paused = false; }
+  pause() { this.paused = true; }
+  load() {}
+  emit(type) { this._listeners.get(type)?.(); }
+};
 globalThis.Image = class {};
 
 const { VNEditorApp } = await import("../scripts/apps/vn-editor-app.js");
@@ -57,9 +74,10 @@ const { VNGraphApp } = await import("../scripts/apps/vn-graph-app.js");
 const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
 const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
-const { applyChoiceCounterEffect, createFrame, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, validateScene } = await import("../scripts/data/schema.js");
+const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
+const { applyChoiceCounterEffect, collectAssetPaths, createAudioCue, createFrame, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { PLAYER_MODES, TEXT_PRESENTATIONS } = await import("../scripts/utils/constants.js");
+const { AUDIO_ACTIONS, PLAYER_MODES, TEXT_PRESENTATIONS } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
 
@@ -75,6 +93,14 @@ scene.frames[0].id = "frame-root";
 scene.frames[0].branchId = branchId;
 scene.frames[0].folderId = "";
 scene.frames[0].sort = 1000;
+scene.frames[0].musicCues = [
+  createAudioCue("music", { channel: "music-1", src: "music-a.ogg", loop: true }),
+  createAudioCue("music", { channel: "music-2", src: "music-b.ogg", loop: true })
+];
+scene.frames[0].sfxCues = [
+  createAudioCue("sfx", { channel: "wind", src: "wind.ogg", loop: true })
+];
+assert.deepEqual(new Set(collectAssetPaths(scene)), new Set(["music-a.ogg", "music-b.ogg", "wind.ogg"]), "Preload collection must include every playable audio cue");
 const nested = createFrame("dialogue");
 assert.equal(nested.textPresentation, TEXT_PRESENTATIONS.BOX, "New frames must use the normal dialogue box by default");
 const formattedBlock = createTextBlock("Hello\nworld");
@@ -88,7 +114,7 @@ nested.folderId = "folder-b";
 nested.sort = 0;
 scene.frames.push(nested);
 scene.startFrame = "frame-root";
-await VNSceneStore.setData({ schemaVersion: 7, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 8, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const stored = VNSceneStore.getScene(scene.id);
 stored.title = "Mutated clone";
@@ -106,7 +132,7 @@ await Promise.all([
 const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
-await VNSceneStore.setData({ schemaVersion: 7, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 8, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const editor = Object.create(VNEditorApp.prototype);
 editor._pendingRenderParts = new Set();
@@ -140,6 +166,10 @@ assert.equal("branchMoveOptions" in framesContext, false, "Unused branch move pa
 assert.equal(panelContext.selectedTextBlocks.length >= 1, true, "Frame panel must receive text blocks");
 assert.equal(typeof panelContext.selectedTextBlocks[0].richText, "string", "Frame panel text blocks must expose rich text");
 assert.equal(panelContext.textPresentationOptions.some(option => option.value === TEXT_PRESENTATIONS.CENTER), true, "Frame panel must offer centered text presentation");
+assert.equal(panelContext.selectedMusicCues.length, 2, "Frame panel must expose all music cues");
+assert.equal(panelContext.selectedSfxCues.length, 1, "Frame panel must expose all SFX cues");
+assert.deepEqual(panelContext.musicChannelOptions.map(option => option.value), ["music-1", "music-2"], "Music channel suggestions must include channels used by the scene");
+assert.deepEqual(panelContext.sfxChannelOptions.map(option => option.value), ["wind"], "SFX channel suggestions must include channels used by the scene");
 assert.deepEqual(Object.keys(VNEditorApp.PARTS), ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"]);
 let renderOptions = null;
 editor.rendered = true;
@@ -278,6 +308,11 @@ legacyScene.frames.push(legacyYes);
 const legacySource = legacyScene.frames[0];
 delete legacySource.textPresentation;
 for (const block of legacySource.textBlocks || []) delete block.richText;
+delete legacySource.musicCues;
+delete legacySource.sfxCues;
+legacySource.musicMode = "play";
+legacySource.music = "legacy-music.ogg";
+legacySource.sfx = "legacy-bell.wav";
 legacySource.isFinal = true;
 legacySource.sceneRouting = {
   enabled: true,
@@ -289,7 +324,7 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 7);
+assert.equal(migrated.schemaVersion, 8);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
@@ -297,6 +332,15 @@ assert.equal(migratedFrame.isFinal, true, "Unconvertible legacy exit routing mus
 assert.equal("sceneRouting" in migratedFrame, false, "Legacy frame routing field must be removed");
 assert.equal(migratedFrame.textPresentation, TEXT_PRESENTATIONS.BOX, "Legacy frames must migrate to normal box presentation");
 assert.equal(typeof migratedFrame.textBlocks[0].richText, "string", "Legacy text blocks must gain rich text storage");
+assert.equal(migratedFrame.musicCues.length, 1, "Legacy music must migrate into one channel cue");
+assert.equal(migratedFrame.musicCues[0].channel, "music-1");
+assert.equal(migratedFrame.musicCues[0].src, "legacy-music.ogg");
+assert.equal(migratedFrame.musicCues[0].loop, true);
+assert.equal(migratedFrame.sfxCues.length, 1, "Legacy SFX must migrate into one channel cue");
+assert.equal(migratedFrame.sfxCues[0].src, "legacy-bell.wav");
+assert.equal("musicMode" in migratedFrame, false, "Legacy music mode must be removed after migration");
+assert.equal("music" in migratedFrame, false, "Legacy music path must be removed after migration");
+assert.equal("sfx" in migratedFrame, false, "Legacy SFX path must be removed after migration");
 
 const legacyFrameScene = createScene();
 const legacyFrameTarget = createFrame("dialogue");
@@ -318,9 +362,75 @@ assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
 assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 7, "Invalid schemaVersion values must flow through migrations");
-assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for invalid schemaVersion input");
+assert.equal(invalidVersionMigrated.schemaVersion, 8, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
+for (const invalidSchemaVersion of [-1, 7.5, 9]) {
+  assert.throws(
+    () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
+    /unsupported schemaVersion/,
+    `Unsupported numeric schemaVersion ${invalidSchemaVersion} must be rejected instead of relabeled`
+  );
+}
+assert.throws(
+  () => VNSceneStore._sanitizeData({ schemaVersion: 9, version: 3, scenes: [], assets: [], characters: [] }),
+  /unsupported schemaVersion/,
+  "The scene store must not silently downgrade future-schema data to an empty current-schema save"
+);
 
+const malformedAudioFrame = createFrame("dialogue");
+malformedAudioFrame.musicCues = [
+  { id: "duplicate-audio", action: AUDIO_ACTIONS.PLAY, channel: "score", src: "score-a.ogg", loop: true },
+  { id: "duplicate-audio", action: AUDIO_ACTIONS.PLAY, channel: "drone", src: "drone-a.ogg", loop: true },
+  "broken-cue",
+  []
+];
+malformedAudioFrame.sfxCues = [
+  { id: "duplicate-sfx", action: AUDIO_ACTIONS.PLAY, channel: "rain", src: "rain-a.ogg", loop: true },
+  { id: "duplicate-sfx", action: AUDIO_ACTIONS.PLAY, channel: "bell", src: "bell-a.wav", loop: false }
+];
+const sanitizedAudioFrame = sanitizeFrame(malformedAudioFrame);
+assert.equal(new Set(sanitizedAudioFrame.musicCues.map(cue => cue.id)).size, sanitizedAudioFrame.musicCues.length, "Music cue IDs must be unique after sanitization");
+assert.equal(new Set(sanitizedAudioFrame.sfxCues.map(cue => cue.id)).size, sanitizedAudioFrame.sfxCues.length, "SFX cue IDs must be unique after sanitization");
+assert.equal(sanitizedAudioFrame.musicCues.every(cue => cue && typeof cue === "object" && !Array.isArray(cue)), true, "Malformed primitive or array music cues must normalize into cue objects");
+assert.equal(sanitizedAudioFrame.musicCues[0].id, "duplicate-audio", "The first valid unique cue ID should be preserved");
+assert.notEqual(sanitizedAudioFrame.musicCues[1].id, "duplicate-audio", "A duplicate cue ID must be regenerated");
+
+const audio = new VNAudioController();
+await audio.applyFrame({
+  musicCues: [
+    createAudioCue("music", { channel: "score", src: "score.ogg", loop: true }),
+    createAudioCue("music", { channel: "drone", src: "drone.ogg", loop: true })
+  ],
+  sfxCues: [
+    createAudioCue("sfx", { channel: "rain", src: "rain.ogg", loop: true }),
+    createAudioCue("sfx", { channel: "bell", src: "bell.wav", loop: false })
+  ]
+});
+assert.equal(audio.music.size, 2, "Two music channels must be able to play concurrently");
+assert.equal(audio.sfx.size, 2, "Two SFX channels must be able to play concurrently");
+const originalScore = audio.music.get("score").audio;
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "score", src: "score-2.ogg", loop: true })],
+  sfxCues: []
+});
+assert.equal(audio.music.size, 2, "Replacing one music channel must leave other channels running");
+assert.equal(originalScore.paused, true, "Replacing a channel must stop its previous sound");
+assert.equal(audio.music.get("score").path, "score-2.ogg");
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { action: AUDIO_ACTIONS.STOP, channel: "score" })],
+  sfxCues: [createAudioCue("sfx", { action: AUDIO_ACTIONS.STOP, channel: "bell" })]
+});
+assert.equal(audio.music.has("score"), false, "Stopping one music channel must remove only that channel");
+assert.equal(audio.music.has("drone"), true, "Stopping one music channel must keep the other music channel");
+assert.equal(audio.sfx.has("bell"), false, "Stopping one SFX channel must remove only that channel");
+assert.equal(audio.sfx.has("rain"), true, "Stopping one SFX channel must keep the other SFX channel");
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { action: AUDIO_ACTIONS.STOP_ALL })],
+  sfxCues: [createAudioCue("sfx", { action: AUDIO_ACTIONS.STOP_ALL })]
+});
+assert.equal(audio.music.size, 0, "Stop-all must clear every music channel");
+assert.equal(audio.sfx.size, 0, "Stop-all must clear every SFX channel");
+audio.destroy();
 
 const player = Object.create(VNPlayerApp.prototype);
 player.scene = scene;

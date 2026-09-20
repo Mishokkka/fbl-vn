@@ -24,16 +24,59 @@
       <img class="fbl-vn-portrait {{portraitClass}} {{transitionClass}}" src="{{portraitSrc}}" alt="{{portraitAlt}}" />
     {{/if}}
 
-    <div class="fbl-vn-dialogue {{#if isCenteredText}}is-centered-text{{/if}}" data-vn-advance-area>
-      {{#unless isCenteredText}}
-        <button type="button" class="fbl-vn-hide-content" data-action="hideContent" title="Скрыть текст и персонажей" aria-label="Скрыть текст и персонажей" aria-expanded="true"><i class="fa-solid fa-eye-slash"></i></button>
-      {{/unless}}
+    {{#unless isCenteredText}}
       {{#if hasSpeaker}}
-        <div class="fbl-vn-speaker">{{frame.speaker}}</div>
+        <div class="fbl-vn-speaker {{portraitClass}}">{{frame.speaker}}</div>
       {{/if}}
-      <div class="fbl-vn-text" data-vn-text></div>
+    {{/unless}}
 
-      {{#if showChoices}}
+    <div class="fbl-vn-dialogue-stack {{#if isCenteredText}}is-centered-text{{/if}}">
+      <div class="fbl-vn-dialogue {{#if isCenteredText}}is-centered-text{{/if}}" data-vn-advance-area>
+        <div class="fbl-vn-dialogue-scroll">
+          <div class="fbl-vn-text" data-vn-text></div>
+        </div>
+
+        {{#unless isCenteredText}}
+          <div class="fbl-vn-dialogue-actions">
+            <button type="button" class="fbl-vn-hide-content" data-action="hideContent" title="Скрыть текст и персонажей" aria-label="Скрыть текст и персонажей" aria-expanded="true"><i class="fa-solid fa-eye-slash"></i></button>
+            {{#unless showChoices}}
+              {{#if canAdvance}}
+                <button type="button" class="fbl-vn-next {{#if localHasVoted}}is-voted{{/if}}" data-action="next" {{#if localHasVoted}}disabled{{/if}}>
+                  {{#if isVoteMode}}
+                    <span data-vote-action-label>{{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}</span>
+                    <span class="fbl-vn-vote-count">{{voteCount}} / {{voteTotal}}</span>
+                  {{else}}
+                    Продолжить
+                  {{/if}}
+                </button>
+              {{else}}
+                <div class="fbl-vn-wait">Ожидание ведущего</div>
+              {{/if}}
+            {{/unless}}
+          </div>
+        {{/unless}}
+
+        {{#if isCenteredText}}
+          {{#unless showChoices}}
+            {{#if canAdvance}}
+              <button type="button" class="fbl-vn-next {{#if localHasVoted}}is-voted{{/if}}" data-action="next" {{#if localHasVoted}}disabled{{/if}}>
+                {{#if isVoteMode}}
+                  <span data-vote-action-label>{{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}</span>
+                  <span class="fbl-vn-vote-count">{{voteCount}} / {{voteTotal}}</span>
+                {{else}}
+                  Продолжить
+                {{/if}}
+              </button>
+            {{else}}
+              <div class="fbl-vn-wait">Ожидание ведущего</div>
+            {{/if}}
+          {{/unless}}
+        {{/if}}
+      </div>
+    </div>
+
+    {{#if showChoices}}
+      <div class="fbl-vn-choice-overlay">
         <div class="fbl-vn-player-choice-list">
           {{#each choices}}
             <button type="button" class="{{#if selected}}is-selected{{/if}} {{#if unavailable}}is-unavailable{{/if}}" data-action="choose" data-choice-id="{{id}}" {{#unless ../canAdvance}}disabled{{/unless}} {{#if ../localHasVoted}}disabled{{/if}} {{#unless available}}disabled{{/unless}}>
@@ -42,21 +85,8 @@
             </button>
           {{/each}}
         </div>
-      {{else}}
-        {{#if canAdvance}}
-          <button type="button" class="fbl-vn-next {{#if localHasVoted}}is-voted{{/if}}" data-action="next" {{#if localHasVoted}}disabled{{/if}}>
-            {{#if isVoteMode}}
-              <span data-vote-action-label>{{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}</span>
-              <span class="fbl-vn-vote-count">{{voteCount}} / {{voteTotal}}</span>
-            {{else}}
-              Продолжить
-            {{/if}}
-          </button>
-        {{else}}
-          <div class="fbl-vn-wait">Ожидание ведущего</div>
-        {{/if}}
-      {{/if}}
-    </div>
+      </div>
+    {{/if}}
 
     {{#unless isCenteredText}}
       <button type="button" class="fbl-vn-show-content" data-action="showContent" title="Показать текст и персонажей" aria-label="Показать текст и персонажей" aria-hidden="true"><i class="fa-solid fa-eye"></i></button>

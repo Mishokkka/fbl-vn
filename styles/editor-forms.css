@@ -24,9 +24,6 @@
   grid-template-columns: minmax(140px, 180px) minmax(240px, 1fr) minmax(120px, 150px) 34px;
 }
 
-.fbl-vn-field-row.row-audio {
-  grid-template-columns: minmax(150px, 180px) minmax(220px, 1fr) minmax(180px, 0.85fr);
-}
 
 .fbl-vn-field-row.row-next-final {
   grid-template-columns: minmax(0, 1fr) 34px;
@@ -98,8 +95,7 @@
   .fbl-vn-field-row.row-frame-title,
   .fbl-vn-field-row.row-background,
   .fbl-vn-field-row.row-character,
-  .fbl-vn-field-row.row-portrait,
-  .fbl-vn-field-row.row-audio {
+  .fbl-vn-field-row.row-portrait {
     grid-template-columns: 1fr 1fr;
   }
 }

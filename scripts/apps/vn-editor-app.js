@@ -1,12 +1,12 @@
 import { VNSceneStore } from "../data/scene-store.js";
-import { clearFrameReferences, createChoice, createFrame, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
+import { clearFrameReferences, createAudioCue, createChoice, createFrame, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { VNPlayerApp } from "./vn-player-app.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
 import { VNCharacterManagerApp } from "./vn-character-manager-app.js";
 import { VNCounterManagerApp } from "./vn-counter-manager-app.js";
 import { VNGraphApp } from "./vn-graph-app.js";
-import { COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, MUSIC_MODES, PLAYER_MODES, TEXT_PRESENTATIONS } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS } from "../utils/constants.js";
 import { confirmDialog, downloadJson, duplicateData, escapeHtml, formDialog, notify, notifyError, notifyWarn, randomId, readJsonFile } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -213,6 +213,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const characters = this._charactersForState(state);
             const selectedCharacter = frame && frame.characterId ? state.characterById.get(frame.characterId) || null : null;
             const selectedTextBlocks = this._buildTextBlockViews(frame);
+            const selectedMusicCues = this._buildAudioCueViews(frame?.musicCues, "music");
+            const selectedSfxCues = this._buildAudioCueViews(frame?.sfxCues, "sfx");
             const selectedFolderId = frame && frame.branchId === state.activeBranchId ? frame.folderId || "" : "";
             const nextRouting = frame?.nextRouting || {};
             return {
@@ -225,11 +227,10 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     [FRAME_TYPES.NARRATION, "Наррация"],
                     [FRAME_TYPES.CHOICE, "Выбор"]
                 ], frame ? frame.type : undefined),
-                musicModeOptions: this._options([
-                    [MUSIC_MODES.KEEP, "Не менять"],
-                    [MUSIC_MODES.PLAY, "Запустить/заменить"],
-                    [MUSIC_MODES.STOP, "Остановить"]
-                ], frame ? frame.musicMode : undefined),
+                selectedMusicCues,
+                selectedSfxCues,
+                musicChannelOptions: this._audioChannelOptions(scene, "music"),
+                sfxChannelOptions: this._audioChannelOptions(scene, "sfx"),
                 positionOptions: this._options([
                     ["left", "Слева"],
                     ["center", "По центру"],
@@ -498,6 +499,43 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }));
     }
 
+    _buildAudioCueViews(cues, kind) {
+        return (Array.isArray(cues) ? cues : []).map((cue, index) => ({
+            ...cue,
+            kind,
+            index: index + 1,
+            inputName: `audio-${kind}-${cue.id}`,
+            isPlay: cue.action === AUDIO_ACTIONS.PLAY,
+            isStop: cue.action === AUDIO_ACTIONS.STOP,
+            isStopAll: cue.action === AUDIO_ACTIONS.STOP_ALL,
+            actionOptions: this._options([
+                [AUDIO_ACTIONS.PLAY, "Запустить / заменить канал"],
+                [AUDIO_ACTIONS.STOP, "Остановить канал"],
+                [AUDIO_ACTIONS.STOP_ALL, "Остановить всё"]
+            ], cue.action || AUDIO_ACTIONS.PLAY)
+        }));
+    }
+
+    _audioChannelOptions(scene, kind) {
+        const key = kind === "sfx" ? "sfxCues" : "musicCues";
+        const channels = new Set();
+        for (const frame of scene?.frames || []) {
+            for (const cue of Array.isArray(frame?.[key]) ? frame[key] : []) {
+                const channel = String(cue?.channel || "").trim();
+                if (channel) channels.add(channel);
+            }
+        }
+        return [...channels].sort((left, right) => left.localeCompare(right)).map(value => ({ value }));
+    }
+
+    _nextAudioChannel(scene, kind) {
+        const prefix = kind === "sfx" ? "sfx" : "music";
+        const used = new Set(this._audioChannelOptions(scene, kind).map(option => option.value));
+        let index = 1;
+        while (used.has(`${prefix}-${index}`)) index += 1;
+        return `${prefix}-${index}`;
+    }
+
     _richTextFontOptions() {
         const names = [
             "Georgia",
@@ -608,6 +646,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (partId === "framePanel") {
             this._enableCharacterControls(htmlElement);
             this._enableRichTextEditors(htmlElement);
+            this._enableAudioCueControls(htmlElement);
             this._enableFrameTargetControls(htmlElement);
             this._enableNextRoutingControls(htmlElement);
         }
@@ -672,6 +711,29 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         };
         toggle.addEventListener("change", sync);
         sync();
+    }
+
+    _enableAudioCueControls(root = this.element) {
+        if (!root) return;
+        for (const row of root.querySelectorAll("[data-audio-cue-row]")) {
+            const action = row.querySelector("[data-audio-action]");
+            const channel = row.querySelector("[data-audio-channel]");
+            const src = row.querySelector("[data-audio-src]");
+            const loop = row.querySelector("[data-audio-loop]");
+            const picker = row.querySelector("[data-audio-picker]");
+            if (!action) continue;
+            const sync = () => {
+                const isPlay = action.value === AUDIO_ACTIONS.PLAY;
+                const isStop = action.value === AUDIO_ACTIONS.STOP;
+                if (channel) channel.disabled = !(isPlay || isStop);
+                if (src) src.disabled = !isPlay;
+                if (loop) loop.disabled = !isPlay;
+                if (picker) picker.disabled = !isPlay;
+                row.classList.toggle("is-stop-all", action.value === AUDIO_ACTIONS.STOP_ALL);
+            };
+            action.addEventListener("change", sync);
+            sync();
+        }
     }
 
     _enableCharacterControls(root = this.element) {
@@ -1408,9 +1470,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             frame.hidePortrait = Boolean(hidePortraitInput && hidePortraitInput.checked);
             frame.portraitPosition = this._readValue("frame.portraitPosition", frame.portraitPosition);
             frame.textPresentation = this._readValue("frame.textPresentation", frame.textPresentation || TEXT_PRESENTATIONS.BOX);
-            frame.musicMode = this._readValue("frame.musicMode", frame.musicMode);
-            frame.music = this._readValue("frame.music", frame.music);
-            frame.sfx = this._readValue("frame.sfx", frame.sfx);
+            frame.musicCues = this._readAudioCues("music");
+            frame.sfxCues = this._readAudioCues("sfx");
             frame.next = this._readValue("frame.next", frame.next);
             const nextRoutingToggle = this.element.querySelector("[name='frame.nextRouting.enabled']");
             if (nextRoutingToggle) {
@@ -1478,6 +1539,18 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 voice: this._readRowValue(row, "[data-text-block-voice]", "")
             };
         });
+    }
+
+    _readAudioCues(kind) {
+        if (!this.element) return [];
+        const rows = [...this.element.querySelectorAll(`[data-audio-cue-row][data-audio-kind="${kind}"]`)];
+        return rows.map(row => ({
+            id: row.dataset.audioCueId || randomId("audio"),
+            action: this._readRowValue(row, "[data-audio-action]", AUDIO_ACTIONS.PLAY),
+            channel: this._readRowValue(row, "[data-audio-channel]", ""),
+            src: this._readRowValue(row, "[data-audio-src]", ""),
+            loop: Boolean(row.querySelector("[data-audio-loop]")?.checked)
+        }));
     }
 
 
@@ -2074,6 +2147,74 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._renderEditorParts(["frames", "framePanel"]);
     }
 
+    static async _onAddAudioCue(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        const kind = target.dataset.audioKind === "sfx" ? "sfx" : "music";
+        const key = kind === "sfx" ? "sfxCues" : "musicCues";
+        const requestedAction = target.dataset.audioAction;
+        const action = Object.values(AUDIO_ACTIONS).includes(requestedAction) ? requestedAction : AUDIO_ACTIONS.PLAY;
+        frame[key] = Array.isArray(frame[key]) ? frame[key] : [];
+        const cue = createAudioCue(kind, { action });
+        if (action !== AUDIO_ACTIONS.STOP_ALL) cue.channel = this._nextAudioChannel(scene, kind);
+        frame[key].push(cue);
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onDeleteAudioCue(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        const kind = target.dataset.audioKind === "sfx" ? "sfx" : "music";
+        const key = kind === "sfx" ? "sfxCues" : "musicCues";
+        frame[key] = (frame[key] || []).filter(cue => cue.id !== target.dataset.audioCueId);
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onDuplicateAudioCue(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        const kind = target.dataset.audioKind === "sfx" ? "sfx" : "music";
+        const key = kind === "sfx" ? "sfxCues" : "musicCues";
+        const cues = Array.isArray(frame[key]) ? frame[key] : [];
+        const index = cues.findIndex(cue => cue.id === target.dataset.audioCueId);
+        if (index < 0) return;
+        const copy = duplicateData(cues[index]);
+        copy.id = randomId("audio");
+        if (copy.action !== AUDIO_ACTIONS.STOP_ALL) copy.channel = this._nextAudioChannel(scene, kind);
+        cues.splice(index + 1, 0, copy);
+        frame[key] = cues;
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onMoveAudioCue(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        const kind = target.dataset.audioKind === "sfx" ? "sfx" : "music";
+        const key = kind === "sfx" ? "sfxCues" : "musicCues";
+        const cues = Array.isArray(frame[key]) ? frame[key] : [];
+        const index = cues.findIndex(cue => cue.id === target.dataset.audioCueId);
+        if (index < 0) return;
+        const direction = target.dataset.direction === "up" ? -1 : 1;
+        const nextIndex = index + direction;
+        if (nextIndex < 0 || nextIndex >= cues.length) return;
+        const moved = cues.splice(index, 1)[0];
+        cues.splice(nextIndex, 0, moved);
+        frame[key] = cues;
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
     static async _onAddChoice(event, target) {
         event.preventDefault();
         const scene = await this._commitFromForm({ persist: false });
@@ -2290,6 +2431,10 @@ VNEditorApp.DEFAULT_OPTIONS = {
         deleteTextBlock: queuedEditorAction(VNEditorApp._onDeleteTextBlock),
         duplicateTextBlock: queuedEditorAction(VNEditorApp._onDuplicateTextBlock),
         moveTextBlock: queuedEditorAction(VNEditorApp._onMoveTextBlock),
+        addAudioCue: queuedEditorAction(VNEditorApp._onAddAudioCue),
+        deleteAudioCue: queuedEditorAction(VNEditorApp._onDeleteAudioCue),
+        duplicateAudioCue: queuedEditorAction(VNEditorApp._onDuplicateAudioCue),
+        moveAudioCue: queuedEditorAction(VNEditorApp._onMoveAudioCue),
         addChoice: queuedEditorAction(VNEditorApp._onAddChoice),
         deleteChoice: queuedEditorAction(VNEditorApp._onDeleteChoice),
         duplicateChoice: queuedEditorAction(VNEditorApp._onDuplicateChoice),

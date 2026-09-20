@@ -777,3 +777,159 @@ button.fbl-vn-validation-item.warning i {
 
 
 
+
+
+/* Multi-channel frame audio mixer */
+.fbl-vn-editor .fbl-vn-audio-mixer {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-mixer-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-mixer-header h4 {
+  margin: 0;
+}
+
+.fbl-vn-editor .fbl-vn-audio-mixer-header p {
+  margin: 3px 0 0;
+  color: var(--vn-muted);
+  font-size: 12px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-group {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid var(--vn-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.fbl-vn-editor .fbl-vn-audio-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-group-header > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-group-header strong {
+  color: var(--vn-text);
+}
+
+.fbl-vn-editor .fbl-vn-audio-group-header span,
+.fbl-vn-editor .fbl-vn-audio-empty {
+  color: var(--vn-muted);
+  font-size: 11px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-empty {
+  margin: 0;
+  padding: 5px 2px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-group-actions,
+.fbl-vn-editor .fbl-vn-audio-cue-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-group-actions button {
+  white-space: nowrap;
+}
+
+.fbl-vn-editor .fbl-vn-audio-cue-list {
+  display: grid;
+  gap: 6px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-cue {
+  display: grid;
+  grid-template-columns: 24px minmax(150px, 0.9fr) minmax(110px, 0.65fr) minmax(220px, 1.35fr) 50px auto;
+  align-items: end;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(182, 138, 74, 0.16);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.fbl-vn-editor .fbl-vn-audio-cue-index {
+  align-self: center;
+  color: var(--vn-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.fbl-vn-editor .fbl-vn-audio-source {
+  min-width: 0;
+}
+
+.fbl-vn-editor .fbl-vn-audio-loop {
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  color: var(--vn-muted);
+  font-size: 10px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-loop input {
+  margin: 0;
+}
+
+.fbl-vn-editor .fbl-vn-audio-cue-actions {
+  align-self: end;
+  min-height: 30px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-cue :is(input, select, button):disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.fbl-vn-editor .fbl-vn-audio-cue.is-stop-all {
+  grid-template-columns: 24px minmax(220px, 1fr) minmax(110px, 0.65fr) minmax(220px, 1.35fr) 50px auto;
+}
+
+@media (max-width: 1320px) {
+  .fbl-vn-editor .fbl-vn-audio-group-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .fbl-vn-editor .fbl-vn-audio-cue,
+  .fbl-vn-editor .fbl-vn-audio-cue.is-stop-all {
+    grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .fbl-vn-editor .fbl-vn-audio-source {
+    grid-column: 2 / -1;
+  }
+
+  .fbl-vn-editor .fbl-vn-audio-loop {
+    grid-column: 2;
+    justify-self: start;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .fbl-vn-editor .fbl-vn-audio-cue-actions {
+    grid-column: 3;
+    justify-self: end;
+  }
+}

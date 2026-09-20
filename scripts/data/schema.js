@@ -1,4 +1,4 @@
-import { COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MUSIC_MODES, PLAYER_MODES, TEXT_PRESENTATIONS } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, PLAYER_MODES, TEXT_PRESENTATIONS } from "../utils/constants.js";
 import { duplicateData, randomId } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -60,6 +60,17 @@ export function createFrameNextRouting() {
     };
 }
 
+export function createAudioCue(kind = "music", options = {}) {
+    const isMusic = kind === "music";
+    return {
+        id: randomId("audio"),
+        action: Object.values(AUDIO_ACTIONS).includes(options.action) ? options.action : AUDIO_ACTIONS.PLAY,
+        channel: String(options.channel || ""),
+        src: String(options.src || ""),
+        loop: options.loop === undefined ? isMusic : options.loop === true
+    };
+}
+
 export function createFrame(type = FRAME_TYPES.DIALOGUE) {
     const base = {
         id: randomId("frame"),
@@ -81,9 +92,8 @@ export function createFrame(type = FRAME_TYPES.DIALOGUE) {
         textPresentation: TEXT_PRESENTATIONS.BOX,
         text: "",
         textBlocks: [createTextBlock("")],
-        musicMode: MUSIC_MODES.KEEP,
-        music: "",
-        sfx: "",
+        musicCues: [],
+        sfxCues: [],
         next: "",
         nextRouting: createFrameNextRouting(),
         choices: []
@@ -145,7 +155,6 @@ export function createSampleScene() {
     f1.text = "Холодный металлический звон медленно ползёт по стенам.";
     f1.textBlocks = [createTextBlock("Холодный металлический звон медленно ползёт по стенам.")];
     f1.transition = "fade";
-    f1.musicMode = MUSIC_MODES.KEEP;
     const f2 = createFrame(FRAME_TYPES.DIALOGUE);
     f2.title = "Реплика";
     f2.speaker = "Неизвестный";
@@ -349,15 +358,49 @@ export function sanitizeFrame(frame) {
     clean.textBlocks = Array.isArray(clean.textBlocks) ? clean.textBlocks.map(sanitizeTextBlock) : [];
     if (!clean.textBlocks.length) clean.textBlocks.push(createTextBlock(clean.text || "", ""));
     clean.text = clean.textBlocks[0] ? clean.textBlocks[0].text : (clean.text || "");
-    clean.musicMode = Object.values(MUSIC_MODES).includes(clean.musicMode) ? clean.musicMode : MUSIC_MODES.KEEP;
-    clean.music || (clean.music = "");
-    clean.sfx || (clean.sfx = "");
+    const musicCueIds = new Set();
+    const sfxCueIds = new Set();
+    clean.musicCues = Array.isArray(clean.musicCues) ? clean.musicCues.map(cue => sanitizeAudioCue(cue, "music", musicCueIds)) : [];
+    clean.sfxCues = Array.isArray(clean.sfxCues) ? clean.sfxCues.map(cue => sanitizeAudioCue(cue, "sfx", sfxCueIds)) : [];
+    delete clean.musicMode;
+    delete clean.music;
+    delete clean.sfx;
     clean.next || (clean.next = "");
     clean.nextRouting = sanitizeFrameNextRouting(clean.nextRouting || clean.sceneRouting);
     delete clean.sceneRouting;
     clean.choices = Array.isArray(clean.choices) ? clean.choices.map(sanitizeChoice) : [];
     if (clean.type === FRAME_TYPES.CHOICE && !clean.choices.length) clean.choices.push(createChoice());
     if (clean.type !== FRAME_TYPES.CHOICE) clean.choices = [];
+    return clean;
+}
+
+export function sanitizeAudioCue(cue, kind = "music", usedIds = null) {
+    const source = cue !== null && typeof cue === "object" && !Array.isArray(cue) ? cue : {};
+    const clean = duplicateData(source);
+    let id = typeof clean.id === "string" ? clean.id.trim() : "";
+    if (!id || usedIds?.has(id)) {
+        do id = randomId("audio");
+        while (usedIds?.has(id));
+    }
+    clean.id = id;
+    usedIds?.add(id);
+    clean.action = Object.values(AUDIO_ACTIONS).includes(clean.action) ? clean.action : AUDIO_ACTIONS.PLAY;
+    clean.channel = String(clean.channel || "").trim();
+    clean.src = String(clean.src || "").trim();
+    clean.loop = clean.loop === true;
+
+    if (clean.action === AUDIO_ACTIONS.STOP) {
+        clean.src = "";
+        clean.loop = false;
+    }
+    else if (clean.action === AUDIO_ACTIONS.STOP_ALL) {
+        clean.channel = "";
+        clean.src = "";
+        clean.loop = false;
+    }
+    else if (kind === "music" && source.loop === undefined) {
+        clean.loop = true;
+    }
     return clean;
 }
 
@@ -489,8 +532,12 @@ export function collectAssetPaths(scene) {
     for (const frame of frames) {
         if (frame.background) assets.add(frame.background);
         if (frame.portrait) assets.add(frame.portrait);
-        if (frame.music) assets.add(frame.music);
-        if (frame.sfx) assets.add(frame.sfx);
+        for (const cue of Array.isArray(frame.musicCues) ? frame.musicCues : []) {
+            if (cue.action === AUDIO_ACTIONS.PLAY && cue.src) assets.add(cue.src);
+        }
+        for (const cue of Array.isArray(frame.sfxCues) ? frame.sfxCues : []) {
+            if (cue.action === AUDIO_ACTIONS.PLAY && cue.src) assets.add(cue.src);
+        }
         const blocks = getFrameTextBlocks(frame);
         for (const block of blocks) {
             if (block.voice) assets.add(block.voice);
@@ -724,6 +771,30 @@ export function validateScene(scene) {
         if (!Object.values(FRAME_TYPES).includes(frame.type)) {
             issues.push(issue(ISSUE_SEVERITY.ERROR, "bad-frame-type", `У кадра «${label}» неизвестный тип.`, { frameId: frame.id, field: "frame.type" }));
         }
+
+        for (const [kind, cues] of [["music", frame.musicCues], ["sfx", frame.sfxCues]]) {
+            const seenChannels = new Set();
+            for (let cueIndex = 0; cueIndex < (Array.isArray(cues) ? cues.length : 0); cueIndex += 1) {
+                const cue = cues[cueIndex];
+                const fieldBase = `frame.${kind}Cues.${cueIndex}`;
+                if (!Object.values(AUDIO_ACTIONS).includes(cue.action)) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "bad-audio-action", `У кадра «${label}» неизвестное действие ${kind === "music" ? "музыки" : "SFX"}.`, { frameId: frame.id, field: `${fieldBase}.action` }));
+                    continue;
+                }
+                if (cue.action === AUDIO_ACTIONS.STOP_ALL) continue;
+                if (!String(cue.channel || "").trim()) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "audio-no-channel", `У кадра «${label}» для аудио-действия не указан канал.`, { frameId: frame.id, field: `${fieldBase}.channel` }));
+                }
+                else if (seenChannels.has(cue.channel)) {
+                    issues.push(issue(ISSUE_SEVERITY.WARNING, "duplicate-audio-channel", `В кадре «${label}» канал «${cue.channel}» изменяется несколько раз; действия выполнятся сверху вниз.`, { frameId: frame.id, field: `${fieldBase}.channel` }));
+                }
+                if (cue.channel) seenChannels.add(cue.channel);
+                if (cue.action === AUDIO_ACTIONS.PLAY && !String(cue.src || "").trim()) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "audio-no-source", `У кадра «${label}» для запуска звука не выбран файл.`, { frameId: frame.id, field: `${fieldBase}.src` }));
+                }
+            }
+        }
+
         const blocks = getFrameTextBlocks(frame);
         if (!blocks.length) {
             issues.push(issue(ISSUE_SEVERITY.WARNING, "no-text-blocks", `У кадра «${label}» нет текстовых блоков.`, { frameId: frame.id, field: "frame.textBlocks" }));
