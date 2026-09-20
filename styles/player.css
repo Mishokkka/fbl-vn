@@ -500,8 +500,10 @@
   height: auto;
   min-height: 0;
   max-height: 78vh;
+  display: flex;
+  flex-direction: column;
   padding: 22px 26px;
-  overflow: visible;
+  overflow: hidden;
   transform: translate(-50%, -50%);
   border: 0;
   border-radius: 0;
@@ -512,8 +514,10 @@
 }
 
 .fbl-vn-dialogue.is-centered-text .fbl-vn-dialogue-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   height: auto;
-  max-height: 78vh;
+  max-height: none;
   padding: 0;
   overflow: auto;
 }
@@ -531,6 +535,7 @@
 .fbl-vn-dialogue.is-centered-text .fbl-vn-next,
 .fbl-vn-dialogue.is-centered-text .fbl-vn-wait {
   position: static;
+  flex: 0 0 auto;
   width: fit-content;
   margin: 24px auto 0;
 }
