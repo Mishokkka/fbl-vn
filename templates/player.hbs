@@ -18,7 +18,9 @@
 
   {{#if started}}
     <div class="fbl-vn-bg {{transitionClass}}" data-background-src="{{backgroundSrc}}"></div>
-    <div class="fbl-vn-vignette"></div>
+    {{#if showScreenVignette}}
+      <div class="fbl-vn-vignette"></div>
+    {{/if}}
 
     {{#if hasPortrait}}
       <img class="fbl-vn-portrait {{portraitClass}} {{transitionClass}}" src="{{portraitSrc}}" alt="{{portraitAlt}}" />
@@ -31,7 +33,7 @@
     {{/unless}}
 
     <div class="fbl-vn-dialogue-stack {{#if isCenteredText}}is-centered-text{{/if}}">
-      <div class="fbl-vn-dialogue {{#if isCenteredText}}is-centered-text{{/if}}" data-vn-advance-area>
+      <div class="fbl-vn-dialogue {{#if isCenteredText}}is-centered-text{{/if}} {{#if showTextVignette}}has-text-vignette{{/if}}" data-vn-advance-area>
         <div class="fbl-vn-dialogue-scroll">
           <div class="fbl-vn-text" data-vn-text></div>
         </div>
