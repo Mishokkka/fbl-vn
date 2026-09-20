@@ -162,8 +162,6 @@
                         <button type="button" data-rich-command="insertUnorderedList" title="Маркированный список" aria-label="Маркированный список"><i class="fa-solid fa-list-ul"></i></button>
                         <button type="button" data-rich-command="insertOrderedList" title="Нумерованный список" aria-label="Нумерованный список"><i class="fa-solid fa-list-ol"></i></button>
                         <button type="button" data-rich-command="removeFormat" title="Очистить форматирование" aria-label="Очистить форматирование"><i class="fa-solid fa-eraser"></i></button>
-                        <button type="button" data-rich-command="undo" title="Отменить" aria-label="Отменить"><i class="fa-solid fa-rotate-left"></i></button>
-                        <button type="button" data-rich-command="redo" title="Повторить" aria-label="Повторить"><i class="fa-solid fa-rotate-right"></i></button>
                       </div>
                       <div class="fbl-vn-rich-editable" contenteditable="true" role="textbox" aria-label="Текст реплики или наррации" aria-multiline="true" spellcheck="true" data-text-block-rich data-placeholder="Текст реплики или наррации">{{{richText}}}</div>
                     </div>
@@ -184,26 +182,119 @@
               </div>
             </section>
   
-            <div class="fbl-vn-field-row row-audio">
-              <div class="form-group">
-                <label>Музыка</label>
-                <select name="frame.musicMode">
-                  {{#each musicModeOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div class="form-group path-field">
-                <label>Файл музыки</label>
-                <input type="text" name="frame.music" value="{{selectedFrame.music}}" placeholder="ogg/mp3/wav" />
-                <button type="button" data-action="pickAsset" data-field="frame.music" data-picker-type="audio" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
-              </div>
-              <div class="form-group path-field">
-                <label>SFX</label>
-                <input type="text" name="frame.sfx" value="{{selectedFrame.sfx}}" placeholder="Звук кадра" />
-                <button type="button" data-action="pickAsset" data-field="frame.sfx" data-picker-type="audio" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
-              </div>
-            </div>
+            <section class="fbl-vn-audio-mixer">
+              <header class="fbl-vn-audio-mixer-header">
+                <div>
+                  <h4>Аудио кадра</h4>
+                  <p>Канал позволяет держать несколько звуков одновременно. Запуск в том же канале заменяет только этот канал.</p>
+                </div>
+              </header>
+
+              <datalist id="fbl-vn-music-channels">
+                {{#each musicChannelOptions}}<option value="{{value}}"></option>{{/each}}
+              </datalist>
+              <datalist id="fbl-vn-sfx-channels">
+                {{#each sfxChannelOptions}}<option value="{{value}}"></option>{{/each}}
+              </datalist>
+
+              <section class="fbl-vn-audio-group">
+                <header class="fbl-vn-audio-group-header">
+                  <div>
+                    <strong>Музыка</strong>
+                    <span>Зацикливание включено по умолчанию.</span>
+                  </div>
+                  <div class="fbl-vn-audio-group-actions">
+                    <button type="button" data-action="addAudioCue" data-audio-kind="music"><i class="fa-solid fa-plus"></i> Действие</button>
+                    <button type="button" data-action="addAudioCue" data-audio-kind="music" data-audio-action="stop-all"><i class="fa-solid fa-stop"></i> Стоп всё</button>
+                  </div>
+                </header>
+                {{#if selectedMusicCues}}
+                  <div class="fbl-vn-audio-cue-list">
+                    {{#each selectedMusicCues}}
+                      <div class="fbl-vn-audio-cue" data-audio-cue-row data-audio-kind="music" data-audio-cue-id="{{id}}">
+                        <span class="fbl-vn-audio-cue-index">{{index}}</span>
+                        <div class="form-group">
+                          <label>Действие</label>
+                          <select data-audio-action>
+                            {{#each actionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                          </select>
+                        </div>
+                        <div class="form-group">
+                          <label>Канал</label>
+                          <input type="text" data-audio-channel list="fbl-vn-music-channels" value="{{channel}}" placeholder="music-1" />
+                        </div>
+                        <div class="form-group path-field fbl-vn-audio-source">
+                          <label>Файл</label>
+                          <input type="text" name="{{inputName}}" data-audio-src value="{{src}}" placeholder="ogg/mp3/wav" />
+                          <button type="button" data-action="pickAsset" data-field="{{inputName}}" data-picker-type="audio" data-audio-picker title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                        </div>
+                        <label class="fbl-vn-audio-loop" title="Повторять звук по кругу">
+                          <span>Цикл</span>
+                          <input type="checkbox" data-audio-loop {{#if loop}}checked{{/if}} />
+                        </label>
+                        <div class="fbl-vn-audio-cue-actions">
+                          <button type="button" data-action="moveAudioCue" data-audio-kind="music" data-audio-cue-id="{{id}}" data-direction="up" title="Выше" aria-label="Выше"><i class="fa-solid fa-arrow-up"></i></button>
+                          <button type="button" data-action="moveAudioCue" data-audio-kind="music" data-audio-cue-id="{{id}}" data-direction="down" title="Ниже" aria-label="Ниже"><i class="fa-solid fa-arrow-down"></i></button>
+                          <button type="button" data-action="duplicateAudioCue" data-audio-kind="music" data-audio-cue-id="{{id}}" title="Дублировать" aria-label="Дублировать"><i class="fa-regular fa-copy"></i></button>
+                          <button type="button" data-action="deleteAudioCue" data-audio-kind="music" data-audio-cue-id="{{id}}" title="Удалить" aria-label="Удалить"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                      </div>
+                    {{/each}}
+                  </div>
+                {{else}}
+                  <p class="fbl-vn-audio-empty">Музыка в этом кадре не меняется.</p>
+                {{/if}}
+              </section>
+
+              <section class="fbl-vn-audio-group">
+                <header class="fbl-vn-audio-group-header">
+                  <div>
+                    <strong>SFX</strong>
+                    <span>Одноразовые эффекты можно оставлять без цикла; длинные или фоновые эффекты можно зациклить и остановить позже по каналу.</span>
+                  </div>
+                  <div class="fbl-vn-audio-group-actions">
+                    <button type="button" data-action="addAudioCue" data-audio-kind="sfx"><i class="fa-solid fa-plus"></i> Действие</button>
+                    <button type="button" data-action="addAudioCue" data-audio-kind="sfx" data-audio-action="stop-all"><i class="fa-solid fa-stop"></i> Стоп всё</button>
+                  </div>
+                </header>
+                {{#if selectedSfxCues}}
+                  <div class="fbl-vn-audio-cue-list">
+                    {{#each selectedSfxCues}}
+                      <div class="fbl-vn-audio-cue" data-audio-cue-row data-audio-kind="sfx" data-audio-cue-id="{{id}}">
+                        <span class="fbl-vn-audio-cue-index">{{index}}</span>
+                        <div class="form-group">
+                          <label>Действие</label>
+                          <select data-audio-action>
+                            {{#each actionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                          </select>
+                        </div>
+                        <div class="form-group">
+                          <label>Канал</label>
+                          <input type="text" data-audio-channel list="fbl-vn-sfx-channels" value="{{channel}}" placeholder="sfx-1" />
+                        </div>
+                        <div class="form-group path-field fbl-vn-audio-source">
+                          <label>Файл</label>
+                          <input type="text" name="{{inputName}}" data-audio-src value="{{src}}" placeholder="ogg/mp3/wav" />
+                          <button type="button" data-action="pickAsset" data-field="{{inputName}}" data-picker-type="audio" data-audio-picker title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                        </div>
+                        <label class="fbl-vn-audio-loop" title="Повторять звук по кругу">
+                          <span>Цикл</span>
+                          <input type="checkbox" data-audio-loop {{#if loop}}checked{{/if}} />
+                        </label>
+                        <div class="fbl-vn-audio-cue-actions">
+                          <button type="button" data-action="moveAudioCue" data-audio-kind="sfx" data-audio-cue-id="{{id}}" data-direction="up" title="Выше" aria-label="Выше"><i class="fa-solid fa-arrow-up"></i></button>
+                          <button type="button" data-action="moveAudioCue" data-audio-kind="sfx" data-audio-cue-id="{{id}}" data-direction="down" title="Ниже" aria-label="Ниже"><i class="fa-solid fa-arrow-down"></i></button>
+                          <button type="button" data-action="duplicateAudioCue" data-audio-kind="sfx" data-audio-cue-id="{{id}}" title="Дублировать" aria-label="Дублировать"><i class="fa-regular fa-copy"></i></button>
+                          <button type="button" data-action="deleteAudioCue" data-audio-kind="sfx" data-audio-cue-id="{{id}}" title="Удалить" aria-label="Удалить"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                      </div>
+                    {{/each}}
+                  </div>
+                {{else}}
+                  <p class="fbl-vn-audio-empty">SFX в этом кадре не запускаются и не останавливаются.</p>
+                {{/if}}
+              </section>
+            </section>
   
             <div class="fbl-vn-field-row row-next-final">
               <section class="fbl-vn-frame-route {{#if nextRoutingEnabled}}is-counter-routing{{/if}}" data-next-routing-shell>
