@@ -358,8 +358,10 @@ export function sanitizeFrame(frame) {
     clean.textBlocks = Array.isArray(clean.textBlocks) ? clean.textBlocks.map(sanitizeTextBlock) : [];
     if (!clean.textBlocks.length) clean.textBlocks.push(createTextBlock(clean.text || "", ""));
     clean.text = clean.textBlocks[0] ? clean.textBlocks[0].text : (clean.text || "");
-    clean.musicCues = Array.isArray(clean.musicCues) ? clean.musicCues.map(cue => sanitizeAudioCue(cue, "music")) : [];
-    clean.sfxCues = Array.isArray(clean.sfxCues) ? clean.sfxCues.map(cue => sanitizeAudioCue(cue, "sfx")) : [];
+    const musicCueIds = new Set();
+    const sfxCueIds = new Set();
+    clean.musicCues = Array.isArray(clean.musicCues) ? clean.musicCues.map(cue => sanitizeAudioCue(cue, "music", musicCueIds)) : [];
+    clean.sfxCues = Array.isArray(clean.sfxCues) ? clean.sfxCues.map(cue => sanitizeAudioCue(cue, "sfx", sfxCueIds)) : [];
     delete clean.musicMode;
     delete clean.music;
     delete clean.sfx;
@@ -372,9 +374,16 @@ export function sanitizeFrame(frame) {
     return clean;
 }
 
-export function sanitizeAudioCue(cue, kind = "music") {
-    const clean = duplicateData(cue !== null && cue !== void 0 ? cue : {});
-    clean.id || (clean.id = randomId("audio"));
+export function sanitizeAudioCue(cue, kind = "music", usedIds = null) {
+    const source = cue !== null && typeof cue === "object" && !Array.isArray(cue) ? cue : {};
+    const clean = duplicateData(source);
+    let id = typeof clean.id === "string" ? clean.id.trim() : "";
+    if (!id || usedIds?.has(id)) {
+        do id = randomId("audio");
+        while (usedIds?.has(id));
+    }
+    clean.id = id;
+    usedIds?.add(id);
     clean.action = Object.values(AUDIO_ACTIONS).includes(clean.action) ? clean.action : AUDIO_ACTIONS.PLAY;
     clean.channel = String(clean.channel || "").trim();
     clean.src = String(clean.src || "").trim();
@@ -389,7 +398,7 @@ export function sanitizeAudioCue(cue, kind = "music") {
         clean.src = "";
         clean.loop = false;
     }
-    else if (kind === "music" && cue?.loop === undefined) {
+    else if (kind === "music" && source.loop === undefined) {
         clean.loop = true;
     }
     return clean;
