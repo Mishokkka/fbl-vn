@@ -47,7 +47,7 @@ if (!/\.fbl-vn-dialogue\.is-centered-text \.fbl-vn-dialogue-scroll\s*\{[\s\S]*?f
 if (!playerTemplateSource.includes("showScreenVignette") || !playerTemplateSource.includes("showTextVignette")) errors.push("Player template must support screen and local text vignette modes");
 if (!/\.fbl-vn-speaker\.portrait-left\s*\{[\s\S]*?left:\s*var\(--vn-dialogue-inline\)/.test(playerCssSource)) errors.push("Left speaker badge must align with the dialogue edge");
 if (!/\.fbl-vn-speaker\.portrait-right\s*\{[\s\S]*?right:\s*var\(--vn-dialogue-inline\)/.test(playerCssSource)) errors.push("Right speaker badge must align with the dialogue edge");
-if (!/\.fbl-vn-dialogue\.is-centered-text\.has-text-vignette::before/.test(playerCssSource)) errors.push("Centered text vignette style is missing");
+if (!/\.fbl-vn-dialogue\.is-centered-text\.has-text-vignette \.fbl-vn-text\s*\{[\s\S]*?background:\s*radial-gradient/.test(playerCssSource)) errors.push("Centered text vignette style is missing");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
