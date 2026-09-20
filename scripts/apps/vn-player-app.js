@@ -2,8 +2,9 @@ import { applyChoiceCounterEffect, getInitialCounterState, getFrameTextBlocks, g
 import { VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
-import { MODULE_ID, PLAYER_MODES, SETTINGS } from "../utils/constants.js";
+import { MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS } from "../utils/constants.js";
 import { notifyWarn } from "../utils/foundry-helpers.js";
+import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
 const ApplicationV2 = foundry.applications.api.ApplicationV2;
 const HandlebarsApplicationMixin = foundry.applications.api.HandlebarsApplicationMixin;
@@ -77,6 +78,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._pendingPreloadProgress = null;
         this._pendingRemoteFrames = VNPlayerApp.pendingAdvances.get(this.scene.id) || [];
         this._volumePanelOpen = false;
+        this._contentHidden = false;
         this._volumeSaveTimer = null;
         this._pendingVolumeSettings = new Map();
         this._localVolumeValues = new Map();
@@ -329,6 +331,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return this.start();
         }
         this.currentFrameId = frame.id;
+        this._contentHidden = false;
         const blocks = getFrameTextBlocks(frame);
         this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
         this._resetVoteForStep(frame.id, this.currentTextIndex);
@@ -373,6 +376,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const choices = frame && Array.isArray(frame.choices) ? frame.choices : [];
         const choiceCounts = voteState && voteState.choices ? voteState.choices : {};
         const currentVolumeLevels = this._volumeLevels();
+        const currentText = currentBlock ? currentBlock.text : "";
+        const currentRichText = sanitizeRichTextHtml(
+            currentBlock?.richText || richTextFromPlainText(currentText),
+            { fallbackText: currentText }
+        );
+        const isCenteredText = Boolean(frame && frame.textPresentation === TEXT_PRESENTATIONS.CENTER);
         return Object.assign(context, {
             scene: this.scene,
             frame,
@@ -395,7 +404,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             backgroundSrc: this.visualState.background || "",
             transitionClass: `transition-${transition}`,
             hasPortrait: Boolean(this.visualState.portrait),
-            hasSpeaker: Boolean(frame && frame.speaker),
+            hasSpeaker: Boolean(frame && frame.speaker) && !isCenteredText,
+            isCenteredText,
+            contentHidden: this._contentHidden,
             choices: choices.map(choice => {
                 const available = isChoiceAvailable(choice, this.counterState);
                 return Object.assign({}, choice, {
@@ -405,7 +416,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     unavailable: !available
                 });
             }),
-            currentText: currentBlock ? currentBlock.text : "",
+            currentText,
+            currentRichText,
             currentTextIndex: this.currentTextIndex + 1,
             textBlockCount: blocks.length,
             voteTotal,
@@ -425,7 +437,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._bindKeyboard();
         this._bindClickAdvance();
         this._bindVolumeControls();
-        if (context.started && context.frame) this._typeText(context.currentText !== undefined ? context.currentText : "");
+        if (context.started && context.frame) this._typeText(context.currentRichText, context.currentText);
     }
 
     _applyFullscreenPosition() {
@@ -554,49 +566,100 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._typingRaf = null;
     }
 
-    _typeText(text) {
+    _typeText(richText, fallbackText = "") {
         const node = this.element ? this.element.querySelector("[data-vn-text]") : null;
-        const frameKey = `${this.currentFrameId || ""}:${this.currentTextIndex}:${String(text !== undefined && text !== null ? text : "")}`;
+        const safeHtml = sanitizeRichTextHtml(
+            richText || richTextFromPlainText(fallbackText),
+            { fallbackText }
+        );
+        const frameKey = `${this.currentFrameId || ""}:${this.currentTextIndex}:${safeHtml}`;
         if (node && this._typingNode === node && this._typingKey === frameKey) return;
         if (node && this._typingKey === frameKey && this._typingComplete) {
-            node.textContent = this._typingText;
+            node.innerHTML = this._typingText;
             this._typingNode = node;
             return;
         }
+
         this._cancelTypingAnimation();
-        this._typingText = String(text !== undefined && text !== null ? text : "");
+        this._typingText = safeHtml;
         this._typingKey = frameKey;
         this._typingNode = node;
         this._typingComplete = false;
+
         if (!node) {
             this._typingComplete = true;
             return;
         }
-        const chars = [...this._typingText];
-        if (this._prefersReducedMotion() || this._instantTextEnabled() || chars.length > 900) {
-            node.textContent = this._typingText;
+
+        const plainText = richTextToPlainText(safeHtml);
+        if (this._prefersReducedMotion() || this._instantTextEnabled() || [...plainText].length > 900) {
+            node.innerHTML = safeHtml;
             this._typingComplete = true;
             return;
         }
+
+        const template = document.createElement("template");
+        template.innerHTML = safeHtml;
         node.replaceChildren();
-        const textNode = document.createTextNode("");
-        node.append(textNode);
-        let index = 0;
+
+        const segments = [];
+        const cloneChildren = (source, target) => {
+            for (const child of source.childNodes) {
+                if (child.nodeType === 3) {
+                    const output = document.createTextNode("");
+                    target.append(output);
+                    segments.push({ node: output, chars: [...child.data], index: 0 });
+                    continue;
+                }
+                if (child.nodeType !== 1) continue;
+                const clone = child.cloneNode(false);
+                target.append(clone);
+                cloneChildren(child, clone);
+            }
+        };
+        cloneChildren(template.content, node);
+
+        const totalChars = segments.reduce((sum, segment) => sum + segment.chars.length, 0);
+        if (!totalChars) {
+            node.innerHTML = safeHtml;
+            this._typingComplete = true;
+            return;
+        }
+
+        let segmentIndex = 0;
+        let revealed = 0;
         let carry = 0;
         let previous = performance.now();
         const charsPerMs = 0.16;
+        const reveal = count => {
+            let remaining = count;
+            while (remaining > 0 && segmentIndex < segments.length) {
+                const segment = segments[segmentIndex];
+                const available = segment.chars.length - segment.index;
+                if (available <= 0) {
+                    segmentIndex += 1;
+                    continue;
+                }
+                const take = Math.min(remaining, available);
+                const end = segment.index + take;
+                segment.node.appendData(segment.chars.slice(segment.index, end).join(""));
+                segment.index = end;
+                remaining -= take;
+                revealed += take;
+                if (segment.index >= segment.chars.length) segmentIndex += 1;
+            }
+        };
         const tick = now => {
             carry += Math.max(0, now - previous) * charsPerMs;
             previous = now;
             const count = Math.floor(carry);
             if (count > 0) {
                 carry -= count;
-                const nextIndex = Math.min(chars.length, index + count);
-                textNode.appendData(chars.slice(index, nextIndex).join(""));
-                index = nextIndex;
+                reveal(count);
             }
-            if (index >= chars.length) {
+            if (revealed >= totalChars) {
                 this._typingRaf = null;
+                node.innerHTML = safeHtml;
                 this._typingComplete = true;
                 return;
             }
@@ -608,9 +671,26 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _completeText() {
         const node = this.element ? this.element.querySelector("[data-vn-text]") : null;
         this._cancelTypingAnimation();
-        if (node) node.textContent = this._typingText;
+        if (node) node.innerHTML = this._typingText;
         this._typingNode = node;
         this._typingComplete = true;
+    }
+
+    _playerRoot() {
+        if (!this.element) return null;
+        if (this.element.matches?.(".fbl-vn-player")) return this.element;
+        return this.element.querySelector?.(".fbl-vn-player") || this.element;
+    }
+
+    _setContentHidden(hidden) {
+        this._contentHidden = hidden === true;
+        const root = this._playerRoot();
+        if (!root) return;
+        root.classList.toggle("is-content-hidden", this._contentHidden);
+        const showButton = root.querySelector(".fbl-vn-show-content");
+        const hideButton = root.querySelector(".fbl-vn-hide-content");
+        if (showButton) showButton.setAttribute("aria-hidden", this._contentHidden ? "false" : "true");
+        if (hideButton) hideButton.setAttribute("aria-expanded", this._contentHidden ? "false" : "true");
     }
 
     _applyVisualState(frame) {
@@ -641,6 +721,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frame = this._getFrame(frameId);
         if (!frame) return this.finish();
         this.currentFrameId = frame.id;
+        this._contentHidden = false;
         const blocks = getFrameTextBlocks(frame);
         const requestedTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
         this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(requestedTextIndex) ? requestedTextIndex : 0));
@@ -659,6 +740,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const blocks = getFrameTextBlocks(frame);
         if (!frame || index < 0 || index >= blocks.length) return;
         this.currentTextIndex = index;
+        this._contentHidden = false;
         this._resetVoteForStep(frame.id, this.currentTextIndex);
         await this._playCurrentVoice(frame);
         await this.render();
@@ -1041,6 +1123,18 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._volumePanelOpen = !this._volumePanelOpen;
         this.render();
     }
+
+    static _onHideContent(event, target) {
+        event.preventDefault();
+        event.stopPropagation();
+        this._setContentHidden(true);
+    }
+
+    static _onShowContent(event, target) {
+        event.preventDefault();
+        event.stopPropagation();
+        this._setContentHidden(false);
+    }
 }
 
 VNPlayerApp.active = new Map();
@@ -1063,7 +1157,9 @@ VNPlayerApp.DEFAULT_OPTIONS = {
         next: VNPlayerApp._onNext,
         choose: VNPlayerApp._onChoose,
         closeCutscene: VNPlayerApp._onCloseCutscene,
-        toggleVolumePanel: VNPlayerApp._onToggleVolumePanel
+        toggleVolumePanel: VNPlayerApp._onToggleVolumePanel,
+        hideContent: VNPlayerApp._onHideContent,
+        showContent: VNPlayerApp._onShowContent
     }
 };
 VNPlayerApp.PARTS = {
