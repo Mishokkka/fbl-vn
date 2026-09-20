@@ -244,6 +244,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     [TEXT_PRESENTATIONS.BOX, "Обычная панель"],
                     [TEXT_PRESENTATIONS.CENTER, "Текст по центру без панели"]
                 ], frame ? frame.textPresentation : TEXT_PRESENTATIONS.BOX),
+                richTextFontOptions: this._richTextFontOptions(),
                 characters,
                 hasCharacters: characters.length > 0,
                 characterOptions: this._characterOptions(characters, frame ? frame.characterId : ""),
@@ -495,6 +496,25 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             index: index + 1,
             inputName: `text-voice-${block.id}`
         }));
+    }
+
+    _richTextFontOptions() {
+        const names = [
+            "Georgia",
+            "Times New Roman",
+            "Arial",
+            "Verdana",
+            "Trebuchet MS",
+            "Courier New",
+            "serif",
+            "sans-serif",
+            "monospace"
+        ];
+        const definitions = globalThis.CONFIG?.fontDefinitions;
+        if (definitions && typeof definitions === "object") names.push(...Object.keys(definitions));
+        return [...new Set(names.filter(name => typeof name === "string" && name.trim()).map(name => name.trim()))]
+            .sort((left, right) => left.localeCompare(right))
+            .map(name => ({ value: name, label: name }));
     }
 
 
