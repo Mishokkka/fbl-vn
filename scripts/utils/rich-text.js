@@ -20,6 +20,19 @@ const ALLOWED_STYLE_PROPERTIES = new Set([
     "text-decoration"
 ]);
 
+const CACHE_LIMIT = 4096;
+const SANITIZED_HTML_CACHE = new Map();
+const PLAIN_TEXT_CACHE = new Map();
+
+function cacheSet(cache, key, value) {
+    if (cache.size >= CACHE_LIMIT && !cache.has(key)) {
+        const oldest = cache.keys().next().value;
+        if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(key, value);
+    return value;
+}
+
 function escapeHtml(value) {
     return String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -165,8 +178,9 @@ export function richTextFromPlainText(text) {
 export function richTextToPlainText(html) {
     const source = String(html ?? "");
     if (!source) return "";
+    if (PLAIN_TEXT_CACHE.has(source)) return PLAIN_TEXT_CACHE.get(source);
 
-    if (typeof DOMParser !== "function") return fallbackPlainTextFromHtml(source);
+    if (typeof DOMParser !== "function") return cacheSet(PLAIN_TEXT_CACHE, source, fallbackPlainTextFromHtml(source));
 
     try {
         const doc = new DOMParser().parseFromString(`<div data-rich-root>${source}</div>`, "text/html");
@@ -192,30 +206,33 @@ export function richTextToPlainText(html) {
             }
         };
         walk(root);
-        return output.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trimEnd();
+        return cacheSet(PLAIN_TEXT_CACHE, source, output.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trimEnd());
     }
     catch (_error) {
-        return fallbackPlainTextFromHtml(source);
+        return cacheSet(PLAIN_TEXT_CACHE, source, fallbackPlainTextFromHtml(source));
     }
 }
 
 export function sanitizeRichTextHtml(html, { fallbackText = "" } = {}) {
     const source = String(html ?? "");
-    if (!source.trim()) return richTextFromPlainText(fallbackText);
+    const fallback = String(fallbackText ?? "");
+    const cacheKey = `${source}\u0000${fallback}`;
+    if (SANITIZED_HTML_CACHE.has(cacheKey)) return SANITIZED_HTML_CACHE.get(cacheKey);
+    if (!source.trim()) return cacheSet(SANITIZED_HTML_CACHE, cacheKey, richTextFromPlainText(fallback));
 
     if (typeof DOMParser !== "function") {
-        return richTextFromPlainText(fallbackPlainTextFromHtml(source) || fallbackText);
+        return cacheSet(SANITIZED_HTML_CACHE, cacheKey, richTextFromPlainText(fallbackPlainTextFromHtml(source) || fallback));
     }
 
     try {
         const doc = new DOMParser().parseFromString(`<div data-rich-root>${source}</div>`, "text/html");
         const root = doc.body.querySelector("[data-rich-root]");
-        if (!root) return richTextFromPlainText(fallbackText);
+        if (!root) return cacheSet(SANITIZED_HTML_CACHE, cacheKey, richTextFromPlainText(fallback));
         sanitizeTree(root);
         const clean = root.innerHTML.trim();
-        return clean || richTextFromPlainText(fallbackText);
+        return cacheSet(SANITIZED_HTML_CACHE, cacheKey, clean || richTextFromPlainText(fallback));
     }
     catch (_error) {
-        return richTextFromPlainText(fallbackPlainTextFromHtml(source) || fallbackText);
+        return cacheSet(SANITIZED_HTML_CACHE, cacheKey, richTextFromPlainText(fallbackPlainTextFromHtml(source) || fallback));
     }
 }
