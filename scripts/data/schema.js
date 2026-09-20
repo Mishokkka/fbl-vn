@@ -1,4 +1,4 @@
-import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, PLAYER_MODES, TEXT_PRESENTATIONS } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { duplicateData, randomId } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -88,7 +88,8 @@ export function createFrame(type = FRAME_TYPES.DIALOGUE) {
         speaker: "",
         portrait: "",
         hidePortrait: false,
-        portraitPosition: "center",
+        portraitPosition: "left",
+        vignetteMode: VIGNETTE_MODES.AUTO,
         textPresentation: TEXT_PRESENTATIONS.BOX,
         text: "",
         textBlocks: [createTextBlock("")],
@@ -352,7 +353,8 @@ export function sanitizeFrame(frame) {
     clean.speaker || (clean.speaker = "");
     clean.portrait || (clean.portrait = "");
     clean.hidePortrait = clean.hidePortrait === true;
-    clean.portraitPosition || (clean.portraitPosition = "center");
+    clean.portraitPosition = ["left", "center", "right"].includes(clean.portraitPosition) ? clean.portraitPosition : "left";
+    clean.vignetteMode = Object.values(VIGNETTE_MODES).includes(clean.vignetteMode) ? clean.vignetteMode : VIGNETTE_MODES.AUTO;
     clean.textPresentation = Object.values(TEXT_PRESENTATIONS).includes(clean.textPresentation) ? clean.textPresentation : TEXT_PRESENTATIONS.BOX;
     clean.text || (clean.text = "");
     clean.textBlocks = Array.isArray(clean.textBlocks) ? clean.textBlocks.map(sanitizeTextBlock) : [];
@@ -593,7 +595,7 @@ export function createCharacterPreset(name, portraitLabel, portraitPath, default
     return {
         id: randomId("character"),
         name: name || "Новый персонаж",
-        defaultPosition: defaultPosition || "center",
+        defaultPosition: defaultPosition || "left",
         portraits: portrait.path ? [portrait] : []
     };
 }
@@ -602,7 +604,7 @@ export function sanitizeCharacter(character) {
     const clean = duplicateData(character !== null && character !== void 0 ? character : {});
     clean.id || (clean.id = randomId("character"));
     clean.name = String(clean.name || "Без имени");
-    clean.defaultPosition = String(clean.defaultPosition || "center");
+    clean.defaultPosition = ["left", "center", "right"].includes(clean.defaultPosition) ? clean.defaultPosition : "left";
     clean.portraits = Array.isArray(clean.portraits) ? clean.portraits.map(sanitizeCharacterPortrait).filter(portrait => portrait.path || portrait.label) : [];
     return clean;
 }
