@@ -371,6 +371,11 @@ for (const invalidSchemaVersion of [-1, 7.5, 9]) {
     `Unsupported numeric schemaVersion ${invalidSchemaVersion} must be rejected instead of relabeled`
   );
 }
+assert.throws(
+  () => VNSceneStore._sanitizeData({ schemaVersion: 9, version: 3, scenes: [], assets: [], characters: [] }),
+  /unsupported schemaVersion/,
+  "The scene store must not silently downgrade future-schema data to an empty current-schema save"
+);
 
 const malformedAudioFrame = createFrame("dialogue");
 malformedAudioFrame.musicCues = [
