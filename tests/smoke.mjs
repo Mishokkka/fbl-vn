@@ -75,9 +75,9 @@ const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
 const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
-const { applyChoiceCounterEffect, collectAssetPaths, createAudioCue, createFrame, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, collectAssetPaths, createAudioCue, createCharacterPreset, createFrame, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { AUDIO_ACTIONS, PLAYER_MODES, TEXT_PRESENTATIONS } = await import("../scripts/utils/constants.js");
+const { AUDIO_ACTIONS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
 
@@ -103,6 +103,12 @@ scene.frames[0].sfxCues = [
 assert.deepEqual(new Set(collectAssetPaths(scene)), new Set(["music-a.ogg", "music-b.ogg", "wind.ogg"]), "Preload collection must include every playable audio cue");
 const nested = createFrame("dialogue");
 assert.equal(nested.textPresentation, TEXT_PRESENTATIONS.BOX, "New frames must use the normal dialogue box by default");
+assert.equal(nested.portraitPosition, "left", "New frames must default portraits to the left");
+assert.equal(nested.vignetteMode, VIGNETTE_MODES.AUTO, "New frames must use automatic vignette selection by default");
+assert.equal(createCharacterPreset("Left default").defaultPosition, "left", "New character presets must default to the left");
+const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid" });
+assert.equal(invalidPositionFrame.portraitPosition, "left", "Invalid portrait positions must sanitize to left");
+assert.equal(invalidPositionFrame.vignetteMode, VIGNETTE_MODES.AUTO, "Invalid vignette modes must sanitize to auto");
 const formattedBlock = createTextBlock("Hello\nworld");
 assert.equal(formattedBlock.text, "Hello\nworld", "Rich text blocks must retain a plain-text representation");
 assert.equal(formattedBlock.richText, richTextFromPlainText("Hello\nworld"), "Plain text must be migrated into safe rich text");
@@ -114,7 +120,7 @@ nested.folderId = "folder-b";
 nested.sort = 0;
 scene.frames.push(nested);
 scene.startFrame = "frame-root";
-await VNSceneStore.setData({ schemaVersion: 8, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 9, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const stored = VNSceneStore.getScene(scene.id);
 stored.title = "Mutated clone";
@@ -132,7 +138,7 @@ await Promise.all([
 const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
-await VNSceneStore.setData({ schemaVersion: 8, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 9, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const editor = Object.create(VNEditorApp.prototype);
 editor._pendingRenderParts = new Set();
@@ -166,6 +172,7 @@ assert.equal("branchMoveOptions" in framesContext, false, "Unused branch move pa
 assert.equal(panelContext.selectedTextBlocks.length >= 1, true, "Frame panel must receive text blocks");
 assert.equal(typeof panelContext.selectedTextBlocks[0].richText, "string", "Frame panel text blocks must expose rich text");
 assert.equal(panelContext.textPresentationOptions.some(option => option.value === TEXT_PRESENTATIONS.CENTER), true, "Frame panel must offer centered text presentation");
+assert.deepEqual(panelContext.vignetteOptions.map(option => option.value), [VIGNETTE_MODES.AUTO, VIGNETTE_MODES.SCREEN, VIGNETTE_MODES.TEXT, VIGNETTE_MODES.NONE], "Frame panel must expose all vignette modes");
 assert.equal(panelContext.selectedMusicCues.length, 2, "Frame panel must expose all music cues");
 assert.equal(panelContext.selectedSfxCues.length, 1, "Frame panel must expose all SFX cues");
 assert.deepEqual(panelContext.musicChannelOptions.map(option => option.value), ["music-1", "music-2"], "Music channel suggestions must include channels used by the scene");
@@ -232,6 +239,26 @@ characterSelect.listener({ currentTarget: characterSelect });
 characterSelect.value = "character-b";
 await queuedCharacterOperation();
 assert.equal(appliedCharacterId, "character-a", "Queued character selection must use the value captured during the change event");
+
+const positionScene = createScene();
+positionScene.frames[0].portraitPosition = "right";
+const positionEditor = Object.create(VNEditorApp.prototype);
+positionEditor.selectedFrameId = positionScene.frames[0].id;
+positionEditor._commitFromForm = async () => positionScene;
+positionEditor._renderEditorParts = () => {};
+const savedGetCharacter = VNSceneStore.getCharacter;
+const savedUpsertScene = VNSceneStore.upsertScene;
+VNSceneStore.getCharacter = () => ({
+  id: "position-character",
+  name: "Position Character",
+  defaultPosition: "center",
+  portraits: [{ id: "portrait-position", label: "Main", path: "portrait.png" }]
+});
+VNSceneStore.upsertScene = async value => value;
+await positionEditor._applyCharacterPreset("position-character", "portrait-position");
+assert.equal(positionScene.frames[0].portraitPosition, "right", "Applying a character preset must not overwrite the frame portrait position");
+VNSceneStore.getCharacter = savedGetCharacter;
+VNSceneStore.upsertScene = savedUpsertScene;
 
 const savedOpenGraph = VNEditorApp._onOpenGraph;
 let headerTargetSeen = null;
@@ -324,13 +351,14 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 8);
+assert.equal(migrated.schemaVersion, 9);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.isFinal, true, "Unconvertible legacy exit routing must preserve the terminal frame");
 assert.equal("sceneRouting" in migratedFrame, false, "Legacy frame routing field must be removed");
 assert.equal(migratedFrame.textPresentation, TEXT_PRESENTATIONS.BOX, "Legacy frames must migrate to normal box presentation");
+assert.equal(migratedFrame.vignetteMode, VIGNETTE_MODES.AUTO, "Legacy frames must migrate to automatic vignette behavior");
 assert.equal(typeof migratedFrame.textBlocks[0].richText, "string", "Legacy text blocks must gain rich text storage");
 assert.equal(migratedFrame.musicCues.length, 1, "Legacy music must migrate into one channel cue");
 assert.equal(migratedFrame.musicCues[0].channel, "music-1");
@@ -362,9 +390,9 @@ assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
 assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 8, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 9, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
-for (const invalidSchemaVersion of [-1, 7.5, 9]) {
+for (const invalidSchemaVersion of [-1, 7.5, 10]) {
   assert.throws(
     () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
     /unsupported schemaVersion/,
@@ -372,7 +400,7 @@ for (const invalidSchemaVersion of [-1, 7.5, 9]) {
   );
 }
 assert.throws(
-  () => VNSceneStore._sanitizeData({ schemaVersion: 9, version: 3, scenes: [], assets: [], characters: [] }),
+  () => VNSceneStore._sanitizeData({ schemaVersion: 10, version: 3, scenes: [], assets: [], characters: [] }),
   /unsupported schemaVersion/,
   "The scene store must not silently downgrade future-schema data to an empty current-schema save"
 );
@@ -431,6 +459,12 @@ await audio.applyFrame({
 assert.equal(audio.music.size, 0, "Stop-all must clear every music channel");
 assert.equal(audio.sfx.size, 0, "Stop-all must clear every SFX channel");
 audio.destroy();
+
+const visualStatePlayer = Object.create(VNPlayerApp.prototype);
+visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portrait.png", portraitPosition: "center" };
+visualStatePlayer._applyVisualState({ background: "", clearBackground: false, portrait: "", hidePortrait: false, portraitPosition: "right" });
+assert.equal(visualStatePlayer.visualState.portrait, "old-portrait.png", "A frame without a new portrait must keep the previous portrait image");
+assert.equal(visualStatePlayer.visualState.portraitPosition, "right", "Portrait position must update even when the frame keeps the previous portrait image");
 
 const player = Object.create(VNPlayerApp.prototype);
 player.scene = scene;

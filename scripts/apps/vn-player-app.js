@@ -2,7 +2,7 @@ import { applyChoiceCounterEffect, getInitialCounterState, getFrameTextBlocks, g
 import { VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
-import { MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS } from "../utils/constants.js";
+import { MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { notifyWarn } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -13,7 +13,7 @@ function createVisualState() {
     return {
         background: "",
         portrait: "",
-        portraitPosition: "center"
+        portraitPosition: "left"
     };
 }
 
@@ -365,7 +365,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const activeParticipants = this._activeParticipantIds();
         const isParticipant = !isVoteMode || activeParticipants.includes(game.user.id);
         const canAdvance = this.started && isParticipant && (this.mode !== PLAYER_MODES.GM || this._isLeader());
-        const portraitPosition = this.visualState.portraitPosition || "center";
+        const portraitPosition = ["left", "center", "right"].includes(this.visualState.portraitPosition) ? this.visualState.portraitPosition : "left";
         const transition = frame && frame.transition ? frame.transition : "fade";
         const isChoice = Boolean(frame && frame.type === "choice");
         const isFinal = Boolean(frame && frame.isFinal === true);
@@ -382,6 +382,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             { fallbackText: currentText }
         );
         const isCenteredText = Boolean(frame && frame.textPresentation === TEXT_PRESENTATIONS.CENTER);
+        const vignetteMode = frame && Object.values(VIGNETTE_MODES).includes(frame.vignetteMode) ? frame.vignetteMode : VIGNETTE_MODES.AUTO;
+        const resolvedVignetteMode = vignetteMode === VIGNETTE_MODES.AUTO
+            ? (isCenteredText ? VIGNETTE_MODES.TEXT : VIGNETTE_MODES.SCREEN)
+            : vignetteMode;
         return Object.assign(context, {
             scene: this.scene,
             frame,
@@ -406,6 +410,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             hasPortrait: Boolean(this.visualState.portrait),
             hasSpeaker: Boolean(frame && frame.speaker) && !isCenteredText,
             isCenteredText,
+            showScreenVignette: resolvedVignetteMode === VIGNETTE_MODES.SCREEN,
+            showTextVignette: resolvedVignetteMode === VIGNETTE_MODES.TEXT,
             contentHidden: this._contentHidden,
             choices: choices.map(choice => {
                 const available = isChoiceAvailable(choice, this.counterState);
@@ -698,14 +704,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!frame) return;
         if (frame.clearBackground === true) this.visualState.background = "";
         if (frame.background) this.visualState.background = frame.background;
-        if (frame.hidePortrait === true) {
-            this.visualState.portrait = "";
-            this.visualState.portraitPosition = frame.portraitPosition || "center";
-        }
-        else if (frame.portrait) {
-            this.visualState.portrait = frame.portrait;
-            this.visualState.portraitPosition = frame.portraitPosition || "center";
-        }
+        this.visualState.portraitPosition = ["left", "center", "right"].includes(frame.portraitPosition)
+            ? frame.portraitPosition
+            : "left";
+        if (frame.hidePortrait === true) this.visualState.portrait = "";
+        else if (frame.portrait) this.visualState.portrait = frame.portrait;
     }
 
     _resetVoteForStep(frameId, textIndex = 0) {

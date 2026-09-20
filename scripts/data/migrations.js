@@ -43,6 +43,10 @@ export function migrateData(source) {
         migrateToV8(data);
         schemaVersion = 8;
     }
+    if (schemaVersion < 9) {
+        migrateToV9(data);
+        schemaVersion = 9;
+    }
     data.schemaVersion = DATA_SCHEMA_VERSION;
     return data;
 }
@@ -304,6 +308,19 @@ function migrateToV8(data) {
             delete frame.musicMode;
             delete frame.music;
             delete frame.sfx;
+        }
+    }
+}
+
+
+function migrateToV9(data) {
+    data.scenes = Array.isArray(data.scenes) ? data.scenes : [];
+    for (const scene of data.scenes) {
+        if (!scene || typeof scene !== "object") continue;
+        scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
+        for (const frame of scene.frames) {
+            if (!frame || typeof frame !== "object") continue;
+            if (!["auto", "screen", "text", "none"].includes(frame.vignetteMode)) frame.vignetteMode = "auto";
         }
     }
 }

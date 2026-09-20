@@ -20,6 +20,12 @@ export const TEXT_PRESENTATIONS = {
     BOX: "box",
     CENTER: "center"
 };
+export const VIGNETTE_MODES = {
+    AUTO: "auto",
+    SCREEN: "screen",
+    TEXT: "text",
+    NONE: "none"
+};
 export const COUNTER_OPERATORS = {
     NONE: "",
     GT: "gt",
@@ -50,7 +56,7 @@ export const PLAYER_MODES = {
     GM: "gm",
     VOTE: "vote"
 };
-export const DATA_SCHEMA_VERSION = 8;
+export const DATA_SCHEMA_VERSION = 9;
 export const DEFAULT_DATA = {
     schemaVersion: DATA_SCHEMA_VERSION,
     version: 3,

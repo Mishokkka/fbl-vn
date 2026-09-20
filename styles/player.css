@@ -134,7 +134,7 @@
 .fbl-vn-speaker {
   position: absolute;
   z-index: 3;
-  bottom: calc(var(--vn-dialogue-height) + 12px);
+  bottom: calc(var(--vn-dialogue-height) - 1px);
   width: max-content;
   min-width: 0;
   max-width: min(42vw, 560px);
@@ -153,16 +153,19 @@
 }
 
 .fbl-vn-speaker.portrait-left {
-  left: 8vw;
+  left: var(--vn-dialogue-inline);
+  border-radius: 9px 9px 0 0;
 }
 
 .fbl-vn-speaker.portrait-center {
   left: 50%;
   transform: translateX(-50%);
+  border-radius: 9px 9px 0 0;
 }
 
 .fbl-vn-speaker.portrait-right {
-  right: 8vw;
+  right: var(--vn-dialogue-inline);
+  border-radius: 9px 9px 0 0;
 }
 
 .fbl-vn-text {
@@ -430,13 +433,6 @@
     font-size: 17px;
   }
 
-  .fbl-vn-speaker.portrait-left {
-    left: 4vw;
-  }
-
-  .fbl-vn-speaker.portrait-right {
-    right: 4vw;
-  }
 
   .fbl-vn-portrait {
     max-height: calc(100vh - var(--vn-dialogue-height));
@@ -514,6 +510,8 @@
 }
 
 .fbl-vn-dialogue.is-centered-text .fbl-vn-dialogue-scroll {
+  position: relative;
+  z-index: 1;
   flex: 1 1 auto;
   min-height: 0;
   height: auto;
@@ -523,13 +521,28 @@
 }
 
 .fbl-vn-dialogue.is-centered-text .fbl-vn-text {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
   min-height: 0;
+  margin: 0 auto;
   font-size: clamp(24px, 2.2vw, 42px);
   line-height: 1.35;
   text-align: center;
   text-shadow:
     0 2px 3px rgba(0, 0, 0, 0.95),
     0 0 18px rgba(0, 0, 0, 0.8);
+}
+
+.fbl-vn-dialogue.is-centered-text.has-text-vignette .fbl-vn-text {
+  padding: 18px 32px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.62) 0%,
+    rgba(0, 0, 0, 0.46) 42%,
+    rgba(0, 0, 0, 0.18) 68%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
 
 .fbl-vn-dialogue.is-centered-text .fbl-vn-next,

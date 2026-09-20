@@ -53,7 +53,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
             characters.push(sanitizeCharacter({
                 id,
                 name: nameInput ? nameInput.value : "Без имени",
-                defaultPosition: positionInput ? positionInput.value : "center",
+                defaultPosition: positionInput ? positionInput.value : "left",
                 portraits
             }));
         }
@@ -82,7 +82,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
     static async _onAddCharacter(event, target) {
         event.preventDefault();
         const characters = this._readCharacters();
-        characters.push(createCharacterPreset("Новый персонаж", "Основной", "", "center"));
+        characters.push(createCharacterPreset("Новый персонаж", "Основной", "", "left"));
         await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
         this.render();

@@ -6,7 +6,7 @@ import { VNAssetPickerApp } from "./asset-picker-app.js";
 import { VNCharacterManagerApp } from "./vn-character-manager-app.js";
 import { VNCounterManagerApp } from "./vn-counter-manager-app.js";
 import { VNGraphApp } from "./vn-graph-app.js";
-import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { confirmDialog, downloadJson, duplicateData, escapeHtml, formDialog, notify, notifyError, notifyWarn, randomId, readJsonFile } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -241,6 +241,12 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     ["fade", "Fade"],
                     ["dark", "Затемнение"]
                 ], frame ? frame.transition : undefined),
+                vignetteOptions: this._options([
+                    [VIGNETTE_MODES.AUTO, "Авто"],
+                    [VIGNETTE_MODES.SCREEN, "По краям кадра"],
+                    [VIGNETTE_MODES.TEXT, "Вокруг текста"],
+                    [VIGNETTE_MODES.NONE, "Нет"]
+                ], frame ? frame.vignetteMode : VIGNETTE_MODES.AUTO),
                 textPresentationOptions: this._options([
                     [TEXT_PRESENTATIONS.BOX, "Обычная панель"],
                     [TEXT_PRESENTATIONS.CENTER, "Текст по центру без панели"]
@@ -853,7 +859,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const portrait = portraits.find(item => item.id === portraitId) || portraits[0] || null;
         frame.characterId = character.id;
         frame.speaker = character.name;
-        frame.portraitPosition = character.defaultPosition || frame.portraitPosition || "center";
+        frame.portraitPosition = ["left", "center", "right"].includes(frame.portraitPosition)
+            ? frame.portraitPosition
+            : (character.defaultPosition || "left");
         frame.hidePortrait = false;
         if (portrait) {
             frame.portraitId = portrait.id;
@@ -1462,6 +1470,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const clearBackgroundInput = this.element.querySelector("[name='frame.clearBackground']");
             frame.clearBackground = Boolean(clearBackgroundInput && clearBackgroundInput.checked);
             frame.transition = this._readValue("frame.transition", frame.transition);
+            frame.vignetteMode = this._readValue("frame.vignetteMode", frame.vignetteMode || VIGNETTE_MODES.AUTO);
             frame.characterId = this._readValue("frame.characterId", frame.characterId || "");
             frame.portraitId = this._readValue("frame.portraitId", frame.portraitId || "");
             frame.speaker = this._readValue("frame.speaker", frame.speaker);

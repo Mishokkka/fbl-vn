@@ -44,6 +44,10 @@ if (!/\.fbl-vn-portrait\s*\{[\s\S]*?bottom:\s*var\(--vn-dialogue-height\)/.test(
 if (!/\.fbl-vn-dialogue-scroll\s*\{[\s\S]*?overflow-y:\s*auto/.test(playerCssSource)) errors.push("Dialogue scroll region must retain vertical scrolling");
 if (!/\.fbl-vn-dialogue\.is-centered-text\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?overflow:\s*hidden/.test(playerCssSource)) errors.push("Centered dialogue must reserve viewport space with a bounded flex column");
 if (!/\.fbl-vn-dialogue\.is-centered-text \.fbl-vn-dialogue-scroll\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto/.test(playerCssSource)) errors.push("Centered dialogue text must scroll inside the remaining flex space");
+if (!playerTemplateSource.includes("showScreenVignette") || !playerTemplateSource.includes("showTextVignette")) errors.push("Player template must support screen and local text vignette modes");
+if (!/\.fbl-vn-speaker\.portrait-left\s*\{[\s\S]*?left:\s*var\(--vn-dialogue-inline\)/.test(playerCssSource)) errors.push("Left speaker badge must align with the dialogue edge");
+if (!/\.fbl-vn-speaker\.portrait-right\s*\{[\s\S]*?right:\s*var\(--vn-dialogue-inline\)/.test(playerCssSource)) errors.push("Right speaker badge must align with the dialogue edge");
+if (!/\.fbl-vn-dialogue\.is-centered-text\.has-text-vignette \.fbl-vn-text\s*\{[\s\S]*?background:\s*radial-gradient/.test(playerCssSource)) errors.push("Centered text vignette style is missing");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
@@ -86,8 +90,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.2.0") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.2.0")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.3.0") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.3.0")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
