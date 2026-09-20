@@ -750,6 +750,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
             const color = toolbar.querySelector("[data-rich-color]");
             if (color) color.addEventListener("change", () => exec("foreColor", color.value || "#efe8db"));
+            const highlight = toolbar.querySelector("[data-rich-highlight]");
+            if (highlight) highlight.addEventListener("change", () => exec("backColor", highlight.value || "#5a4528"));
         }
     }
 
