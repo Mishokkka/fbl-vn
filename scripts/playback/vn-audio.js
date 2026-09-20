@@ -1,9 +1,9 @@
-import { MODULE_ID, MUSIC_MODES, SETTINGS } from "../utils/constants.js";
+import { AUDIO_ACTIONS, MODULE_ID, SETTINGS } from "../utils/constants.js";
 
 export class VNAudioController {
     constructor() {
-        this.music = null;
-        this.musicPath = "";
+        this.music = new Map();
+        this.sfx = new Map();
         this.voice = null;
         this.voicePath = "";
         this._externalPaused = false;
@@ -13,25 +13,59 @@ export class VNAudioController {
 
     async applyFrame(frame) {
         if (!frame) return;
-        if (frame.musicMode === MUSIC_MODES.STOP) this.stopMusic();
-        else if (frame.musicMode === MUSIC_MODES.PLAY && frame.music) await this.playMusic(frame.music);
-        if (frame.sfx) this.playSfx(frame.sfx);
+        await this._applyCues("music", frame.musicCues);
+        await this._applyCues("sfx", frame.sfxCues);
     }
 
-    async playMusic(path) {
-        if (!path) return;
-        if (this.musicPath === path && this.music && !this.music.paused) return;
-        this.stopMusic();
-        this.musicPath = path;
-        this.music = new Audio(path);
-        this.music.loop = true;
-        this.music.volume = this.getMusicVolume();
+    async _applyCues(kind, cues) {
+        for (const cue of Array.isArray(cues) ? cues : []) {
+            if (cue.action === AUDIO_ACTIONS.STOP_ALL) {
+                this.stopAll(kind);
+                continue;
+            }
+            if (cue.action === AUDIO_ACTIONS.STOP) {
+                this.stopChannel(kind, cue.channel);
+                continue;
+            }
+            if (cue.action === AUDIO_ACTIONS.PLAY && cue.channel && cue.src) {
+                await this.playChannel(kind, cue.channel, cue.src, cue.loop === true);
+            }
+        }
+    }
+
+    async playChannel(kind, channel, path, loop = false) {
+        const key = String(channel || "").trim();
+        if (!key || !path) return;
+        const bank = this._bank(kind);
+        this.stopChannel(kind, key);
+
+        const audio = new Audio(path);
+        const entry = { audio, path, loop: loop === true };
+        bank.set(key, entry);
+        audio.loop = entry.loop;
+        audio.volume = kind === "music" ? this.getMusicVolume() : this.getSfxVolume();
+
+        if (!entry.loop) {
+            audio.addEventListener("ended", () => {
+                if (bank.get(key) === entry) bank.delete(key);
+            }, { once: true });
+        }
+
         try {
-            await this.music.play();
+            await audio.play();
         }
         catch (error) {
-            console.warn(`${MODULE_ID} | Music playback was blocked until user interaction.`, error);
+            if (bank.get(key) === entry) bank.delete(key);
+            console.warn(`${MODULE_ID} | ${kind === "music" ? "Music" : "SFX"} playback failed or was blocked: ${path}`, error);
         }
+    }
+
+    async playMusic(path, channel = "music-1", loop = true) {
+        return this.playChannel("music", channel, path, loop);
+    }
+
+    playSfx(path, channel = "sfx-1", loop = false) {
+        return this.playChannel("sfx", channel, path, loop);
     }
 
     async playVoice(path) {
@@ -48,19 +82,6 @@ export class VNAudioController {
             console.warn(`${MODULE_ID} | Voice playback failed or was blocked.`, error);
         }
     }
-
-    playSfx(path) {
-        if (!path) return;
-        const volume = this.getSfxVolume();
-        if (foundry.audio?.AudioHelper?.play) {
-            foundry.audio.AudioHelper.play({ src: path, volume, autoplay: true, loop: false }, false);
-            return;
-        }
-        const audio = new Audio(path);
-        audio.volume = volume;
-        audio.play().catch(error => console.warn(`${MODULE_ID} | SFX playback failed.`, error));
-    }
-
 
     getMusicVolume() {
         return this._volume("globalPlaylistVolume", 0.5, SETTINGS.MUSIC_VOLUME, "music");
@@ -88,8 +109,13 @@ export class VNAudioController {
     }
 
     refreshVolumes() {
-        if (this.music) this.music.volume = this.getMusicVolume();
+        for (const entry of this.music.values()) entry.audio.volume = this.getMusicVolume();
+        for (const entry of this.sfx.values()) entry.audio.volume = this.getSfxVolume();
         if (this.voice) this.voice.volume = this.getVoiceVolume();
+    }
+
+    _bank(kind) {
+        return kind === "sfx" ? this.sfx : this.music;
     }
 
     _volume(coreSetting, fallback, moduleSetting, type) {
@@ -126,7 +152,7 @@ export class VNAudioController {
         for (const sound of sounds) {
             if (!sound || seen.has(sound)) continue;
             seen.add(sound);
-            if (sound === this.music || sound === this.voice) continue;
+            if (sound === this.voice) continue;
             if (sound.playing !== true || typeof sound.pause !== "function") continue;
             try {
                 sound.pause();
@@ -167,12 +193,35 @@ export class VNAudioController {
         for (const snapshot of snapshots) snapshot.resume?.();
     }
 
-    stopMusic() {
-        if (!this.music) return;
-        this.music.pause();
-        this.music.currentTime = 0;
-        this.music = null;
-        this.musicPath = "";
+    stopChannel(kind, channel) {
+        const key = String(channel || "").trim();
+        if (!key) return;
+        const bank = this._bank(kind);
+        const entry = bank.get(key);
+        if (!entry) return;
+        try {
+            entry.audio.pause();
+            entry.audio.currentTime = 0;
+        }
+        catch (_error) {
+            // Nothing else to clean up.
+        }
+        bank.delete(key);
+    }
+
+    stopAll(kind) {
+        const bank = this._bank(kind);
+        for (const channel of [...bank.keys()]) this.stopChannel(kind, channel);
+    }
+
+    stopMusic(channel = "") {
+        if (channel) this.stopChannel("music", channel);
+        else this.stopAll("music");
+    }
+
+    stopSfx(channel = "") {
+        if (channel) this.stopChannel("sfx", channel);
+        else this.stopAll("sfx");
     }
 
     stopVoice() {
@@ -184,7 +233,8 @@ export class VNAudioController {
     }
 
     destroy() {
-        this.stopMusic();
+        this.stopAll("music");
+        this.stopAll("sfx");
         this.stopVoice();
         this.restoreExternalAudio();
     }
