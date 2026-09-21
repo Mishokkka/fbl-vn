@@ -70,16 +70,17 @@ globalThis.Audio = class {
 globalThis.Image = class {};
 
 const { VNCharacterManagerApp } = await import("../scripts/apps/vn-character-manager-app.js");
+const { VNCounterManagerApp } = await import("../scripts/apps/vn-counter-manager-app.js");
 const { VNEditorApp } = await import("../scripts/apps/vn-editor-app.js");
 const { VNGraphApp } = await import("../scripts/apps/vn-graph-app.js");
 const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
 const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
-const { applyChoiceCounterEffect, collectAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { AUDIO_ACTIONS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
-const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } = await import("../scripts/utils/rich-text.js");
+const { AUDIO_ACTIONS, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
+const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
@@ -124,6 +125,9 @@ assert.equal(nested.vignetteMode, VIGNETTE_MODES.NONE, "New frames must disable 
 assert.equal(nested.transition, "none", "New frames must disable visual transitions by default");
 assert.equal(nested.showSpeakerName, true, "New frames must show the primary character name by default");
 assert.deepEqual(nested.additionalCharacters, [], "New frames must start with no additional characters");
+assert.equal(nested.effectCounterId, "", "New frames must not change a counter by default");
+assert.equal(nested.effectOperation, COUNTER_EFFECTS.NONE, "New frames must disable frame counter effects by default");
+assert.equal(nested.effectValue, 0, "New frame counter effects must start at zero");
 const extraCharacter = createFrameCharacter({ name: "Companion", portrait: "companion.png", portraitPosition: "right" });
 assert.equal(extraCharacter.showName, true, "Additional frame characters must show their names by default");
 scene.frames[0].additionalCharacters.push(extraCharacter);
@@ -137,6 +141,8 @@ const formattedBlock = createTextBlock("Hello\nworld");
 assert.equal(formattedBlock.text, "Hello\nworld", "Rich text blocks must retain a plain-text representation");
 assert.equal(formattedBlock.richText, richTextFromPlainText("Hello\nworld"), "Plain text must be migrated into safe rich text");
 assert.equal(richTextToPlainText("<b>Hello</b><br>world"), "Hello\nworld", "Rich text plain-text conversion must preserve line breaks");
+const cursedSample = "A\u0301\u0323B\u0334\u035C";
+assert.deepEqual(splitTextGraphemes(cursedSample), ["A\u0301\u0323", "B\u0334\u035C"], "Typewriter grapheme segmentation must keep combining cursed-text marks attached to their visible letters");
 assert.equal(sanitizeRichTextHtml("<script>alert(1)</script><b>Hello</b>", { fallbackText: "Hello" }).includes("<script"), false, "Rich text sanitizer must never retain script markup");
 nested.id = "frame-nested";
 nested.branchId = branchId;
@@ -144,7 +150,7 @@ nested.folderId = "folder-b";
 nested.sort = 0;
 scene.frames.push(nested);
 scene.startFrame = "frame-root";
-await VNSceneStore.setData({ schemaVersion: 10, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 11, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const stored = VNSceneStore.getScene(scene.id);
 stored.title = "Mutated clone";
@@ -162,7 +168,7 @@ await Promise.all([
 const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
-await VNSceneStore.setData({ schemaVersion: 10, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 11, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const editor = Object.create(VNEditorApp.prototype);
 editor._pendingRenderParts = new Set();
@@ -198,6 +204,8 @@ assert.equal(typeof panelContext.selectedTextBlocks[0].richText, "string", "Fram
 assert.equal(panelContext.textPresentationOptions.some(option => option.value === TEXT_PRESENTATIONS.CENTER), true, "Frame panel must offer centered text presentation");
 assert.equal(panelContext.additionalFrameCharacters.length, 1, "Frame panel must expose additional characters for editing");
 assert.equal(panelContext.additionalFrameCharacters[0].portraitInputName.includes(extraCharacter.id), true, "Additional character portrait fields must have stable unique names");
+assert.equal(panelContext.frameEffectCounterOptions.some(option => option.value === ""), true, "Frame panel must expose an empty frame-effect counter option");
+assert.equal(panelContext.frameEffectOperationOptions.some(option => option.value === COUNTER_EFFECTS.ADD), true, "Frame panel must expose frame counter effect operations");
 assert.deepEqual(panelContext.vignetteOptions.map(option => option.value), [VIGNETTE_MODES.AUTO, VIGNETTE_MODES.SCREEN, VIGNETTE_MODES.TEXT, VIGNETTE_MODES.NONE], "Frame panel must expose all vignette modes");
 assert.equal(panelContext.selectedMusicCues.length, 2, "Frame panel must expose all music cues");
 assert.equal(panelContext.selectedSfxCues.length, 1, "Frame panel must expose all SFX cues");
@@ -265,6 +273,30 @@ characterSelect.listener({ currentTarget: characterSelect });
 characterSelect.value = "character-b";
 await queuedCharacterOperation();
 assert.equal(appliedCharacterId, "character-a", "Queued character selection must use the value captured during the change event");
+
+let routingToggleListener = null;
+let routingCommitCount = 0;
+let routingRenderCount = 0;
+let routingQueued = null;
+const routingToggle = {
+  checked: false,
+  addEventListener(type, listener) { if (type === "change") routingToggleListener = listener; }
+};
+const routingEditor = Object.create(VNEditorApp.prototype);
+routingEditor.element = { querySelector(selector) { return selector === "[name='frame.nextRouting.enabled']" ? routingToggle : null; } };
+routingEditor._enqueueEditorAction = operation => {
+  routingQueued = Promise.resolve().then(operation);
+  return routingQueued;
+};
+routingEditor._commitFromForm = async () => { routingCommitCount += 1; };
+routingEditor._renderPendingEditorParts = async () => { routingRenderCount += 1; };
+routingEditor._enableNextRoutingControls({ querySelector(selector) { return selector === "[name='frame.nextRouting.enabled']" ? routingToggle : null; } });
+routingToggle.checked = true;
+routingToggleListener();
+await routingQueued;
+assert.equal(routingCommitCount, 1, "Counter-routing toggle must persist through the editor action queue");
+assert.equal(routingRenderCount, 1, "Counter-routing toggle must rerender cleanly instead of mutating the panel layout in place");
+assert.equal(routingToggle.checked, true, "Counter-routing rerender must preserve the requested toggle value");
 
 const positionScene = createScene();
 positionScene.frames[0].portraitPosition = "right";
@@ -377,6 +409,22 @@ assert.equal(routeIssues.some(issue => issue.code === "frame-routing-missing-fra
 const routeChoice = { effectCounterId: routeCounter.id, effectOperation: "add", effectValue: 2 };
 const routedCounterState = applyChoiceCounterEffect(routeChoice, { [routeCounter.id]: 1 });
 assert.equal(resolveFrameNextRouting(nested, routedCounterState).frameId, "frame-root", "Choice effects must be usable by conditional next routing");
+const frameEffect = { effectCounterId: routeCounter.id, effectOperation: COUNTER_EFFECTS.ADD, effectValue: 2 };
+const frameEffectState = applyFrameCounterEffect(frameEffect, { [routeCounter.id]: 1 });
+assert.equal(frameEffectState[routeCounter.id], 3, "Any frame must be able to change a counter when entered");
+assert.equal(resolveFrameNextRouting(nested, frameEffectState).frameId, "frame-root", "Frame effects must be visible to conditional routing after the frame is entered");
+const counterUsageManager = Object.create(VNCounterManagerApp.prototype);
+const frameEffectUsage = counterUsageManager._buildCounterUsage({
+  counters: [routeCounter],
+  frames: [{
+    effectCounterId: routeCounter.id,
+    effectOperation: COUNTER_EFFECTS.ADD,
+    effectValue: 2,
+    choices: [],
+    nextRouting: { enabled: false, counterId: "" }
+  }]
+}).get(routeCounter.id);
+assert.equal(frameEffectUsage.frameEffects, 1, "Counter manager usage must count effects attached directly to frames");
 assert.equal(getFrameReferences(scene, "frame-root").some(ref => ref.type === "counter-true" && ref.frameId === "frame-nested"), true, "Conditional outcomes must be reported as frame references");
 
 const legacyScene = createScene();
@@ -403,7 +451,7 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 10);
+assert.equal(migrated.schemaVersion, 11);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
@@ -413,6 +461,9 @@ assert.equal(migratedFrame.textPresentation, TEXT_PRESENTATIONS.BOX, "Legacy fra
 assert.equal(migratedFrame.vignetteMode, VIGNETTE_MODES.AUTO, "Legacy frames must migrate to automatic vignette behavior");
 assert.equal(migratedFrame.showSpeakerName, true, "Legacy frames must show the primary name after migration");
 assert.deepEqual(migratedFrame.additionalCharacters, [], "Legacy frames must migrate with no additional characters");
+assert.equal(migratedFrame.effectCounterId, "", "Legacy frames must migrate with no frame counter effect");
+assert.equal(migratedFrame.effectOperation, COUNTER_EFFECTS.NONE, "Legacy frame counter effects must be disabled");
+assert.equal(migratedFrame.effectValue, 0, "Legacy frame counter effect value must default to zero");
 
 const legacyCenteredMigration = migrateData({
   schemaVersion: 9,
@@ -454,9 +505,9 @@ assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
 assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 10, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 11, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
-for (const invalidSchemaVersion of [-1, 7.5, 11]) {
+for (const invalidSchemaVersion of [-1, 7.5, 12]) {
   assert.throws(
     () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
     /unsupported schemaVersion/,
@@ -464,7 +515,7 @@ for (const invalidSchemaVersion of [-1, 7.5, 11]) {
   );
 }
 assert.throws(
-  () => VNSceneStore._sanitizeData({ schemaVersion: 11, version: 3, scenes: [], assets: [], characters: [] }),
+  () => VNSceneStore._sanitizeData({ schemaVersion: 12, version: 3, scenes: [], assets: [], characters: [] }),
   /unsupported schemaVersion/,
   "The scene store must not silently downgrade future-schema data to an empty current-schema save"
 );
@@ -729,6 +780,53 @@ VNSocket._onMessage({ type: "advance", senderId: gm1.id, data: { sceneId: "scene
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(trustedAdvanceCalls, 1, "The active GM envelope sender id must authorize the leader command");
 game.user = gm1;
+
+// Synchronized self-loops must remain true frame re-entries on remote clients.
+const syncSceneId = "scene-self-loop-sync";
+const syncPlayer = Object.create(VNPlayerApp.prototype);
+syncPlayer.currentFrameId = "loop-frame";
+syncPlayer.loading = false;
+syncPlayer.started = true;
+let syncTextBlockCalls = 0;
+let syncFrameEntryCalls = 0;
+syncPlayer._goToTextBlock = async () => { syncTextBlockCalls += 1; };
+syncPlayer.goToFrame = async () => { syncFrameEntryCalls += 1; };
+syncPlayer._applyChoiceEffectById = () => {};
+VNPlayerApp.active.set(syncSceneId, syncPlayer);
+await VNPlayerApp.advanceScene(syncSceneId, "loop-frame", 1, {});
+assert.equal(syncTextBlockCalls, 1, "A normal same-frame text advance must stay a text-block advance");
+assert.equal(syncFrameEntryCalls, 0, "A normal same-frame text advance must not re-enter the frame");
+await VNPlayerApp.advanceScene(syncSceneId, "loop-frame", 0, { reenter: true });
+assert.equal(syncFrameEntryCalls, 1, "An explicit synchronized self-loop must re-enter the frame on the remote client");
+VNPlayerApp.active.delete(syncSceneId);
+
+const queuedSyncPlayer = Object.create(VNPlayerApp.prototype);
+queuedSyncPlayer.currentFrameId = "loop-frame";
+queuedSyncPlayer._pendingRemoteFrames = [
+  { frameId: "loop-frame", textIndex: 1, options: {} },
+  { frameId: "loop-frame", textIndex: 0, options: { reenter: true } }
+];
+let queuedTextBlockCalls = 0;
+let queuedFrameEntryCalls = 0;
+queuedSyncPlayer._goToTextBlock = async () => { queuedTextBlockCalls += 1; };
+queuedSyncPlayer.goToFrame = async () => { queuedFrameEntryCalls += 1; };
+queuedSyncPlayer._applyChoiceEffectById = () => {};
+await queuedSyncPlayer._flushPendingRemoteFrames();
+assert.equal(queuedTextBlockCalls, 1, "Queued same-frame text advances must not replay frame effects after preload");
+assert.equal(queuedFrameEntryCalls, 1, "Queued explicit self-loops must retain frame re-entry after preload");
+
+const savedSocketEmit = VNSocket.emit;
+const savedWithSceneTargets = VNSocket._withSceneTargets;
+let emittedAdvance = null;
+VNSocket._withSceneTargets = (_sceneId, data) => data;
+VNSocket.emit = (type, data) => { emittedAdvance = { type, data }; return true; };
+VNSocket.advance(syncSceneId, "loop-frame", 0, { reenter: true });
+assert.equal(emittedAdvance.type, "advance");
+assert.equal(emittedAdvance.data.reenter, true, "Socket advance payload must carry an explicit frame re-entry flag");
+VNSocket.advance(syncSceneId, "loop-frame", 1, {});
+assert.equal("reenter" in emittedAdvance.data, false, "Normal text advances must not be mislabeled as frame re-entry");
+VNSocket.emit = savedSocketEmit;
+VNSocket._withSceneTargets = savedWithSceneTargets;
 
 const votePlayer = Object.create(VNPlayerApp.prototype);
 votePlayer.scene = scene;

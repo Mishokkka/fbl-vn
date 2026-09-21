@@ -1,10 +1,10 @@
-import { applyChoiceCounterEffect, getInitialCounterState, getFrameTextBlocks, getTextBlock, isChoiceAvailable, resolveFrameNextRouting } from "../data/schema.js";
+import { applyChoiceCounterEffect, applyFrameCounterEffect, getInitialCounterState, getFrameTextBlocks, getTextBlock, isChoiceAvailable, resolveFrameNextRouting } from "../data/schema.js";
 import { VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { notifyWarn } from "../utils/foundry-helpers.js";
-import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
+import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } from "../utils/rich-text.js";
 
 const ApplicationV2 = foundry.applications.api.ApplicationV2;
 const HandlebarsApplicationMixin = foundry.applications.api.HandlebarsApplicationMixin;
@@ -206,7 +206,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
         }
         if (options && options.choiceId) app._applyChoiceEffectById(options.choiceId);
-        if (app.currentFrameId === frameId) return app._goToTextBlock(Number(textIndex || 0), { remote: true });
+        if (app.currentFrameId === frameId) {
+            if (options?.reenter === true) return app.goToFrame(frameId, { remote: true, textIndex });
+            return app._goToTextBlock(Number(textIndex || 0), { remote: true });
+        }
         return app.goToFrame(frameId, { remote: true, textIndex });
     }
 
@@ -347,7 +350,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (typeof item === "string") await this.goToFrame(item, { remote: true });
             else {
                 if (item.options && item.options.choiceId) this._applyChoiceEffectById(item.options.choiceId);
-                await this.goToFrame(item.frameId, { remote: true, textIndex: item.textIndex || 0 });
+                if (this.currentFrameId === item.frameId && item.options?.reenter !== true) {
+                    await this._goToTextBlock(Number(item.textIndex || 0), { remote: true });
+                }
+                else {
+                    await this.goToFrame(item.frameId, { remote: true, textIndex: item.textIndex || 0 });
+                }
             }
         }
     }
@@ -632,7 +640,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         const plainText = richTextToPlainText(safeHtml);
-        if (this._prefersReducedMotion() || this._instantTextEnabled() || [...plainText].length > 900) {
+        if (this._prefersReducedMotion() || this._instantTextEnabled() || splitTextGraphemes(plainText).length > 900) {
             node.innerHTML = safeHtml;
             this._typingComplete = true;
             return;
@@ -648,7 +656,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 if (child.nodeType === 3) {
                     const output = document.createTextNode("");
                     target.append(output);
-                    segments.push({ node: output, chars: [...child.data], index: 0 });
+                    segments.push({ node: output, chars: splitTextGraphemes(child.data), index: 0 });
                     continue;
                 }
                 if (child.nodeType !== 1) continue;
@@ -757,8 +765,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const force = options.force === true;
         const frame = this._getFrame(frameId);
         if (!frame) return this.finish();
+        const reenter = this.currentFrameId === frame.id;
         this.currentFrameId = frame.id;
         this._contentHidden = false;
+        this._applyFrameEffect(frame);
         const blocks = getFrameTextBlocks(frame);
         const requestedTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
         this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(requestedTextIndex) ? requestedTextIndex : 0));
@@ -768,7 +778,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await this._playCurrentVoice(frame);
         await this.render();
         if (!remote && !force && this._shouldBroadcastAdvance()) {
-            VNSocket.advance(this.scene.id, frame.id, this.currentTextIndex, { choiceId: options.choiceId || "" });
+            VNSocket.advance(this.scene.id, frame.id, this.currentTextIndex, {
+                choiceId: options.choiceId || "",
+                reenter
+            });
         }
     }
 
@@ -1099,6 +1112,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const nextId = this._getNextFrameId(frame);
         if (!nextId) return this.finish();
         await this.goToFrame(nextId);
+    }
+
+    _applyFrameEffect(frame) {
+        this.counterState = applyFrameCounterEffect(frame, this.counterState);
     }
 
     _applyChoiceEffect(choice) {

@@ -262,6 +262,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 selectedChoices: this._buildChoiceViews(frame, renderIndex),
                 isChoice: frame && frame.type === FRAME_TYPES.CHOICE,
                 frameNextInvalid: renderIndex.errorKeys.has(`${frame ? frame.id : ""}::frame.next`),
+                frameEffectCounterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, frame ? frame.effectCounterId || "" : "", true),
+                frameEffectOperationOptions: this._counterEffectOptions(frame ? frame.effectOperation || "" : ""),
                 nextRouting,
                 nextRoutingEnabled: nextRouting.enabled === true,
                 nextRoutingCounterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, nextRouting.counterId || "", true),
@@ -703,21 +705,17 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _enableNextRoutingControls(root = this.element) {
         if (!root) return;
-        const shell = root.querySelector("[data-next-routing-shell]");
         const toggle = root.querySelector("[name='frame.nextRouting.enabled']");
-        const nextFields = root.querySelector("[data-frame-next-fields]");
-        const fields = root.querySelector("[data-next-routing-fields]");
-        if (!shell || !toggle || !nextFields || !fields) return;
-        const sync = () => {
+        if (!toggle) return;
+        toggle.addEventListener("change", () => {
             const enabled = toggle.checked === true;
-            shell.classList.toggle("is-counter-routing", enabled);
-            nextFields.hidden = enabled;
-            fields.hidden = !enabled;
-            for (const control of nextFields.querySelectorAll("input, select, button")) control.disabled = enabled;
-            for (const control of fields.querySelectorAll("input, select, button")) control.disabled = !enabled;
-        };
-        toggle.addEventListener("change", sync);
-        sync();
+            void this._enqueueEditorAction(async () => {
+                const liveToggle = this.element?.querySelector("[name='frame.nextRouting.enabled']");
+                if (liveToggle) liveToggle.checked = enabled;
+                await this._commitFromForm();
+                await this._renderPendingEditorParts();
+            });
+        });
     }
 
     _enableAudioCueControls(root = this.element) {
@@ -1587,6 +1585,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             frame.textPresentation = this._readValue("frame.textPresentation", frame.textPresentation || TEXT_PRESENTATIONS.BOX);
             frame.musicCues = this._readAudioCues("music");
             frame.sfxCues = this._readAudioCues("sfx");
+            frame.effectCounterId = this._readValue("frame.effectCounterId", frame.effectCounterId || "");
+            frame.effectOperation = this._readValue("frame.effectOperation", frame.effectOperation || COUNTER_EFFECTS.NONE);
+            frame.effectValue = Number(this._readValue("frame.effectValue", frame.effectValue || 0) || 0);
             frame.next = this._readValue("frame.next", frame.next);
             const nextRoutingToggle = this.element.querySelector("[name='frame.nextRouting.enabled']");
             if (nextRoutingToggle) {

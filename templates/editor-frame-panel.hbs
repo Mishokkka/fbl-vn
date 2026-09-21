@@ -381,6 +381,37 @@
               </section>
             </section>
   
+            <section class="fbl-vn-frame-counter-effect">
+              <header>
+                <div>
+                  <h4>Изменение счётчика</h4>
+                  <span>Применяется один раз при входе в этот кадр.</span>
+                </div>
+              </header>
+              <div class="fbl-vn-frame-counter-effect-fields">
+                <div class="form-group">
+                  <label>Счётчик</label>
+                  <select name="frame.effectCounterId">
+                    {{#each frameEffectCounterOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Операция</label>
+                  <select name="frame.effectOperation">
+                    {{#each frameEffectOperationOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>На</label>
+                  <input type="number" min="0" step="1" name="frame.effectValue" value="{{selectedFrame.effectValue}}" />
+                </div>
+              </div>
+            </section>
+
             <div class="fbl-vn-field-row row-next-final">
               <section class="fbl-vn-frame-route {{#if nextRoutingEnabled}}is-counter-routing{{/if}}" data-next-routing-shell>
                 <header class="fbl-vn-frame-route-header">

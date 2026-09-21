@@ -211,6 +211,7 @@ export class VNSocket {
     static advance(sceneId, frameId, textIndex = 0, options = {}) {
         const data = { sceneId, frameId, textIndex };
         if (options && options.choiceId) data.choiceId = options.choiceId;
+        if (options?.reenter === true) data.reenter = true;
         this.emit("advance", this._withSceneTargets(sceneId, data));
     }
 

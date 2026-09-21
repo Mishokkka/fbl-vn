@@ -56,7 +56,7 @@ export const PLAYER_MODES = {
     GM: "gm",
     VOTE: "vote"
 };
-export const DATA_SCHEMA_VERSION = 10;
+export const DATA_SCHEMA_VERSION = 11;
 export const DEFAULT_DATA = {
     schemaVersion: DATA_SCHEMA_VERSION,
     version: 3,

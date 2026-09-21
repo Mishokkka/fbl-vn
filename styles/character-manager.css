@@ -6,8 +6,11 @@
 }
 
 .fbl-vn-character-manager {
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .fbl-vn-character-toolbar {
@@ -22,6 +25,8 @@
 .fbl-vn-character-list {
   min-height: 0;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(182, 138, 74, 0.55) rgba(255, 255, 255, 0.04);
   display: grid;
   align-content: start;
   gap: 8px;
