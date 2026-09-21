@@ -51,6 +51,10 @@ export function migrateData(source) {
         migrateToV10(data);
         schemaVersion = 10;
     }
+    if (schemaVersion < 11) {
+        migrateToV11(data);
+        schemaVersion = 11;
+    }
     data.schemaVersion = DATA_SCHEMA_VERSION;
     return data;
 }
@@ -339,6 +343,21 @@ function migrateToV10(data) {
             if (!frame || typeof frame !== "object") continue;
             if (frame.showSpeakerName === undefined) frame.showSpeakerName = frame.textPresentation !== "center";
             if (!Array.isArray(frame.additionalCharacters)) frame.additionalCharacters = [];
+        }
+    }
+}
+
+
+function migrateToV11(data) {
+    data.scenes = Array.isArray(data.scenes) ? data.scenes : [];
+    for (const scene of data.scenes) {
+        if (!scene || typeof scene !== "object") continue;
+        scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
+        for (const frame of scene.frames) {
+            if (!frame || typeof frame !== "object") continue;
+            frame.effectCounterId ||= "";
+            frame.effectOperation ||= "";
+            frame.effectValue = Number.isFinite(Number(frame.effectValue)) ? Math.max(0, Number(frame.effectValue)) : 0;
         }
     }
 }
