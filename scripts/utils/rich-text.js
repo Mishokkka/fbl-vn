@@ -171,6 +171,21 @@ function fallbackPlainTextFromHtml(html) {
         .trimEnd();
 }
 
+export function splitTextGraphemes(value) {
+    const source = String(value ?? "");
+    if (!source) return [];
+    if (typeof Intl?.Segmenter === "function") {
+        const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+        return [...segmenter.segment(source)].map(item => item.segment);
+    }
+    const graphemes = [];
+    for (const char of [...source]) {
+        if (graphemes.length && /\p{Mark}/u.test(char)) graphemes[graphemes.length - 1] += char;
+        else graphemes.push(char);
+    }
+    return graphemes;
+}
+
 export function richTextFromPlainText(text) {
     return escapeHtml(String(text ?? "").replace(/\r\n?/g, "\n")).replace(/\n/g, "<br>");
 }
