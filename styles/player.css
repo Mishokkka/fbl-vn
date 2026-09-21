@@ -535,17 +535,16 @@
 }
 
 .fbl-vn-dialogue.is-centered-text.has-text-vignette .fbl-vn-dialogue-scroll {
-  padding: 14px 18px;
+  padding: 28px 32px;
 }
 
 .fbl-vn-dialogue.is-centered-text.has-text-vignette .fbl-vn-text {
-  max-width: calc(100% - 24px);
   padding: 8px 14px;
   border-radius: 18px;
   background: rgba(0, 0, 0, 0.72);
   box-shadow:
-    0 0 12px 5px rgba(0, 0, 0, 0.7),
-    0 0 22px 9px rgba(0, 0, 0, 0.38);
+    0 0 10px 4px rgba(0, 0, 0, 0.72),
+    0 0 18px 7px rgba(0, 0, 0, 0.38);
 }
 
 .fbl-vn-centered-actions {
