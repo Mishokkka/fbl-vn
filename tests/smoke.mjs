@@ -107,9 +107,10 @@ assert.equal(nested.portraitPosition, "left", "New frames must default portraits
 assert.equal(nested.vignetteMode, VIGNETTE_MODES.NONE, "New frames must disable the vignette by default");
 assert.equal(nested.transition, "none", "New frames must disable visual transitions by default");
 assert.equal(createCharacterPreset("Left default").defaultPosition, "left", "New character presets must default to the left");
-const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid" });
+const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid", transition: "legacy" });
 assert.equal(invalidPositionFrame.portraitPosition, "left", "Invalid portrait positions must sanitize to left");
 assert.equal(invalidPositionFrame.vignetteMode, VIGNETTE_MODES.NONE, "Invalid vignette modes must sanitize to none");
+assert.equal(invalidPositionFrame.transition, "none", "Unsupported transition values must sanitize to none");
 const formattedBlock = createTextBlock("Hello\nworld");
 assert.equal(formattedBlock.text, "Hello\nworld", "Rich text blocks must retain a plain-text representation");
 assert.equal(formattedBlock.richText, richTextFromPlainText("Hello\nworld"), "Plain text must be migrated into safe rich text");
@@ -460,6 +461,35 @@ await audio.applyFrame({
 assert.equal(audio.music.size, 0, "Stop-all must clear every music channel");
 assert.equal(audio.sfx.size, 0, "Stop-all must clear every SFX channel");
 audio.destroy();
+
+const transitionBoundaryPlayer = Object.create(VNPlayerApp.prototype);
+transitionBoundaryPlayer.currentFrameId = "bad-transition";
+transitionBoundaryPlayer.currentTextIndex = 0;
+transitionBoundaryPlayer.started = false;
+transitionBoundaryPlayer.mode = PLAYER_MODES.INDIVIDUAL;
+transitionBoundaryPlayer.scene = { id: "transition-scene", frames: [{ id: "bad-transition", type: "dialogue", transition: "legacy", textBlocks: [createTextBlock("Test")], choices: [] }] };
+transitionBoundaryPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+transitionBoundaryPlayer.participantIds = [];
+transitionBoundaryPlayer.loading = false;
+transitionBoundaryPlayer.preloadDone = 0;
+transitionBoundaryPlayer.preloadTotal = 0;
+transitionBoundaryPlayer.counterState = {};
+transitionBoundaryPlayer._localVote = null;
+transitionBoundaryPlayer._voteState = transitionBoundaryPlayer._emptyVoteState("bad-transition", 0);
+transitionBoundaryPlayer._leaderVotes = new Map();
+transitionBoundaryPlayer._volumePanelOpen = false;
+transitionBoundaryPlayer._localVolumeValues = new Map();
+transitionBoundaryPlayer._buildPlaybackIndex();
+transitionBoundaryPlayer._activeParticipantIds = () => [];
+transitionBoundaryPlayer._isLeader = () => false;
+transitionBoundaryPlayer._canCloseLocally = () => true;
+transitionBoundaryPlayer._volumeLevels = () => [];
+transitionBoundaryPlayer._prefersReducedMotion = () => false;
+const originalPrepareContext = Object.getPrototypeOf(VNPlayerApp.prototype)._prepareContext;
+Object.getPrototypeOf(VNPlayerApp.prototype)._prepareContext = async () => ({});
+const transitionBoundaryContext = await transitionBoundaryPlayer._prepareContext({});
+Object.getPrototypeOf(VNPlayerApp.prototype)._prepareContext = originalPrepareContext;
+assert.equal(transitionBoundaryContext.transitionClass, "transition-none", "Player boundary must reject unsupported transition classes from raw scene payloads");
 
 const visualStatePlayer = Object.create(VNPlayerApp.prototype);
 visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portrait.png", portraitPosition: "center" };
