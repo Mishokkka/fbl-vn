@@ -172,7 +172,6 @@ export class VNPreloadController {
     constructor(scene) {
         this.scene = scene;
         this.loaded = new Set();
-        this.failed = new Map();
         this.inflight = new Map();
         this.cancelled = false;
         this.backgroundPromise = null;
@@ -226,7 +225,6 @@ export class VNPreloadController {
     async _ensurePath(path) {
         if (!path) return { path, ok: true };
         if (this.loaded.has(path)) return { path, ok: true, cached: true };
-        if (this.failed.has(path)) return this.failed.get(path);
         if (this.inflight.has(path)) return this.inflight.get(path);
 
         const promise = VNPreloader._withTimeout(VNPreloader.preloadPath(path), PRELOAD_TIMEOUT_MS, path)
@@ -237,7 +235,6 @@ export class VNPreloadController {
             })
             .catch(error => {
                 const result = { path, ok: false, error: error?.message ?? String(error) };
-                this.failed.set(path, result);
                 console.warn(`fbl-vn-cutscenes | Failed to preload asset: ${path}`, error);
                 return result;
             })
