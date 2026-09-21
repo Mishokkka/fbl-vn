@@ -278,12 +278,20 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         });
         this._flushPreloadProgressUpdate();
         if (this._disposed) return results;
-        const failed = Array.isArray(results) ? results.filter(result => result && result.ok === false) : [];
-        if (failed.length && game.user?.isGM) notifyWarn(`VN: не удалось подготовить стартовые ассеты: ${failed.length}. Катсцена будет запущена, но часть ресурсов может появиться с задержкой.`);
+
+        const criticalResults = startFrame ? await this._ensureFrameAssets(startFrame, 0) : [];
+        if (this._disposed) return results;
+        const failed = [
+            ...(Array.isArray(results) ? results : []),
+            ...(Array.isArray(criticalResults) ? criticalResults : [])
+        ].filter(result => result?.ok === false);
+        if (failed.length && game.user?.isGM) notifyWarn(`VN: не удалось подготовить ассеты: ${failed.length}. Катсцена будет запущена, но часть ресурсов может появиться с задержкой.`);
+
         this.loading = false;
-        VNSocket.signalReady(this.scene.id, this.leaderId);
-        this._backgroundPreloadPromise = this._preloader.startBackgroundImages();
         await this.render();
+        if (this._disposed) return results;
+        this._backgroundPreloadPromise = this._preloader.startBackgroundImages();
+        VNSocket.signalReady(this.scene.id, this.leaderId);
         if (VNPlayerApp.pendingStarts.has(this.scene.id)) {
             VNPlayerApp.pendingStarts.delete(this.scene.id);
             await this.start();
