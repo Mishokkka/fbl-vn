@@ -720,8 +720,50 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         sync(toggle.checked === true);
         toggle.addEventListener("change", () => {
             const enabled = toggle.checked === true;
+            const position = this._captureEditorPosition();
+            const panel = root.closest?.(".fbl-vn-frame-panel") || null;
+            const scrollTop = panel?.scrollTop ?? null;
+
+            // Firefox may scroll a visually hidden checkbox into view when its label is clicked.
+            // Drop focus before the route block changes height, then restore both the panel scroll
+            // position and the ApplicationV2 geometry explicitly.
+            toggle.blur?.();
             sync(enabled);
+            if (panel && scrollTop !== null) panel.scrollTop = scrollTop;
+            this._stabilizeEditorPosition(position);
+
             void this._enqueueEditorAction(() => this._persistNextRoutingState(enabled));
+        });
+    }
+
+    _captureEditorPosition() {
+        const rect = this.element?.getBoundingClientRect?.();
+        const current = this.position || {};
+        const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+        return {
+            top: numberOr(current.top, rect?.top),
+            left: numberOr(current.left, rect?.left),
+            width: numberOr(current.width, rect?.width),
+            height: numberOr(current.height, rect?.height)
+        };
+    }
+
+    _restoreEditorPosition(position) {
+        if (!position || typeof this.setPosition !== "function") return;
+        const clean = {};
+        for (const key of ["top", "left", "width", "height"]) {
+            if (Number.isFinite(position[key])) clean[key] = position[key];
+        }
+        if (Object.keys(clean).length) this.setPosition(clean);
+    }
+
+    _stabilizeEditorPosition(position) {
+        this._restoreEditorPosition(position);
+        const raf = globalThis.requestAnimationFrame;
+        if (typeof raf !== "function") return;
+        raf(() => {
+            this._restoreEditorPosition(position);
+            raf(() => this._restoreEditorPosition(position));
         });
     }
 
