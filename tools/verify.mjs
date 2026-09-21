@@ -70,6 +70,8 @@ if (!editorFrameTemplateSource.includes('data-action="addFrameCharacter"') || !e
 if (!editorSource.includes("_applyAdditionalCharacterPreset") || !editorSource.includes("_applyAdditionalCharacterPortrait")) errors.push("Frame editor must bind presets and portraits for additional characters");
 if (!playerTemplateSource.includes("{{#each frameCharacters}}")) errors.push("Player template must render multiple frame characters");
 if (!playerSource.includes("frameCharacters.push")) errors.push("Player context must compose multiple visible characters");
+if (!playerSource.includes("frame?.showSpeakerName !== false && !isCenteredText") || !playerSource.includes("character.showName !== false && !isCenteredText")) errors.push("Centered text must suppress all character name badges");
+if (!editorSource.includes('if (!portraitId) {') || !editorSource.includes('entry.portrait = "";')) errors.push("Additional character portrait selection must support clearing the portrait");
 if (!/\.fbl-vn-frame-character-card\s*\{/.test(editorFormsCssSource)) errors.push("Frame character editor cards must be styled");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
