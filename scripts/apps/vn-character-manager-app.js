@@ -116,6 +116,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
     static async _onAddCharacter(event, target) {
         event.preventDefault();
         const characters = this._readCharacters();
+        this._captureExpandedCharacters();
         characters.push(createCharacterPreset("Новый персонаж", "Основной", "", "left"));
         await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
@@ -128,6 +129,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         const character = characters.find(item => item.id === target.dataset.characterId);
         if (!character) return;
         if (!await confirmDialog(`Удалить пресет «${character.name}»?`, { title: "Удаление персонажа", yes: "Удалить", no: "Отмена" })) return;
+        this._captureExpandedCharacters();
         await VNSceneStore.replaceCharacters(characters.filter(item => item.id !== character.id));
         this.expandedCharacterIds.delete(character.id);
         this._refreshEditor();
