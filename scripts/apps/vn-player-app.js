@@ -206,7 +206,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
         }
         if (options && options.choiceId) app._applyChoiceEffectById(options.choiceId);
-        if (app.currentFrameId === frameId) return app._goToTextBlock(Number(textIndex || 0), { remote: true });
+        if (app.currentFrameId === frameId) {
+            if (options?.reenter === true) return app.goToFrame(frameId, { remote: true, textIndex });
+            return app._goToTextBlock(Number(textIndex || 0), { remote: true });
+        }
         return app.goToFrame(frameId, { remote: true, textIndex });
     }
 
@@ -347,7 +350,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (typeof item === "string") await this.goToFrame(item, { remote: true });
             else {
                 if (item.options && item.options.choiceId) this._applyChoiceEffectById(item.options.choiceId);
-                await this.goToFrame(item.frameId, { remote: true, textIndex: item.textIndex || 0 });
+                if (this.currentFrameId === item.frameId && item.options?.reenter !== true) {
+                    await this._goToTextBlock(Number(item.textIndex || 0), { remote: true });
+                }
+                else {
+                    await this.goToFrame(item.frameId, { remote: true, textIndex: item.textIndex || 0 });
+                }
             }
         }
     }
@@ -757,6 +765,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const force = options.force === true;
         const frame = this._getFrame(frameId);
         if (!frame) return this.finish();
+        const reenter = this.currentFrameId === frame.id;
         this.currentFrameId = frame.id;
         this._contentHidden = false;
         this._applyFrameEffect(frame);
@@ -769,7 +778,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await this._playCurrentVoice(frame);
         await this.render();
         if (!remote && !force && this._shouldBroadcastAdvance()) {
-            VNSocket.advance(this.scene.id, frame.id, this.currentTextIndex, { choiceId: options.choiceId || "" });
+            VNSocket.advance(this.scene.id, frame.id, this.currentTextIndex, {
+                choiceId: options.choiceId || "",
+                reenter
+            });
         }
     }
 
