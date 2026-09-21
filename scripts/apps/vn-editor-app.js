@@ -1566,6 +1566,17 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const hidePortraitInput = this.element.querySelector("[name='frame.hidePortrait']");
             frame.hidePortrait = Boolean(hidePortraitInput && hidePortraitInput.checked);
             frame.portraitPosition = this._readValue("frame.portraitPosition", frame.portraitPosition);
+            const showSpeakerNameInput = this.element.querySelector("[name='frame.showSpeakerName']");
+            frame.showSpeakerName = showSpeakerNameInput ? showSpeakerNameInput.checked === true : frame.showSpeakerName !== false;
+            frame.additionalCharacters = [...this.element.querySelectorAll("[data-additional-character-row]")].map(row => ({
+                id: row.dataset.frameCharacterId || randomId("frame-character"),
+                characterId: this._readRowValue(row, "[data-frame-character-select]", ""),
+                portraitId: this._readRowValue(row, "[data-frame-character-portrait-select]", ""),
+                name: this._readRowValue(row, "[data-frame-character-name]", ""),
+                portrait: this._readRowValue(row, "[data-frame-character-portrait]", ""),
+                portraitPosition: this._readRowValue(row, "[data-frame-character-position]", "right"),
+                showName: Boolean(row.querySelector("[data-frame-character-show-name]")?.checked)
+            }));
             frame.textPresentation = this._readValue("frame.textPresentation", frame.textPresentation || TEXT_PRESENTATIONS.BOX);
             frame.musicCues = this._readAudioCues("music");
             frame.sfxCues = this._readAudioCues("sfx");
