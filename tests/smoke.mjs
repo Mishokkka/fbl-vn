@@ -781,6 +781,53 @@ await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(trustedAdvanceCalls, 1, "The active GM envelope sender id must authorize the leader command");
 game.user = gm1;
 
+// Synchronized self-loops must remain true frame re-entries on remote clients.
+const syncSceneId = "scene-self-loop-sync";
+const syncPlayer = Object.create(VNPlayerApp.prototype);
+syncPlayer.currentFrameId = "loop-frame";
+syncPlayer.loading = false;
+syncPlayer.started = true;
+let syncTextBlockCalls = 0;
+let syncFrameEntryCalls = 0;
+syncPlayer._goToTextBlock = async () => { syncTextBlockCalls += 1; };
+syncPlayer.goToFrame = async () => { syncFrameEntryCalls += 1; };
+syncPlayer._applyChoiceEffectById = () => {};
+VNPlayerApp.active.set(syncSceneId, syncPlayer);
+await VNPlayerApp.advanceScene(syncSceneId, "loop-frame", 1, {});
+assert.equal(syncTextBlockCalls, 1, "A normal same-frame text advance must stay a text-block advance");
+assert.equal(syncFrameEntryCalls, 0, "A normal same-frame text advance must not re-enter the frame");
+await VNPlayerApp.advanceScene(syncSceneId, "loop-frame", 0, { reenter: true });
+assert.equal(syncFrameEntryCalls, 1, "An explicit synchronized self-loop must re-enter the frame on the remote client");
+VNPlayerApp.active.delete(syncSceneId);
+
+const queuedSyncPlayer = Object.create(VNPlayerApp.prototype);
+queuedSyncPlayer.currentFrameId = "loop-frame";
+queuedSyncPlayer._pendingRemoteFrames = [
+  { frameId: "loop-frame", textIndex: 1, options: {} },
+  { frameId: "loop-frame", textIndex: 0, options: { reenter: true } }
+];
+let queuedTextBlockCalls = 0;
+let queuedFrameEntryCalls = 0;
+queuedSyncPlayer._goToTextBlock = async () => { queuedTextBlockCalls += 1; };
+queuedSyncPlayer.goToFrame = async () => { queuedFrameEntryCalls += 1; };
+queuedSyncPlayer._applyChoiceEffectById = () => {};
+await queuedSyncPlayer._flushPendingRemoteFrames();
+assert.equal(queuedTextBlockCalls, 1, "Queued same-frame text advances must not replay frame effects after preload");
+assert.equal(queuedFrameEntryCalls, 1, "Queued explicit self-loops must retain frame re-entry after preload");
+
+const savedSocketEmit = VNSocket.emit;
+const savedWithSceneTargets = VNSocket._withSceneTargets;
+let emittedAdvance = null;
+VNSocket._withSceneTargets = (_sceneId, data) => data;
+VNSocket.emit = (type, data) => { emittedAdvance = { type, data }; return true; };
+VNSocket.advance(syncSceneId, "loop-frame", 0, { reenter: true });
+assert.equal(emittedAdvance.type, "advance");
+assert.equal(emittedAdvance.data.reenter, true, "Socket advance payload must carry an explicit frame re-entry flag");
+VNSocket.advance(syncSceneId, "loop-frame", 1, {});
+assert.equal("reenter" in emittedAdvance.data, false, "Normal text advances must not be mislabeled as frame re-entry");
+VNSocket.emit = savedSocketEmit;
+VNSocket._withSceneTargets = savedWithSceneTargets;
+
 const votePlayer = Object.create(VNPlayerApp.prototype);
 votePlayer.scene = scene;
 votePlayer.mode = PLAYER_MODES.VOTE;
