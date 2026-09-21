@@ -66,7 +66,7 @@ if (!characterTemplateSource.includes("{{#if expanded}}open{{/if}}")) errors.pus
 if (!/\.fbl-vn-character-card\[open\] \.fbl-vn-character-chevron\s*\{[\s\S]*?transform:\s*rotate\(90deg\)/.test(characterCssSource)) errors.push("Expanded character cards must expose a visible disclosure state");
 if (!schemaSource.includes("export function createFrameCharacter")) errors.push("Frame schema must expose additional character records");
 if (!schemaSource.includes("clean.additionalCharacters = Array.isArray(clean.additionalCharacters)")) errors.push("Frame sanitization must normalize additional characters");
-if (!editorFrameTemplateSource.includes('data-action="addFrameCharacter"') || !editorFrameTemplateSource.includes("data-additional-character-row")) errors.push("Frame editor must expose add/remove character rows");
+if (!editorFrameTemplateSource.includes('data-action="addFrameCharacter"') || !editorFrameTemplateSource.includes('data-action="deleteFrameCharacter"') || !editorFrameTemplateSource.includes("data-additional-character-row")) errors.push("Frame editor must expose add/remove character rows");
 if (!editorSource.includes("_applyAdditionalCharacterPreset") || !editorSource.includes("_applyAdditionalCharacterPortrait")) errors.push("Frame editor must bind presets and portraits for additional characters");
 if (!playerTemplateSource.includes("{{#each frameCharacters}}")) errors.push("Player template must render multiple frame characters");
 if (!playerSource.includes("frameCharacters.push")) errors.push("Player context must compose multiple visible characters");
