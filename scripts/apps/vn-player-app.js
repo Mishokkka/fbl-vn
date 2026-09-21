@@ -45,6 +45,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.loading = true;
         this.started = false;
         this._starting = false;
+        this._resuming = false;
         this.preloadDone = 0;
         this.preloadTotal = 0;
         this.currentFrameId = null;
@@ -210,7 +211,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             VNPlayerApp.pendingAdvances.set(sceneId, queued);
             return;
         }
-        if (app.loading || !app.started) {
+        if (app.loading || !app.started || app._starting || app._resuming) {
             app._pendingRemoteFrames.push({ frameId, textIndex, options });
             return;
         }
@@ -260,7 +261,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     async _preloadInner(startFrameId = "", extraPaths = []) {
         const startFrame = this._getFrame(startFrameId);
         const paths = [...new Set([
-            ...VNPreloader.collectWindowPaths(this.scene, startFrame?.id || "", { depth: 2, maxFrames: 12 }),
+            ...VNPreloader.collectStartupWindowPaths(this.scene, startFrame?.id || "", { depth: 2, maxFrames: 12 }),
             ...(Array.isArray(extraPaths) ? extraPaths : [])
         ].filter(Boolean))];
         this.preloadTotal = paths.length;
@@ -290,15 +291,27 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return results;
     }
 
-    async _ensureFrameAssets(frame) {
-        if (!frame || this._disposed || !this._preloader) return [];
-        const results = await this._preloader.ensureFrame(frame, { concurrency: 6 });
+    async _ensureCriticalPaths(paths) {
+        if (this._disposed || !this._preloader) return [];
+        const uniquePaths = [...new Set((Array.isArray(paths) ? paths : []).filter(Boolean))];
+        if (!uniquePaths.length) return [];
+        const results = await this._preloader.ensurePaths(uniquePaths, { concurrency: 6 });
         if (this._disposed) return results;
         const failedPaths = results.filter(result => result?.ok === false && result.path).map(result => result.path);
         if (!failedPaths.length) return results;
         const retries = await this._preloader.ensurePaths(failedPaths, { concurrency: 6 });
         const retryByPath = new Map(retries.map(result => [result.path, result]));
         return results.map(result => retryByPath.get(result.path) || result);
+    }
+
+    _ensureFrameAssets(frame, textIndex = 0) {
+        if (!frame) return Promise.resolve([]);
+        return this._ensureCriticalPaths(VNPreloader.collectFrameEntryPaths(frame, textIndex));
+    }
+
+    _ensureTextBlockAssets(frame, textIndex = 0) {
+        const block = getTextBlock(frame, textIndex);
+        return this._ensureCriticalPaths(block?.voice ? [block.voice] : []);
     }
 
     _warmUpcomingAssets(frame) {
@@ -354,37 +367,44 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     async resume(state = {}) {
-        if (this.loading || this._disposed) return;
-        this.started = true;
-        this.audio.pauseExternalAudio();
-        this.counterState = state.counterState && typeof state.counterState === "object" ? Object.assign({}, state.counterState) : getInitialCounterState(this.scene);
-        this.visualState = Object.assign(createVisualState(), state.visualState && typeof state.visualState === "object" ? state.visualState : {});
-        const frame = this._getFrame(state.currentFrameId);
-        if (!frame) {
-            this.started = false;
-            return this.start();
+        if (this.loading || this._disposed || this._resuming) return;
+        this._resuming = true;
+        try {
+            this.started = true;
+            this.audio.pauseExternalAudio();
+            this.counterState = state.counterState && typeof state.counterState === "object" ? Object.assign({}, state.counterState) : getInitialCounterState(this.scene);
+            this.visualState = Object.assign(createVisualState(), state.visualState && typeof state.visualState === "object" ? state.visualState : {});
+            const frame = this._getFrame(state.currentFrameId);
+            if (!frame) {
+                this.started = false;
+                return await this.start();
+            }
+            const blocks = getFrameTextBlocks(frame);
+            const requestedIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
+            await this._ensureFrameAssets(frame, requestedIndex);
+            if (this._disposed) return;
+            this.currentFrameId = frame.id;
+            this._contentHidden = false;
+            this.currentTextIndex = requestedIndex;
+            this._resetVoteForStep(frame.id, this.currentTextIndex);
+            await this.audio.applyFrame(frame);
+            await this._playCurrentVoice(frame);
+            await this.render();
+            this._warmUpcomingAssets(frame);
+            await this._flushPendingRemoteFrames();
         }
-        await this._ensureFrameAssets(frame);
-        if (this._disposed) return;
-        this.currentFrameId = frame.id;
-        this._contentHidden = false;
-        const blocks = getFrameTextBlocks(frame);
-        this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
-        this._resetVoteForStep(frame.id, this.currentTextIndex);
-        await this.audio.applyFrame(frame);
-        await this._playCurrentVoice(frame);
-        await this.render();
-        this._warmUpcomingAssets(frame);
+        finally {
+            this._resuming = false;
+        }
     }
 
     async _flushPendingRemoteFrames() {
-        if (!this._pendingRemoteFrames.length) return;
-        const queued = this._pendingRemoteFrames.splice(0);
-        for (const item of queued) {
+        while (this._pendingRemoteFrames.length && !this._disposed) {
+            const item = this._pendingRemoteFrames.shift();
             if (typeof item === "string") {
                 await this._enqueuePlaybackOperation(() => this._goToFrameNow(item, { remote: true }));
             }
-            else {
+            else if (item) {
                 await this._enqueuePlaybackOperation(() => this._applyRemoteAdvance(item.frameId, item.textIndex, item.options || {}));
             }
         }
@@ -823,15 +843,16 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const force = options.force === true;
         const frame = this._getFrame(frameId);
         if (!frame) return this.finish();
-        await this._ensureFrameAssets(frame);
+        const blocks = getFrameTextBlocks(frame);
+        const requestedTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
+        const nextTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(requestedTextIndex) ? requestedTextIndex : 0));
+        await this._ensureFrameAssets(frame, nextTextIndex);
         if (this._disposed) return;
         const reenter = this.currentFrameId === frame.id;
         this.currentFrameId = frame.id;
         this._contentHidden = false;
         this._applyFrameEffect(frame);
-        const blocks = getFrameTextBlocks(frame);
-        const requestedTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
-        this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(requestedTextIndex) ? requestedTextIndex : 0));
+        this.currentTextIndex = nextTextIndex;
         this._resetVoteForStep(frame.id, this.currentTextIndex);
         this._applyVisualState(frame);
         await this.audio.applyFrame(frame);
@@ -854,6 +875,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frame = this._getFrame(this.currentFrameId);
         const blocks = getFrameTextBlocks(frame);
         if (!frame || index < 0 || index >= blocks.length) return;
+        await this._ensureTextBlockAssets(frame, index);
+        if (this._disposed) return;
         this.currentTextIndex = index;
         this._contentHidden = false;
         this._resetVoteForStep(frame.id, this.currentTextIndex);
