@@ -222,8 +222,10 @@ export class VNPreloadController {
     }
 
     warmWindow(startFrameId, { depth = STARTUP_WINDOW_DEPTH, maxFrames = STARTUP_WINDOW_MAX_FRAMES, concurrency = STARTUP_CONCURRENCY } = {}) {
-        const paths = VNPreloader.collectWindowPaths(this.scene, startFrameId, { depth, maxFrames });
-        return this.ensurePaths(paths, { concurrency });
+        const frame = (Array.isArray(this.scene?.frames) ? this.scene.frames : []).find(item => item?.id === startFrameId) || null;
+        const paths = new Set(VNPreloader.collectStartupWindowPaths(this.scene, startFrameId, { depth, maxFrames }));
+        for (const path of VNPreloader.collectFramePaths(frame)) paths.add(path);
+        return this.ensurePaths([...paths], { concurrency });
     }
 
     startBackgroundImages() {
