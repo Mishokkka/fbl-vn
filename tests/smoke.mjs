@@ -78,7 +78,7 @@ const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
 const { VNPreloadController, VNPreloader } = await import("../scripts/playback/vn-preloader.js");
-const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
 const { AUDIO_ACTIONS, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
@@ -211,6 +211,28 @@ assert.equal(startupPaths.includes("preload-choice.webp"), true, "Startup window
 assert.equal(startupPaths.includes("preload-beyond.webp"), false, "Startup window must not block on distant frame images");
 assert.equal(startupPaths.includes("preload-beyond.ogg"), false, "Startup window must not block on distant audio");
 assert.deepEqual(collectFrameAssetPaths(preloadRoot).sort(), ["preload-root.ogg", "preload-root.webp"]);
+const voicedFrame = createFrame("dialogue");
+voicedFrame.background = "voiced.webp";
+voicedFrame.textBlocks = [
+  createTextBlock("One"),
+  createTextBlock("Two"),
+  createTextBlock("Three")
+];
+voicedFrame.textBlocks[0].voice = "voice-1.ogg";
+voicedFrame.textBlocks[1].voice = "voice-2.ogg";
+voicedFrame.textBlocks[2].voice = "voice-3.ogg";
+assert.deepEqual(
+  collectFrameEntryAssetPaths(voicedFrame, 1).sort(),
+  ["voice-2.ogg", "voiced.webp"],
+  "Critical frame entry preload must wait only for the requested text block voice rather than every long voice in the frame"
+);
+const startupVoiceScene = createScene();
+startupVoiceScene.frames = [voicedFrame];
+startupVoiceScene.startFrame = voicedFrame.id;
+const startupVoicePaths = VNPreloader.collectStartupWindowPaths(startupVoiceScene, voicedFrame.id, { depth: 2, maxFrames: 12 });
+assert.equal(startupVoicePaths.includes("voice-1.ogg"), true, "Startup preload must include the first immediately playable voice");
+assert.equal(startupVoicePaths.includes("voice-2.ogg"), false, "Startup preload must not block on later voices from the same frame");
+assert.equal(startupVoicePaths.includes("voice-3.ogg"), false, "Startup preload must not block on all long voices from the same frame");
 const backgroundImages = VNPreloader.collectBackgroundImagePaths(preloadScene);
 assert.equal(backgroundImages.includes("preload-beyond.webp"), true, "Distant images must be eligible for low-priority background preload");
 assert.equal(backgroundImages.some(path => path.endsWith(".ogg")), false, "Long-form audio must not be swept into the whole-scene background preload");
@@ -924,6 +946,44 @@ queuedSyncPlayer._applyChoiceEffectById = () => {};
 await queuedSyncPlayer._flushPendingRemoteFrames();
 assert.equal(queuedTextBlockCalls, 1, "Queued same-frame text advances must not replay frame effects after preload");
 assert.equal(queuedFrameEntryCalls, 1, "Queued explicit self-loops must retain frame re-entry after preload");
+
+const startupBufferPlayer = Object.create(VNPlayerApp.prototype);
+startupBufferPlayer.loading = false;
+startupBufferPlayer.started = true;
+startupBufferPlayer._starting = true;
+startupBufferPlayer._resuming = false;
+startupBufferPlayer._pendingRemoteFrames = [];
+VNPlayerApp.active.set("scene-startup-buffer", startupBufferPlayer);
+VNPlayerApp.advanceScene("scene-startup-buffer", "frame-a", 0, {});
+assert.equal(startupBufferPlayer._pendingRemoteFrames.length, 1, "Remote advances arriving while the startup frame is still settling must remain buffered");
+startupBufferPlayer._starting = false;
+VNPlayerApp.active.delete("scene-startup-buffer");
+
+const resumeBufferPlayer = Object.create(VNPlayerApp.prototype);
+resumeBufferPlayer.loading = false;
+resumeBufferPlayer.started = true;
+resumeBufferPlayer._starting = false;
+resumeBufferPlayer._resuming = true;
+resumeBufferPlayer._pendingRemoteFrames = [];
+VNPlayerApp.active.set("scene-resume-buffer", resumeBufferPlayer);
+VNPlayerApp.advanceScene("scene-resume-buffer", "frame-b", 0, {});
+assert.equal(resumeBufferPlayer._pendingRemoteFrames.length, 1, "Remote advances arriving while a reconnect state is being restored must remain buffered");
+resumeBufferPlayer._resuming = false;
+VNPlayerApp.active.delete("scene-resume-buffer");
+
+const drainPlayer = Object.create(VNPlayerApp.prototype);
+drainPlayer._disposed = false;
+drainPlayer._pendingRemoteFrames = [
+  { frameId: "one", textIndex: 0, options: {} }
+];
+const drainedFrames = [];
+drainPlayer._enqueuePlaybackOperation = async operation => operation();
+drainPlayer._applyRemoteAdvance = async frameId => {
+  drainedFrames.push(frameId);
+  if (frameId === "one") drainPlayer._pendingRemoteFrames.push({ frameId: "two", textIndex: 0, options: {} });
+};
+await drainPlayer._flushPendingRemoteFrames();
+assert.deepEqual(drainedFrames, ["one", "two"], "Pending-advance drain must include messages that arrive while startup or resume buffering is being flushed");
 
 const serialSceneId = "scene-serialized-remote";
 const serialPlayer = Object.create(VNPlayerApp.prototype);
