@@ -739,7 +739,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _captureEditorPosition() {
         const rect = this.element?.getBoundingClientRect?.();
         const current = this.position || {};
-        const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+        const numberOr = (value, fallback) => value !== null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : fallback;
         return {
             top: numberOr(current.top, rect?.top),
             left: numberOr(current.left, rect?.left),
