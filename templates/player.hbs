@@ -22,15 +22,17 @@
       <div class="fbl-vn-vignette"></div>
     {{/if}}
 
-    {{#if hasPortrait}}
-      <img class="fbl-vn-portrait {{portraitClass}} {{transitionClass}}" src="{{portraitSrc}}" alt="{{portraitAlt}}" />
-    {{/if}}
-
-    {{#unless isCenteredText}}
-      {{#if hasSpeaker}}
-        <div class="fbl-vn-speaker {{portraitClass}}">{{frame.speaker}}</div>
+    {{#each frameCharacters}}
+      {{#if hasPortrait}}
+        <img class="fbl-vn-portrait {{portraitClass}} {{../transitionClass}}" src="{{portraitSrc}}" alt="{{portraitAlt}}" />
       {{/if}}
-    {{/unless}}
+    {{/each}}
+
+    {{#each frameCharacters}}
+      {{#if showName}}
+        <div class="fbl-vn-speaker {{portraitClass}}">{{name}}</div>
+      {{/if}}
+    {{/each}}
 
     <div class="fbl-vn-dialogue-stack {{#if isCenteredText}}is-centered-text{{/if}}">
       <div class="fbl-vn-dialogue {{#if isCenteredText}}is-centered-text{{/if}} {{#if showTextVignette}}has-text-vignette{{/if}}" data-vn-advance-area>
