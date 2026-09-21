@@ -82,14 +82,14 @@ export function createFrame(type = FRAME_TYPES.DIALOGUE) {
         isFinal: false,
         background: "",
         clearBackground: false,
-        transition: "fade",
+        transition: "none",
         characterId: "",
         portraitId: "",
         speaker: "",
         portrait: "",
         hidePortrait: false,
         portraitPosition: "left",
-        vignetteMode: VIGNETTE_MODES.AUTO,
+        vignetteMode: VIGNETTE_MODES.NONE,
         textPresentation: TEXT_PRESENTATIONS.BOX,
         text: "",
         textBlocks: [createTextBlock("")],
@@ -347,14 +347,14 @@ export function sanitizeFrame(frame) {
     clean.isFinal = clean.isFinal === true;
     clean.background || (clean.background = "");
     clean.clearBackground = clean.clearBackground === true;
-    clean.transition || (clean.transition = "fade");
+    clean.transition || (clean.transition = "none");
     clean.characterId || (clean.characterId = "");
     clean.portraitId || (clean.portraitId = "");
     clean.speaker || (clean.speaker = "");
     clean.portrait || (clean.portrait = "");
     clean.hidePortrait = clean.hidePortrait === true;
     clean.portraitPosition = ["left", "center", "right"].includes(clean.portraitPosition) ? clean.portraitPosition : "left";
-    clean.vignetteMode = Object.values(VIGNETTE_MODES).includes(clean.vignetteMode) ? clean.vignetteMode : VIGNETTE_MODES.AUTO;
+    clean.vignetteMode = Object.values(VIGNETTE_MODES).includes(clean.vignetteMode) ? clean.vignetteMode : VIGNETTE_MODES.NONE;
     clean.textPresentation = Object.values(TEXT_PRESENTATIONS).includes(clean.textPresentation) ? clean.textPresentation : TEXT_PRESENTATIONS.BOX;
     clean.text || (clean.text = "");
     clean.textBlocks = Array.isArray(clean.textBlocks) ? clean.textBlocks.map(sanitizeTextBlock) : [];
