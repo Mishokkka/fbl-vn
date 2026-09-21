@@ -39,6 +39,7 @@ const socketSource = read("scripts/playback/vn-socket.js");
 const characterManagerSource = read("scripts/apps/vn-character-manager-app.js");
 const counterManagerSource = read("scripts/apps/vn-counter-manager-app.js");
 const playerSource = read("scripts/apps/vn-player-app.js");
+const preloaderSource = read("scripts/playback/vn-preloader.js");
 const schemaSource = read("scripts/data/schema.js");
 const migrationSource = read("scripts/data/migrations.js");
 const constantsSource = read("scripts/utils/constants.js");
@@ -93,6 +94,15 @@ if (!constantsSource.includes("DATA_SCHEMA_VERSION = 11")) errors.push("Data sch
 if (!migrationSource.includes("function migrateToV11")) errors.push("Schema v11 migration is missing");
 if (!playerSource.includes("splitTextGraphemes(plainText).length > 900") || !playerSource.includes("splitTextGraphemes(child.data)")) errors.push("Typewriter must count and reveal Unicode grapheme clusters");
 if (!read("scripts/utils/rich-text.js").includes("export function splitTextGraphemes")) errors.push("Shared grapheme segmentation helper is missing");
+if (!schemaSource.includes("export function collectFrameAssetPaths")) errors.push("Schema must expose per-frame asset collection for progressive preload");
+if (!preloaderSource.includes("collectWindowFrameIds") || !preloaderSource.includes("collectWindowPaths")) errors.push("Preloader must build a bounded nearby-frame startup window");
+if (!preloaderSource.includes("STARTUP_WINDOW_DEPTH = 2") || !preloaderSource.includes("STARTUP_WINDOW_MAX_FRAMES = 12")) errors.push("Startup preload window must remain bounded");
+if (!preloaderSource.includes("BACKGROUND_CONCURRENCY = 2") || !preloaderSource.includes("collectBackgroundImagePaths")) errors.push("Whole-scene background preload must be image-only and low concurrency");
+if (!preloaderSource.includes("this.inflight = new Map()") || !preloaderSource.includes("if (this.inflight.has(path)) return this.inflight.get(path)")) errors.push("Preloader must deduplicate concurrent asset requests");
+if (!playerSource.includes("VNPreloader.collectWindowPaths(this.scene") || !playerSource.includes("this._preloader.startBackgroundImages()")) errors.push("Player startup must wait only for the critical window and then background-load images");
+if (!playerSource.includes("await this._ensureFrameAssets(frame);") || !playerSource.includes("this._warmUpcomingAssets(frame);")) errors.push("Player frame transitions must prioritize current and nearby assets");
+if (!playerSource.includes("this._preloader?.cancel()")) errors.push("Closing the player must cancel further background preload scheduling");
+if (!playerTemplateSource.includes("Подготовка стартовых ассетов")) errors.push("Loading UI must describe the bounded startup preload rather than the whole scene");
 if (!socketSource.includes("options?.reenter === true") || !socketSource.includes("data.reenter = true")) errors.push("Socket advance payload must preserve explicit frame re-entry");
 if (!mainSource.includes("reenter: payload.reenter === true")) errors.push("Socket handler must forward the frame re-entry flag to the player");
 if (!playerSource.includes("const reenter = this.currentFrameId === frame.id") || !playerSource.includes("if (options?.reenter === true) return app.goToFrame")) errors.push("Player must distinguish synchronized self-loop re-entry from same-frame text advances");
@@ -139,8 +149,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.5.0") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.5.0")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.0") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.0")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
