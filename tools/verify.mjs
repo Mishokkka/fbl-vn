@@ -94,6 +94,7 @@ if (nextRoutingControlBlock.includes("_renderPendingEditorParts") || nextRouting
 if (!editorSource.includes("async _persistNextRoutingState(enabled)") || !editorSource.includes("await VNSceneStore.upsertScene(clean)")) errors.push("Counter-routing state must persist without a panel rerender");
 const editorAppRule = editorCoreCssSource.match(/\.fbl-vn-editor-app\s*\{([^}]*)\}/)?.[1] || "";
 if (!/display:\s*flex;/.test(editorAppRule) || !/flex-direction:\s*column;/.test(editorAppRule) || !/overflow:\s*hidden;/.test(editorAppRule)) errors.push("Editor application frame must be a bounded flex column");
+if (!/\.fbl-vn-editor-app \.window-header\s*\{[\s\S]*?flex:\s*0 0 auto;/.test(editorCoreCssSource)) errors.push("Editor window header must remain a fixed-height flex item");
 const editorWindowContentRule = editorLayoutCssSource.match(/\.fbl-vn-editor-app\s*>\s*\.window-content\.fbl-vn-editor\s*\{([^}]*)\}/)?.[1] || "";
 if (!/flex:\s*1 1 0;/.test(editorWindowContentRule) || !/height:\s*0;/.test(editorWindowContentRule) || !/align-self:\s*stretch;/.test(editorWindowContentRule) || !/width:\s*100%;/.test(editorWindowContentRule) || !/min-height:\s*0;/.test(editorWindowContentRule) || !/overflow:\s*hidden;/.test(editorWindowContentRule)) errors.push("Editor window-content must fill the remaining ApplicationV2 frame height");
 if (/contain:\s*size/.test(editorWindowContentRule)) errors.push("Editor window-content must not use size containment because it can collapse intrinsic height");
