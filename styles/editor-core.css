@@ -12,6 +12,7 @@
 }
 
 .fbl-vn-editor-app .window-header {
+  flex: 0 0 auto;
   gap: 6px;
 }
 
