@@ -34,6 +34,8 @@ for (const file of walk("scripts", ".js")) {
 }
 
 const editorSource = read("scripts/apps/vn-editor-app.js");
+const mainSource = read("scripts/main.js");
+const socketSource = read("scripts/playback/vn-socket.js");
 const characterManagerSource = read("scripts/apps/vn-character-manager-app.js");
 const counterManagerSource = read("scripts/apps/vn-counter-manager-app.js");
 const playerSource = read("scripts/apps/vn-player-app.js");
@@ -91,6 +93,10 @@ if (!constantsSource.includes("DATA_SCHEMA_VERSION = 11")) errors.push("Data sch
 if (!migrationSource.includes("function migrateToV11")) errors.push("Schema v11 migration is missing");
 if (!playerSource.includes("splitTextGraphemes(plainText).length > 900") || !playerSource.includes("splitTextGraphemes(child.data)")) errors.push("Typewriter must count and reveal Unicode grapheme clusters");
 if (!read("scripts/utils/rich-text.js").includes("export function splitTextGraphemes")) errors.push("Shared grapheme segmentation helper is missing");
+if (!socketSource.includes("options?.reenter === true") || !socketSource.includes("data.reenter = true")) errors.push("Socket advance payload must preserve explicit frame re-entry");
+if (!mainSource.includes("reenter: payload.reenter === true")) errors.push("Socket handler must forward the frame re-entry flag to the player");
+if (!playerSource.includes("const reenter = this.currentFrameId === frame.id") || !playerSource.includes("if (options?.reenter === true) return app.goToFrame")) errors.push("Player must distinguish synchronized self-loop re-entry from same-frame text advances");
+if (!playerSource.includes("this.currentFrameId === item.frameId && item.options?.reenter !== true")) errors.push("Queued remote advances must preserve text-block vs frame re-entry semantics");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
