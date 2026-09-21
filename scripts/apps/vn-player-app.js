@@ -4,7 +4,7 @@ import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { notifyWarn } from "../utils/foundry-helpers.js";
-import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
+import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } from "../utils/rich-text.js";
 
 const ApplicationV2 = foundry.applications.api.ApplicationV2;
 const HandlebarsApplicationMixin = foundry.applications.api.HandlebarsApplicationMixin;
@@ -632,7 +632,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         const plainText = richTextToPlainText(safeHtml);
-        if (this._prefersReducedMotion() || this._instantTextEnabled() || [...plainText].length > 900) {
+        if (this._prefersReducedMotion() || this._instantTextEnabled() || splitTextGraphemes(plainText).length > 900) {
             node.innerHTML = safeHtml;
             this._typingComplete = true;
             return;
@@ -648,7 +648,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 if (child.nodeType === 3) {
                     const output = document.createTextNode("");
                     target.append(output);
-                    segments.push({ node: output, chars: [...child.data], index: 0 });
+                    segments.push({ node: output, chars: splitTextGraphemes(child.data), index: 0 });
                     continue;
                 }
                 if (child.nodeType !== 1) continue;
