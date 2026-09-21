@@ -7,41 +7,49 @@
   <div class="fbl-vn-character-list">
     {{#if hasCharacters}}
       {{#each characters}}
-        <section class="fbl-vn-character-card" data-character-row data-character-id="{{id}}">
-          <header>
-            <div class="form-group">
-              <label for="fbl-vn-character-name-{{id}}">Имя</label>
-              <input id="fbl-vn-character-name-{{id}}" type="text" data-character-name value="{{name}}" />
-            </div>
-            <div class="form-group">
-              <label for="fbl-vn-character-position-{{id}}">Позиция по умолчанию</label>
-              <select id="fbl-vn-character-position-{{id}}" data-character-position>
-                {{#each positionOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </div>
-            <button type="button" data-action="addPortrait" data-character-id="{{id}}" title="Добавить портрет" aria-label="Добавить портрет"><i class="fa-solid fa-image"></i></button>
-            <button type="button" class="danger" data-action="deleteCharacter" data-character-id="{{id}}" title="Удалить персонажа" aria-label="Удалить персонажа"><i class="fa-solid fa-trash"></i></button>
-          </header>
+        <details class="fbl-vn-character-card" data-character-row data-character-id="{{id}}" {{#if expanded}}open{{/if}}>
+          <summary class="fbl-vn-character-summary">
+            <i class="fa-solid fa-chevron-right fbl-vn-character-chevron" aria-hidden="true"></i>
+            <span class="fbl-vn-character-summary-name" data-character-summary-name>{{name}}</span>
+            <span class="fbl-vn-character-summary-count">{{portraitCount}} портретов</span>
+          </summary>
 
-          <div class="fbl-vn-portrait-list">
-            {{#each portraits}}
-              <div class="fbl-vn-portrait-row" data-portrait-row data-portrait-id="{{id}}">
-                <div class="form-group">
-                  <label for="fbl-vn-portrait-label-{{id}}">Название</label>
-                  <input id="fbl-vn-portrait-label-{{id}}" type="text" data-portrait-label value="{{label}}" />
-                </div>
-                <div class="form-group path-field">
-                  <label for="fbl-vn-portrait-path-{{id}}">Файл</label>
-                  <input id="fbl-vn-portrait-path-{{id}}" type="text" name="portrait-path-{{id}}" data-portrait-path value="{{path}}" />
-                  <button type="button" data-action="pickPortrait" data-field="portrait-path-{{id}}" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
-                </div>
-                <button type="button" class="danger" data-action="deletePortrait" data-character-id="{{../id}}" data-portrait-id="{{id}}" title="Удалить портрет" aria-label="Удалить портрет"><i class="fa-solid fa-xmark"></i></button>
+          <div class="fbl-vn-character-card-body">
+            <header class="fbl-vn-character-fields">
+              <div class="form-group">
+                <label for="fbl-vn-character-name-{{id}}">Имя</label>
+                <input id="fbl-vn-character-name-{{id}}" type="text" data-character-name value="{{name}}" />
               </div>
-            {{/each}}
+              <div class="form-group">
+                <label for="fbl-vn-character-position-{{id}}">Позиция по умолчанию</label>
+                <select id="fbl-vn-character-position-{{id}}" data-character-position>
+                  {{#each positionOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <button type="button" data-action="addPortrait" data-character-id="{{id}}" title="Добавить портрет" aria-label="Добавить портрет"><i class="fa-solid fa-image"></i></button>
+              <button type="button" class="danger" data-action="deleteCharacter" data-character-id="{{id}}" title="Удалить персонажа" aria-label="Удалить персонажа"><i class="fa-solid fa-trash"></i></button>
+            </header>
+
+            <div class="fbl-vn-portrait-list">
+              {{#each portraits}}
+                <div class="fbl-vn-portrait-row" data-portrait-row data-portrait-id="{{id}}">
+                  <div class="form-group">
+                    <label for="fbl-vn-portrait-label-{{id}}">Название</label>
+                    <input id="fbl-vn-portrait-label-{{id}}" type="text" data-portrait-label value="{{label}}" />
+                  </div>
+                  <div class="form-group path-field">
+                    <label for="fbl-vn-portrait-path-{{id}}">Файл</label>
+                    <input id="fbl-vn-portrait-path-{{id}}" type="text" name="portrait-path-{{id}}" data-portrait-path value="{{path}}" />
+                    <button type="button" data-action="pickPortrait" data-field="portrait-path-{{id}}" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                  </div>
+                  <button type="button" class="danger" data-action="deletePortrait" data-character-id="{{../id}}" data-portrait-id="{{id}}" title="Удалить портрет" aria-label="Удалить портрет"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+              {{/each}}
+            </div>
           </div>
-        </section>
+        </details>
       {{/each}}
     {{else}}
       <p class="empty">Пресетов персонажей пока нет.</p>
