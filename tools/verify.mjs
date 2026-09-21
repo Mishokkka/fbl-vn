@@ -91,7 +91,10 @@ if (!nextRoutingControlBlock.includes("_enqueueEditorAction") || !nextRoutingCon
 if (!nextRoutingControlBlock.includes("directFields.hidden = enabled") || !nextRoutingControlBlock.includes("routingFields.hidden = !enabled")) errors.push("Counter-routing toggle must switch its two field groups locally");
 if (nextRoutingControlBlock.includes("_renderPendingEditorParts") || nextRoutingControlBlock.includes("_renderEditorParts") || nextRoutingControlBlock.includes("_commitFromForm")) errors.push("Counter-routing toggle must not rerender or recommit the ApplicationV2 editor");
 if (!editorSource.includes("async _persistNextRoutingState(enabled)") || !editorSource.includes("await VNSceneStore.upsertScene(clean)")) errors.push("Counter-routing state must persist without a panel rerender");
-if (!/\.fbl-vn-editor\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/.test(editorLayoutCssSource)) errors.push("Editor grid must stay contained inside the ApplicationV2 content area");
+const editorWindowContentRule = editorLayoutCssSource.match(/\.fbl-vn-editor-app\s*>\s*\.window-content\.fbl-vn-editor\s*\{([^}]*)\}/)?.[1] || "";
+if (!/flex:\s*1 1 0;/.test(editorWindowContentRule) || !/height:\s*auto;/.test(editorWindowContentRule) || !/min-height:\s*0;/.test(editorWindowContentRule) || !/overflow:\s*hidden;/.test(editorWindowContentRule) || !/contain:\s*size layout paint;/.test(editorWindowContentRule)) errors.push("Editor window-content must be a contained flex child instead of sizing the ApplicationV2 frame");
+const editorGridRule = editorLayoutCssSource.match(/(?:^|\n)\.fbl-vn-editor\s*\{([^}]*)\}/)?.[1] || "";
+if (/height:\s*100%;/.test(editorGridRule)) errors.push("Editor grid must not claim 100% of the framed ApplicationV2 height");
 if (!/\.fbl-vn-character-manager\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/.test(characterCssSource)) errors.push("Character manager must constrain its grid so the preset list can scroll");
 if (!/\.fbl-vn-character-list\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/.test(characterCssSource)) errors.push("Character preset list must retain vertical scrolling");
 if (!constantsSource.includes("DATA_SCHEMA_VERSION = 11")) errors.push("Data schema version must be 11");
@@ -165,8 +168,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.1") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.1")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.2") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.2")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
