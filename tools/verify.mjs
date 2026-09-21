@@ -38,8 +38,10 @@ const characterManagerSource = read("scripts/apps/vn-character-manager-app.js");
 const playerSource = read("scripts/apps/vn-player-app.js");
 const schemaSource = read("scripts/data/schema.js");
 const characterTemplateSource = read("templates/character-manager.hbs");
+const editorFrameTemplateSource = read("templates/editor-frame-panel.hbs");
 const playerTemplateSource = read("templates/player.hbs");
 const characterCssSource = read("styles/character-manager.css");
+const editorFormsCssSource = read("styles/editor-forms.css");
 const playerCssSource = read("styles/player.css");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-actions")) errors.push("Player dialogue must contain a fixed action row");
@@ -62,6 +64,13 @@ if (!characterManagerSource.includes("copy.expanded = this.expandedCharacterIds.
 if (!characterTemplateSource.includes('<details class="fbl-vn-character-card"') || !characterTemplateSource.includes('<summary class="fbl-vn-character-summary">')) errors.push("Character presets must render as collapsible details/summary cards");
 if (!characterTemplateSource.includes("{{#if expanded}}open{{/if}}")) errors.push("Character preset open state must be conditional rather than always expanded");
 if (!/\.fbl-vn-character-card\[open\] \.fbl-vn-character-chevron\s*\{[\s\S]*?transform:\s*rotate\(90deg\)/.test(characterCssSource)) errors.push("Expanded character cards must expose a visible disclosure state");
+if (!schemaSource.includes("export function createFrameCharacter")) errors.push("Frame schema must expose additional character records");
+if (!schemaSource.includes("clean.additionalCharacters = Array.isArray(clean.additionalCharacters)")) errors.push("Frame sanitization must normalize additional characters");
+if (!editorFrameTemplateSource.includes('data-action="addFrameCharacter"') || !editorFrameTemplateSource.includes("data-additional-character-row")) errors.push("Frame editor must expose add/remove character rows");
+if (!editorSource.includes("_applyAdditionalCharacterPreset") || !editorSource.includes("_applyAdditionalCharacterPortrait")) errors.push("Frame editor must bind presets and portraits for additional characters");
+if (!playerTemplateSource.includes("{{#each frameCharacters}}")) errors.push("Player template must render multiple frame characters");
+if (!playerSource.includes("frameCharacters.push")) errors.push("Player context must compose multiple visible characters");
+if (!/\.fbl-vn-frame-character-card\s*\{/.test(editorFormsCssSource)) errors.push("Frame character editor cards must be styled");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
@@ -104,8 +113,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.3.2") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.3.2")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.4.0") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.4.0")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
