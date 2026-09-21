@@ -337,7 +337,7 @@ function migrateToV10(data) {
         scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
         for (const frame of scene.frames) {
             if (!frame || typeof frame !== "object") continue;
-            if (frame.showSpeakerName === undefined) frame.showSpeakerName = true;
+            if (frame.showSpeakerName === undefined) frame.showSpeakerName = frame.textPresentation !== "center";
             if (!Array.isArray(frame.additionalCharacters)) frame.additionalCharacters = [];
         }
     }
