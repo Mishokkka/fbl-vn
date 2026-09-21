@@ -1,7 +1,7 @@
-import { collectAssetPaths, collectFrameAssetPaths } from "../data/schema.js";
+import { collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths } from "../data/schema.js";
 
-const IMAGE_EXT = /\.(webp|png|jpe?g|gif|svg)(?:[?#].*)?$/i;
-const AUDIO_EXT = /\.(ogg|mp3|wav|flac|m4a)(?:[?#].*)?$/i;
+const IMAGE_EXT = /\.(webp|avif|png|jpe?g|gif|svg)(?:[?#].*)?$/i;
+const AUDIO_EXT = /\.(ogg|oga|opus|mp3|wav|flac|m4a|aac|webm)(?:[?#].*)?$/i;
 const PRELOAD_TIMEOUT_MS = 5000;
 const STARTUP_WINDOW_DEPTH = 2;
 const STARTUP_WINDOW_MAX_FRAMES = 12;
@@ -19,6 +19,10 @@ export class VNPreloader {
 
     static collectFramePaths(frame) {
         return collectFrameAssetPaths(frame);
+    }
+
+    static collectFrameEntryPaths(frame, textIndex = 0) {
+        return collectFrameEntryAssetPaths(frame, textIndex);
     }
 
     static isImagePath(path) {
@@ -77,6 +81,17 @@ export class VNPreloader {
         for (const frameId of frameIds) {
             const frame = frameById.get(frameId);
             for (const path of this.collectFramePaths(frame)) paths.add(path);
+        }
+        return [...paths];
+    }
+
+    static collectStartupWindowPaths(scene, startFrameId = "", options = {}) {
+        const frameIds = this.collectWindowFrameIds(scene, startFrameId, options);
+        const frameById = new Map((Array.isArray(scene?.frames) ? scene.frames : []).map(frame => [frame.id, frame]));
+        const paths = new Set();
+        for (const frameId of frameIds) {
+            const frame = frameById.get(frameId);
+            for (const path of this.collectFrameEntryPaths(frame, 0)) paths.add(path);
         }
         return [...paths];
     }
@@ -200,6 +215,10 @@ export class VNPreloadController {
 
     ensureFrame(frame, options = {}) {
         return this.ensurePaths(VNPreloader.collectFramePaths(frame), options);
+    }
+
+    ensureFrameEntry(frame, textIndex = 0, options = {}) {
+        return this.ensurePaths(VNPreloader.collectFrameEntryPaths(frame, textIndex), options);
     }
 
     warmWindow(startFrameId, { depth = STARTUP_WINDOW_DEPTH, maxFrames = STARTUP_WINDOW_MAX_FRAMES, concurrency = STARTUP_CONCURRENCY } = {}) {
