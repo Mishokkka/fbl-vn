@@ -389,7 +389,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frameCharacters = [];
         const primaryName = frame && frame.speaker ? String(frame.speaker) : "";
         const primaryPortrait = this.visualState.portrait || "";
-        const primaryShowName = Boolean(primaryName) && frame?.showSpeakerName !== false && !isCenteredText;
+        const primaryShowName = Boolean(primaryName) && frame?.showSpeakerName !== false;
         if (primaryPortrait || primaryShowName) {
             frameCharacters.push({
                 id: "primary",
@@ -406,7 +406,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const position = ["left", "center", "right"].includes(character.portraitPosition) ? character.portraitPosition : "right";
             const name = String(character.name || "");
             const portrait = String(character.portrait || "");
-            const showName = Boolean(name) && character.showName !== false && !isCenteredText;
+            const showName = Boolean(name) && character.showName !== false;
             if (!portrait && !showName) continue;
             frameCharacters.push({
                 id: String(character.id || ""),
