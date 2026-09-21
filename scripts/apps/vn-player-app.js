@@ -1,5 +1,5 @@
 import { applyChoiceCounterEffect, applyFrameCounterEffect, getInitialCounterState, getFrameTextBlocks, getTextBlock, isChoiceAvailable, resolveFrameNextRouting } from "../data/schema.js";
-import { VNPreloader } from "../playback/vn-preloader.js";
+import { VNPreloadController, VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
@@ -73,6 +73,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._onWindowResize = () => this._applyFullscreenPosition();
         this._resizeBound = false;
         this._preloadPromise = null;
+        this._preloader = new VNPreloadController(this.scene);
+        this._backgroundPreloadPromise = null;
         this._disposed = false;
         this._preloadProgressRaf = null;
         this._pendingPreloadProgress = null;
@@ -172,7 +174,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         });
         await app.render(true);
         if (payload.resumeState) {
-            await app.preload();
+            await app.preload({ frameId: payload.resumeState.currentFrameId || "" });
             await app.resume(payload.resumeState);
         }
         else {
@@ -247,34 +249,52 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         for (const app of VNPlayerApp.active.values()) app._onParticipantConnectionChange(user, connected);
     }
 
-    async preload() {
+    async preload(options = {}) {
         if (this._preloadPromise) return this._preloadPromise;
-        this._preloadPromise = this._preloadInner();
+        this._preloadPromise = this._preloadInner(options.frameId || "");
         return this._preloadPromise;
     }
 
-    async _preloadInner() {
-        const paths = VNPreloader.collectPaths(this.scene);
+    async _preloadInner(startFrameId = "") {
+        const startFrame = this._getFrame(startFrameId);
+        const paths = VNPreloader.collectWindowPaths(this.scene, startFrame?.id || "", { depth: 2, maxFrames: 12 });
         this.preloadTotal = paths.length;
         this.preloadDone = 0;
         this._pendingPreloadProgress = { done: 0, total: this.preloadTotal };
         this._flushPreloadProgressUpdate();
-        const results = await VNPreloader.preloadScene(this.scene, progress => {
-            this.preloadDone = progress.done;
-            this.preloadTotal = progress.total;
-            this._schedulePreloadProgressUpdate(progress);
-        }, paths);
+        const results = await this._preloader.ensurePaths(paths, {
+            concurrency: 6,
+            onProgress: progress => {
+                this.preloadDone = progress.done;
+                this.preloadTotal = progress.total;
+                this._schedulePreloadProgressUpdate(progress);
+            }
+        });
         this._flushPreloadProgressUpdate();
         if (this._disposed) return results;
         const failed = Array.isArray(results) ? results.filter(result => result && result.ok === false) : [];
-        if (failed.length && game.user?.isGM) notifyWarn(`VN: не удалось предзагрузить ассеты: ${failed.length}. Катсцена будет запущена, но часть ресурсов может появиться с задержкой.`);
+        if (failed.length && game.user?.isGM) notifyWarn(`VN: не удалось подготовить стартовые ассеты: ${failed.length}. Катсцена будет запущена, но часть ресурсов может появиться с задержкой.`);
         this.loading = false;
         VNSocket.signalReady(this.scene.id, this.leaderId);
+        this._backgroundPreloadPromise = this._preloader.startBackgroundImages();
         await this.render();
         if (VNPlayerApp.pendingStarts.has(this.scene.id)) {
             VNPlayerApp.pendingStarts.delete(this.scene.id);
             await this.start();
         }
+        return results;
+    }
+
+    async _ensureFrameAssets(frame) {
+        if (!frame || this._disposed) return [];
+        return this._preloader.ensureFrame(frame, { concurrency: 6 });
+    }
+
+    _warmUpcomingAssets(frame) {
+        if (!frame?.id || this._disposed) return;
+        void this._preloader.warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 4 }).catch(error => {
+            console.warn(`${MODULE_ID} | Nearby asset preload failed.`, error);
+        });
     }
 
     _schedulePreloadProgressUpdate(progress) {
@@ -333,6 +353,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.started = false;
             return this.start();
         }
+        await this._ensureFrameAssets(frame);
+        if (this._disposed) return;
         this.currentFrameId = frame.id;
         this._contentHidden = false;
         const blocks = getFrameTextBlocks(frame);
@@ -341,6 +363,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await this.audio.applyFrame(frame);
         await this._playCurrentVoice(frame);
         await this.render();
+        this._warmUpcomingAssets(frame);
     }
 
     async _flushPendingRemoteFrames() {
@@ -765,6 +788,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const force = options.force === true;
         const frame = this._getFrame(frameId);
         if (!frame) return this.finish();
+        await this._ensureFrameAssets(frame);
+        if (this._disposed) return;
         const reenter = this.currentFrameId === frame.id;
         this.currentFrameId = frame.id;
         this._contentHidden = false;
@@ -783,6 +808,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 reenter
             });
         }
+        this._warmUpcomingAssets(frame);
     }
 
     async _goToTextBlock(index, options = {}) {
@@ -1138,6 +1164,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async close(options = {}) {
         this._disposed = true;
+        this._preloader?.cancel();
         this._cancelTypingAnimation();
         if (this._preloadProgressRaf !== null) cancelAnimationFrame(this._preloadProgressRaf);
         this._preloadProgressRaf = null;
