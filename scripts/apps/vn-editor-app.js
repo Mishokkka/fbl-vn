@@ -755,6 +755,20 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const portraitId = portraitSelect.value;
             void this._enqueueEditorAction(() => this._applyCharacterPortrait(portraitId));
         });
+
+        for (const row of root.querySelectorAll("[data-additional-character-row]")) {
+            const entryId = row.dataset.frameCharacterId || "";
+            const extraCharacterSelect = row.querySelector("[data-frame-character-select]");
+            const extraPortraitSelect = row.querySelector("[data-frame-character-portrait-select]");
+            if (extraCharacterSelect) extraCharacterSelect.addEventListener("change", () => {
+                const characterId = extraCharacterSelect.value;
+                void this._enqueueEditorAction(() => this._applyAdditionalCharacterPreset(entryId, characterId, ""));
+            });
+            if (extraPortraitSelect) extraPortraitSelect.addEventListener("change", () => {
+                const portraitId = extraPortraitSelect.value;
+                void this._enqueueEditorAction(() => this._applyAdditionalCharacterPortrait(entryId, portraitId));
+            });
+        }
     }
 
     _enableRichTextEditors(root = this.element) {
@@ -885,6 +899,61 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             frame.portraitId = portrait.id;
             frame.portrait = portrait.path || "";
             frame.hidePortrait = false;
+        }
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    async _applyAdditionalCharacterPreset(entryId, characterId, portraitId) {
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        const entry = frame && Array.isArray(frame.additionalCharacters)
+            ? frame.additionalCharacters.find(item => item.id === entryId)
+            : null;
+        if (!scene || !frame || !entry) return;
+
+        const character = VNSceneStore.getCharacter(characterId);
+        if (!character) {
+            entry.characterId = "";
+            entry.portraitId = "";
+            await VNSceneStore.upsertScene(scene);
+            this._renderEditorParts(["frames", "framePanel"]);
+            return;
+        }
+
+        const portraits = Array.isArray(character.portraits) ? character.portraits : [];
+        const portrait = portraits.find(item => item.id === portraitId) || portraits[0] || null;
+        entry.characterId = character.id;
+        entry.name = character.name;
+        entry.portraitPosition = ["left", "center", "right"].includes(entry.portraitPosition)
+            ? entry.portraitPosition
+            : (character.defaultPosition || "right");
+        if (portrait) {
+            entry.portraitId = portrait.id;
+            entry.portrait = portrait.path || "";
+        }
+        else {
+            entry.portraitId = "";
+            entry.portrait = "";
+        }
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    async _applyAdditionalCharacterPortrait(entryId, portraitId) {
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        const entry = frame && Array.isArray(frame.additionalCharacters)
+            ? frame.additionalCharacters.find(item => item.id === entryId)
+            : null;
+        if (!scene || !frame || !entry || !entry.characterId) return;
+        const character = VNSceneStore.getCharacter(entry.characterId);
+        if (!character) return;
+        const portraits = Array.isArray(character.portraits) ? character.portraits : [];
+        const portrait = portraits.find(item => item.id === portraitId) || portraits[0] || null;
+        if (portrait) {
+            entry.portraitId = portrait.id;
+            entry.portrait = portrait.path || "";
         }
         await VNSceneStore.upsertScene(scene);
         this._renderEditorParts(["frames", "framePanel"]);
