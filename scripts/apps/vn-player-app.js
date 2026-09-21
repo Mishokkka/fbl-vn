@@ -79,6 +79,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._preloadProgressRaf = null;
         this._pendingPreloadProgress = null;
         this._pendingRemoteFrames = VNPlayerApp.pendingAdvances.get(this.scene.id) || [];
+        this._playbackQueue = Promise.resolve();
         this._volumePanelOpen = false;
         this._contentHidden = false;
         this._volumeSaveTimer = null;
@@ -213,12 +214,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             app._pendingRemoteFrames.push({ frameId, textIndex, options });
             return;
         }
-        if (options && options.choiceId) app._applyChoiceEffectById(options.choiceId);
-        if (app.currentFrameId === frameId) {
-            if (options?.reenter === true) return app.goToFrame(frameId, { remote: true, textIndex });
-            return app._goToTextBlock(Number(textIndex || 0), { remote: true });
-        }
-        return app.goToFrame(frameId, { remote: true, textIndex });
+        return app._enqueuePlaybackOperation(() => app._applyRemoteAdvance(frameId, textIndex, options));
     }
 
     static closeScene(sceneId) {
@@ -296,7 +292,13 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async _ensureFrameAssets(frame) {
         if (!frame || this._disposed || !this._preloader) return [];
-        return this._preloader.ensureFrame(frame, { concurrency: 6 });
+        const results = await this._preloader.ensureFrame(frame, { concurrency: 6 });
+        if (this._disposed) return results;
+        const failedPaths = results.filter(result => result?.ok === false && result.path).map(result => result.path);
+        if (!failedPaths.length) return results;
+        const retries = await this._preloader.ensurePaths(failedPaths, { concurrency: 6 });
+        const retryByPath = new Map(retries.map(result => [result.path, result]));
+        return results.map(result => retryByPath.get(result.path) || result);
     }
 
     _warmUpcomingAssets(frame) {
@@ -379,17 +381,34 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!this._pendingRemoteFrames.length) return;
         const queued = this._pendingRemoteFrames.splice(0);
         for (const item of queued) {
-            if (typeof item === "string") await this.goToFrame(item, { remote: true });
+            if (typeof item === "string") {
+                await this._enqueuePlaybackOperation(() => this._goToFrameNow(item, { remote: true }));
+            }
             else {
-                if (item.options && item.options.choiceId) this._applyChoiceEffectById(item.options.choiceId);
-                if (this.currentFrameId === item.frameId && item.options?.reenter !== true) {
-                    await this._goToTextBlock(Number(item.textIndex || 0), { remote: true });
-                }
-                else {
-                    await this.goToFrame(item.frameId, { remote: true, textIndex: item.textIndex || 0 });
-                }
+                await this._enqueuePlaybackOperation(() => this._applyRemoteAdvance(item.frameId, item.textIndex, item.options || {}));
             }
         }
+    }
+
+    _enqueuePlaybackOperation(operation) {
+        const run = this._playbackQueue
+            .catch(() => {})
+            .then(async () => {
+                if (this._disposed) return;
+                return operation();
+            });
+        this._playbackQueue = run.catch(error => {
+            console.error(`${MODULE_ID} | Playback operation failed.`, error);
+        });
+        return run;
+    }
+
+    async _applyRemoteAdvance(frameId, textIndex = 0, options = {}) {
+        if (options?.choiceId) this._applyChoiceEffectById(options.choiceId);
+        if (this.currentFrameId === frameId && options?.reenter !== true) {
+            return this._goToTextBlockNow(Number(textIndex || 0), { remote: true });
+        }
+        return this._goToFrameNow(frameId, { remote: true, textIndex });
     }
 
     _canCloseLocally() {
@@ -792,7 +811,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._resolvingVote = false;
     }
 
-    async goToFrame(frameId, options = {}) {
+    goToFrame(frameId, options = {}) {
+        return this._enqueuePlaybackOperation(() => this._goToFrameNow(frameId, options));
+    }
+
+    async _goToFrameNow(frameId, options = {}) {
         const remote = options.remote === true;
         const force = options.force === true;
         const frame = this._getFrame(frameId);
@@ -820,7 +843,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._warmUpcomingAssets(frame);
     }
 
-    async _goToTextBlock(index, options = {}) {
+    _goToTextBlock(index, options = {}) {
+        return this._enqueuePlaybackOperation(() => this._goToTextBlockNow(index, options));
+    }
+
+    async _goToTextBlockNow(index, options = {}) {
         const frame = this._getFrame(this.currentFrameId);
         const blocks = getFrameTextBlocks(frame);
         if (!frame || index < 0 || index >= blocks.length) return;
