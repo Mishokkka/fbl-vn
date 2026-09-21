@@ -61,7 +61,7 @@
 }
 
 .fbl-vn-character-chevron {
-  color: var(--vn-text-muted);
+  color: var(--vn-muted);
   transition: transform 120ms ease;
 }
 
@@ -79,7 +79,7 @@
 }
 
 .fbl-vn-character-summary-count {
-  color: var(--vn-text-muted);
+  color: var(--vn-muted);
   font-size: 12px;
   white-space: nowrap;
 }
