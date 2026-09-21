@@ -50,6 +50,8 @@ if (!/\.fbl-vn-speaker\.portrait-right\s*\{[\s\S]*?right:\s*var\(--vn-dialogue-i
 if (!/\.fbl-vn-dialogue\.is-centered-text\.has-text-vignette \.fbl-vn-text\s*\{[\s\S]*?background:\s*rgba\(0,\s*0,\s*0,\s*0\.72\)[\s\S]*?box-shadow:/.test(playerCssSource)) errors.push("Centered text vignette must use a compact opaque shadow without a clipped radial gradient");
 if (!/\.fbl-vn-centered-actions\s*\{[\s\S]*?right:\s*calc\(var\(--vn-dialogue-inline\) \+ 20px\);[\s\S]*?bottom:\s*14px;/.test(playerCssSource)) errors.push("Centered text actions must stay in the normal bottom-right action position");
 if (!playerTemplateSource.includes('class="fbl-vn-centered-actions"')) errors.push("Centered text actions wrapper is missing");
+if (!/clean\.transition\s*=\s*\["none",\s*"fade",\s*"dark"\]\.includes\(clean\.transition\)\s*\?\s*clean\.transition\s*:\s*"none"/.test(schemaSource)) errors.push("Frame sanitization must reject unsupported transition values");
+if (!/const transition\s*=\s*frame && \["none",\s*"fade",\s*"dark"\]\.includes\(frame\.transition\)\s*\?\s*frame\.transition\s*:\s*"none"/.test(playerSource)) errors.push("Player must reject unsupported transition classes from raw scene payloads");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
