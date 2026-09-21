@@ -104,11 +104,12 @@ assert.deepEqual(new Set(collectAssetPaths(scene)), new Set(["music-a.ogg", "mus
 const nested = createFrame("dialogue");
 assert.equal(nested.textPresentation, TEXT_PRESENTATIONS.BOX, "New frames must use the normal dialogue box by default");
 assert.equal(nested.portraitPosition, "left", "New frames must default portraits to the left");
-assert.equal(nested.vignetteMode, VIGNETTE_MODES.AUTO, "New frames must use automatic vignette selection by default");
+assert.equal(nested.vignetteMode, VIGNETTE_MODES.NONE, "New frames must disable the vignette by default");
+assert.equal(nested.transition, "none", "New frames must disable visual transitions by default");
 assert.equal(createCharacterPreset("Left default").defaultPosition, "left", "New character presets must default to the left");
 const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid" });
 assert.equal(invalidPositionFrame.portraitPosition, "left", "Invalid portrait positions must sanitize to left");
-assert.equal(invalidPositionFrame.vignetteMode, VIGNETTE_MODES.AUTO, "Invalid vignette modes must sanitize to auto");
+assert.equal(invalidPositionFrame.vignetteMode, VIGNETTE_MODES.NONE, "Invalid vignette modes must sanitize to none");
 const formattedBlock = createTextBlock("Hello\nworld");
 assert.equal(formattedBlock.text, "Hello\nworld", "Rich text blocks must retain a plain-text representation");
 assert.equal(formattedBlock.richText, richTextFromPlainText("Hello\nworld"), "Plain text must be migrated into safe rich text");
