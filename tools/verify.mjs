@@ -34,6 +34,8 @@ for (const file of walk("scripts", ".js")) {
 }
 
 const editorSource = read("scripts/apps/vn-editor-app.js");
+const playerSource = read("scripts/apps/vn-player-app.js");
+const schemaSource = read("scripts/data/schema.js");
 const playerTemplateSource = read("templates/player.hbs");
 const playerCssSource = read("styles/player.css");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
