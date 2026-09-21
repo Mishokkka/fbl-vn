@@ -229,6 +229,33 @@ preloadCalls.length = 0;
 await backgroundController.startBackgroundImages();
 assert.equal(preloadCalls.includes("preload-beyond.webp"), true, "Background preload must eventually warm distant images");
 assert.equal(preloadCalls.some(path => path.endsWith(".ogg")), false, "Background preload must leave distant audio for nearby-frame warming");
+
+let transientAttempts = 0;
+VNPreloader.preloadPath = async path => {
+  if (path !== "transient.webp") return path;
+  transientAttempts += 1;
+  if (transientAttempts === 1) throw new Error("transient");
+  return path;
+};
+const transientController = new VNPreloadController(preloadScene);
+const transientFirst = await transientController.ensurePaths(["transient.webp"]);
+const transientSecond = await transientController.ensurePaths(["transient.webp"]);
+assert.equal(transientFirst[0].ok, false, "A transient preload failure must be reported to the caller");
+assert.equal(transientSecond[0].ok, true, "A later preload request must retry an asset that previously failed");
+assert.equal(transientAttempts, 2, "Failed preload results must not be cached permanently");
+
+let criticalAttempts = 0;
+VNPreloader.preloadPath = async path => {
+  criticalAttempts += 1;
+  if (criticalAttempts === 1) throw new Error("critical transient");
+  return path;
+};
+const criticalPlayer = Object.create(VNPlayerApp.prototype);
+criticalPlayer._disposed = false;
+criticalPlayer._preloader = new VNPreloadController(preloadScene);
+const criticalResults = await criticalPlayer._ensureFrameAssets({ background: "critical.webp", textBlocks: [], musicCues: [], sfxCues: [], additionalCharacters: [] });
+assert.equal(criticalResults[0].ok, true, "Critical frame assets must receive one immediate retry before the transition proceeds");
+assert.equal(criticalAttempts, 2, "Critical frame preload must retry a transient failure exactly once");
 VNPreloader.preloadPath = savedPreloadPath;
 
 await VNSceneStore.setData({ schemaVersion: 11, version: 3, scenes: [scene], assets: [], characters: [] });
@@ -868,10 +895,11 @@ const syncPlayer = Object.create(VNPlayerApp.prototype);
 syncPlayer.currentFrameId = "loop-frame";
 syncPlayer.loading = false;
 syncPlayer.started = true;
+syncPlayer._disposed = false;
 let syncTextBlockCalls = 0;
 let syncFrameEntryCalls = 0;
-syncPlayer._goToTextBlock = async () => { syncTextBlockCalls += 1; };
-syncPlayer.goToFrame = async () => { syncFrameEntryCalls += 1; };
+syncPlayer._goToTextBlockNow = async () => { syncTextBlockCalls += 1; };
+syncPlayer._goToFrameNow = async () => { syncFrameEntryCalls += 1; };
 syncPlayer._applyChoiceEffectById = () => {};
 VNPlayerApp.active.set(syncSceneId, syncPlayer);
 await VNPlayerApp.advanceScene(syncSceneId, "loop-frame", 1, {});
@@ -883,18 +911,42 @@ VNPlayerApp.active.delete(syncSceneId);
 
 const queuedSyncPlayer = Object.create(VNPlayerApp.prototype);
 queuedSyncPlayer.currentFrameId = "loop-frame";
+queuedSyncPlayer._disposed = false;
 queuedSyncPlayer._pendingRemoteFrames = [
   { frameId: "loop-frame", textIndex: 1, options: {} },
   { frameId: "loop-frame", textIndex: 0, options: { reenter: true } }
 ];
 let queuedTextBlockCalls = 0;
 let queuedFrameEntryCalls = 0;
-queuedSyncPlayer._goToTextBlock = async () => { queuedTextBlockCalls += 1; };
-queuedSyncPlayer.goToFrame = async () => { queuedFrameEntryCalls += 1; };
+queuedSyncPlayer._goToTextBlockNow = async () => { queuedTextBlockCalls += 1; };
+queuedSyncPlayer._goToFrameNow = async () => { queuedFrameEntryCalls += 1; };
 queuedSyncPlayer._applyChoiceEffectById = () => {};
 await queuedSyncPlayer._flushPendingRemoteFrames();
 assert.equal(queuedTextBlockCalls, 1, "Queued same-frame text advances must not replay frame effects after preload");
 assert.equal(queuedFrameEntryCalls, 1, "Queued explicit self-loops must retain frame re-entry after preload");
+
+const serialSceneId = "scene-serialized-remote";
+const serialPlayer = Object.create(VNPlayerApp.prototype);
+serialPlayer.currentFrameId = "serial-start";
+serialPlayer.loading = false;
+serialPlayer.started = true;
+serialPlayer._disposed = false;
+serialPlayer._applyChoiceEffectById = () => {};
+const serialOrder = [];
+serialPlayer._goToFrameNow = async frameId => {
+  serialOrder.push(`start:${frameId}`);
+  if (frameId === "serial-a") await new Promise(resolve => setTimeout(resolve, 8));
+  serialPlayer.currentFrameId = frameId;
+  serialOrder.push(`end:${frameId}`);
+};
+serialPlayer._goToTextBlockNow = async () => {};
+VNPlayerApp.active.set(serialSceneId, serialPlayer);
+const serialA = VNPlayerApp.advanceScene(serialSceneId, "serial-a", 0, {});
+const serialB = VNPlayerApp.advanceScene(serialSceneId, "serial-b", 0, {});
+await Promise.all([serialA, serialB]);
+assert.deepEqual(serialOrder, ["start:serial-a", "end:serial-a", "start:serial-b", "end:serial-b"], "Remote frame transitions must be serialized so a slow older preload cannot overwrite a newer advance");
+assert.equal(serialPlayer.currentFrameId, "serial-b", "Serialized remote advances must finish on the latest requested frame");
+VNPlayerApp.active.delete(serialSceneId);
 
 const savedSocketEmit = VNSocket.emit;
 const savedWithSceneTargets = VNSocket._withSceneTargets;
