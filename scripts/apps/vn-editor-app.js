@@ -1,5 +1,5 @@
 import { VNSceneStore } from "../data/scene-store.js";
-import { clearFrameReferences, createAudioCue, createChoice, createFrame, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
+import { clearFrameReferences, createAudioCue, createChoice, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { VNPlayerApp } from "./vn-player-app.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
@@ -256,6 +256,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 hasCharacters: characters.length > 0,
                 characterOptions: this._characterOptions(characters, frame ? frame.characterId : ""),
                 characterPortraitOptions: this._characterPortraitOptions(selectedCharacter, frame ? frame.portraitId : ""),
+                additionalFrameCharacters: this._buildAdditionalCharacterViews(frame, characters, state.characterById),
                 selectedTextBlocks,
                 hasMultipleTextBlocks: selectedTextBlocks.length > 1,
                 selectedChoices: this._buildChoiceViews(frame, renderIndex),
@@ -754,6 +755,20 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const portraitId = portraitSelect.value;
             void this._enqueueEditorAction(() => this._applyCharacterPortrait(portraitId));
         });
+
+        for (const row of root.querySelectorAll("[data-additional-character-row]")) {
+            const entryId = row.dataset.frameCharacterId || "";
+            const extraCharacterSelect = row.querySelector("[data-frame-character-select]");
+            const extraPortraitSelect = row.querySelector("[data-frame-character-portrait-select]");
+            if (extraCharacterSelect) extraCharacterSelect.addEventListener("change", () => {
+                const characterId = extraCharacterSelect.value;
+                void this._enqueueEditorAction(() => this._applyAdditionalCharacterPreset(entryId, characterId, ""));
+            });
+            if (extraPortraitSelect) extraPortraitSelect.addEventListener("change", () => {
+                const portraitId = extraPortraitSelect.value;
+                void this._enqueueEditorAction(() => this._applyAdditionalCharacterPortrait(entryId, portraitId));
+            });
+        }
     }
 
     _enableRichTextEditors(root = this.element) {
@@ -884,6 +899,68 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             frame.portraitId = portrait.id;
             frame.portrait = portrait.path || "";
             frame.hidePortrait = false;
+        }
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    async _applyAdditionalCharacterPreset(entryId, characterId, portraitId) {
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        const entry = frame && Array.isArray(frame.additionalCharacters)
+            ? frame.additionalCharacters.find(item => item.id === entryId)
+            : null;
+        if (!scene || !frame || !entry) return;
+
+        const character = VNSceneStore.getCharacter(characterId);
+        if (!character) {
+            entry.characterId = "";
+            entry.portraitId = "";
+            await VNSceneStore.upsertScene(scene);
+            this._renderEditorParts(["frames", "framePanel"]);
+            return;
+        }
+
+        const portraits = Array.isArray(character.portraits) ? character.portraits : [];
+        const portrait = portraits.find(item => item.id === portraitId) || portraits[0] || null;
+        entry.characterId = character.id;
+        entry.name = character.name;
+        entry.portraitPosition = ["left", "center", "right"].includes(entry.portraitPosition)
+            ? entry.portraitPosition
+            : (character.defaultPosition || "right");
+        if (portrait) {
+            entry.portraitId = portrait.id;
+            entry.portrait = portrait.path || "";
+        }
+        else {
+            entry.portraitId = "";
+            entry.portrait = "";
+        }
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    async _applyAdditionalCharacterPortrait(entryId, portraitId) {
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        const entry = frame && Array.isArray(frame.additionalCharacters)
+            ? frame.additionalCharacters.find(item => item.id === entryId)
+            : null;
+        if (!scene || !frame || !entry || !entry.characterId) return;
+        const character = VNSceneStore.getCharacter(entry.characterId);
+        if (!character) return;
+        if (!portraitId) {
+            entry.portraitId = "";
+            entry.portrait = "";
+            await VNSceneStore.upsertScene(scene);
+            this._renderEditorParts(["frames", "framePanel"]);
+            return;
+        }
+        const portraits = Array.isArray(character.portraits) ? character.portraits : [];
+        const portrait = portraits.find(item => item.id === portraitId) || portraits[0] || null;
+        if (portrait) {
+            entry.portraitId = portrait.id;
+            entry.portrait = portrait.path || "";
         }
         await VNSceneStore.upsertScene(scene);
         this._renderEditorParts(["frames", "framePanel"]);
@@ -1418,6 +1495,24 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return options;
     }
 
+    _buildAdditionalCharacterViews(frame, characters, characterById) {
+        const entries = frame && Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : [];
+        return entries.map((entry, index) => {
+            const character = entry.characterId ? characterById.get(entry.characterId) || null : null;
+            return Object.assign({}, entry, {
+                index: index + 2,
+                characterOptions: this._characterOptions(characters, entry.characterId || ""),
+                portraitOptions: this._characterPortraitOptions(character, entry.portraitId || ""),
+                positionOptions: this._options([
+                    ["left", "Слева"],
+                    ["center", "По центру"],
+                    ["right", "Справа"]
+                ], entry.portraitPosition || "right"),
+                portraitInputName: `frame.additionalCharacters.${entry.id}.portrait`
+            });
+        });
+    }
+
     _frameTypeLabel(type) {
         if (type === FRAME_TYPES.NARRATION) return "Наррация";
         if (type === FRAME_TYPES.CHOICE) return "Выбор";
@@ -1478,6 +1573,17 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const hidePortraitInput = this.element.querySelector("[name='frame.hidePortrait']");
             frame.hidePortrait = Boolean(hidePortraitInput && hidePortraitInput.checked);
             frame.portraitPosition = this._readValue("frame.portraitPosition", frame.portraitPosition);
+            const showSpeakerNameInput = this.element.querySelector("[name='frame.showSpeakerName']");
+            frame.showSpeakerName = showSpeakerNameInput ? showSpeakerNameInput.checked === true : frame.showSpeakerName !== false;
+            frame.additionalCharacters = [...this.element.querySelectorAll("[data-additional-character-row]")].map(row => ({
+                id: row.dataset.frameCharacterId || randomId("frame-character"),
+                characterId: this._readRowValue(row, "[data-frame-character-select]", ""),
+                portraitId: this._readRowValue(row, "[data-frame-character-portrait-select]", ""),
+                name: this._readRowValue(row, "[data-frame-character-name]", ""),
+                portrait: this._readRowValue(row, "[data-frame-character-portrait]", ""),
+                portraitPosition: this._readRowValue(row, "[data-frame-character-position]", "right"),
+                showName: Boolean(row.querySelector("[data-frame-character-show-name]")?.checked)
+            }));
             frame.textPresentation = this._readValue("frame.textPresentation", frame.textPresentation || TEXT_PRESENTATIONS.BOX);
             frame.musicCues = this._readAudioCues("music");
             frame.sfxCues = this._readAudioCues("sfx");
@@ -2286,6 +2392,36 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (search) search.value = target.dataset.emptyLabel || "";
     }
 
+    static async _onAddFrameCharacter(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        frame.additionalCharacters = Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : [];
+        const occupied = new Set();
+        if (frame.hidePortrait !== true && frame.portrait) occupied.add(frame.portraitPosition || "left");
+        for (const character of frame.additionalCharacters) {
+            if (character?.portrait) occupied.add(character.portraitPosition || "right");
+        }
+        const portraitPosition = ["right", "left", "center"].find(position => !occupied.has(position)) || "right";
+        frame.additionalCharacters.push(createFrameCharacter({ portraitPosition }));
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["resources", "frames", "framePanel"]);
+    }
+
+    static async _onDeleteFrameCharacter(event, target) {
+        event.preventDefault();
+        const entryId = target.dataset.frameCharacterId || "";
+        if (!entryId) return;
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        frame.additionalCharacters = (Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : [])
+            .filter(character => character.id !== entryId);
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["resources", "frames", "framePanel"]);
+    }
+
     static _onPickAsset(event, target) {
         event.preventDefault();
         const field = target.dataset.field;
@@ -2449,6 +2585,8 @@ VNEditorApp.DEFAULT_OPTIONS = {
         duplicateChoice: queuedEditorAction(VNEditorApp._onDuplicateChoice),
         moveChoice: queuedEditorAction(VNEditorApp._onMoveChoice),
         clearFrameTarget: queuedEditorAction(VNEditorApp._onClearFrameTarget),
+        addFrameCharacter: queuedEditorAction(VNEditorApp._onAddFrameCharacter),
+        deleteFrameCharacter: queuedEditorAction(VNEditorApp._onDeleteFrameCharacter),
         pickAsset: queuedEditorAction(VNEditorApp._onPickAsset),
         saveCharacterPreset: queuedEditorAction(VNEditorApp._onSaveCharacterPreset),
         openCharacterManager: queuedEditorAction(VNEditorApp._onOpenCharacterManager),

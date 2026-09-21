@@ -76,7 +76,7 @@ const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
 const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
-const { applyChoiceCounterEffect, collectAssetPaths, createAudioCue, createCharacterPreset, createFrame, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, collectAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
 const { AUDIO_ACTIONS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } = await import("../scripts/utils/rich-text.js");
@@ -122,6 +122,12 @@ assert.equal(nested.textPresentation, TEXT_PRESENTATIONS.BOX, "New frames must u
 assert.equal(nested.portraitPosition, "left", "New frames must default portraits to the left");
 assert.equal(nested.vignetteMode, VIGNETTE_MODES.NONE, "New frames must disable the vignette by default");
 assert.equal(nested.transition, "none", "New frames must disable visual transitions by default");
+assert.equal(nested.showSpeakerName, true, "New frames must show the primary character name by default");
+assert.deepEqual(nested.additionalCharacters, [], "New frames must start with no additional characters");
+const extraCharacter = createFrameCharacter({ name: "Companion", portrait: "companion.png", portraitPosition: "right" });
+assert.equal(extraCharacter.showName, true, "Additional frame characters must show their names by default");
+scene.frames[0].additionalCharacters.push(extraCharacter);
+assert.equal(collectAssetPaths({ frames: [scene.frames[0]] }).includes("companion.png"), true, "Additional character portraits must be preloaded");
 assert.equal(createCharacterPreset("Left default").defaultPosition, "left", "New character presets must default to the left");
 const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid", transition: "legacy" });
 assert.equal(invalidPositionFrame.portraitPosition, "left", "Invalid portrait positions must sanitize to left");
@@ -138,7 +144,7 @@ nested.folderId = "folder-b";
 nested.sort = 0;
 scene.frames.push(nested);
 scene.startFrame = "frame-root";
-await VNSceneStore.setData({ schemaVersion: 9, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 10, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const stored = VNSceneStore.getScene(scene.id);
 stored.title = "Mutated clone";
@@ -156,7 +162,7 @@ await Promise.all([
 const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
-await VNSceneStore.setData({ schemaVersion: 9, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 10, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const editor = Object.create(VNEditorApp.prototype);
 editor._pendingRenderParts = new Set();
@@ -190,6 +196,8 @@ assert.equal("branchMoveOptions" in framesContext, false, "Unused branch move pa
 assert.equal(panelContext.selectedTextBlocks.length >= 1, true, "Frame panel must receive text blocks");
 assert.equal(typeof panelContext.selectedTextBlocks[0].richText, "string", "Frame panel text blocks must expose rich text");
 assert.equal(panelContext.textPresentationOptions.some(option => option.value === TEXT_PRESENTATIONS.CENTER), true, "Frame panel must offer centered text presentation");
+assert.equal(panelContext.additionalFrameCharacters.length, 1, "Frame panel must expose additional characters for editing");
+assert.equal(panelContext.additionalFrameCharacters[0].portraitInputName.includes(extraCharacter.id), true, "Additional character portrait fields must have stable unique names");
 assert.deepEqual(panelContext.vignetteOptions.map(option => option.value), [VIGNETTE_MODES.AUTO, VIGNETTE_MODES.SCREEN, VIGNETTE_MODES.TEXT, VIGNETTE_MODES.NONE], "Frame panel must expose all vignette modes");
 assert.equal(panelContext.selectedMusicCues.length, 2, "Frame panel must expose all music cues");
 assert.equal(panelContext.selectedSfxCues.length, 1, "Frame panel must expose all SFX cues");
@@ -275,6 +283,32 @@ VNSceneStore.getCharacter = () => ({
 VNSceneStore.upsertScene = async value => value;
 await positionEditor._applyCharacterPreset("position-character", "portrait-position");
 assert.equal(positionScene.frames[0].portraitPosition, "right", "Applying a character preset must not overwrite the frame portrait position");
+VNSceneStore.getCharacter = savedGetCharacter;
+VNSceneStore.upsertScene = savedUpsertScene;
+
+const clearPortraitScene = createScene();
+const clearPortraitEntry = createFrameCharacter({
+  id: "clear-extra",
+  characterId: "clear-character",
+  portraitId: "clear-portrait",
+  name: "Clear Character",
+  portrait: "clear-me.png",
+  portraitPosition: "right"
+});
+clearPortraitScene.frames[0].additionalCharacters.push(clearPortraitEntry);
+const clearPortraitEditor = Object.create(VNEditorApp.prototype);
+clearPortraitEditor.selectedFrameId = clearPortraitScene.frames[0].id;
+clearPortraitEditor._commitFromForm = async () => clearPortraitScene;
+clearPortraitEditor._renderEditorParts = () => {};
+VNSceneStore.getCharacter = () => ({
+  id: "clear-character",
+  name: "Clear Character",
+  portraits: [{ id: "clear-portrait", label: "Main", path: "clear-me.png" }]
+});
+VNSceneStore.upsertScene = async value => value;
+await clearPortraitEditor._applyAdditionalCharacterPortrait("clear-extra", "");
+assert.equal(clearPortraitEntry.portraitId, "", "Choosing no portrait must clear an additional character portrait id");
+assert.equal(clearPortraitEntry.portrait, "", "Choosing no portrait must clear an additional character portrait path");
 VNSceneStore.getCharacter = savedGetCharacter;
 VNSceneStore.upsertScene = savedUpsertScene;
 
@@ -369,7 +403,7 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 9);
+assert.equal(migrated.schemaVersion, 10);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
@@ -377,6 +411,18 @@ assert.equal(migratedFrame.isFinal, true, "Unconvertible legacy exit routing mus
 assert.equal("sceneRouting" in migratedFrame, false, "Legacy frame routing field must be removed");
 assert.equal(migratedFrame.textPresentation, TEXT_PRESENTATIONS.BOX, "Legacy frames must migrate to normal box presentation");
 assert.equal(migratedFrame.vignetteMode, VIGNETTE_MODES.AUTO, "Legacy frames must migrate to automatic vignette behavior");
+assert.equal(migratedFrame.showSpeakerName, true, "Legacy frames must show the primary name after migration");
+assert.deepEqual(migratedFrame.additionalCharacters, [], "Legacy frames must migrate with no additional characters");
+
+const legacyCenteredMigration = migrateData({
+  schemaVersion: 9,
+  version: 3,
+  scenes: [{ id: "legacy-centered", frames: [{ id: "legacy-centered-frame", textPresentation: "center", additionalCharacters: undefined }], frameFolders: [], branches: [] }],
+  assets: [],
+  characters: []
+});
+assert.equal(legacyCenteredMigration.scenes[0].frames[0].showSpeakerName, false, "Schema v10 migration must preserve the old centered-text behavior where speaker names were hidden");
+assert.deepEqual(legacyCenteredMigration.scenes[0].frames[0].additionalCharacters, [], "Schema v10 migration must initialize an empty additional-character list");
 assert.equal(typeof migratedFrame.textBlocks[0].richText, "string", "Legacy text blocks must gain rich text storage");
 assert.equal(migratedFrame.musicCues.length, 1, "Legacy music must migrate into one channel cue");
 assert.equal(migratedFrame.musicCues[0].channel, "music-1");
@@ -408,9 +454,9 @@ assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
 assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 9, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 10, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
-for (const invalidSchemaVersion of [-1, 7.5, 10]) {
+for (const invalidSchemaVersion of [-1, 7.5, 11]) {
   assert.throws(
     () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
     /unsupported schemaVersion/,
@@ -418,7 +464,7 @@ for (const invalidSchemaVersion of [-1, 7.5, 10]) {
   );
 }
 assert.throws(
-  () => VNSceneStore._sanitizeData({ schemaVersion: 10, version: 3, scenes: [], assets: [], characters: [] }),
+  () => VNSceneStore._sanitizeData({ schemaVersion: 11, version: 3, scenes: [], assets: [], characters: [] }),
   /unsupported schemaVersion/,
   "The scene store must not silently downgrade future-schema data to an empty current-schema save"
 );
@@ -483,7 +529,21 @@ transitionBoundaryPlayer.currentFrameId = "bad-transition";
 transitionBoundaryPlayer.currentTextIndex = 0;
 transitionBoundaryPlayer.started = false;
 transitionBoundaryPlayer.mode = PLAYER_MODES.INDIVIDUAL;
-transitionBoundaryPlayer.scene = { id: "transition-scene", frames: [{ id: "bad-transition", type: "dialogue", transition: "legacy", textBlocks: [createTextBlock("Test")], choices: [] }] };
+transitionBoundaryPlayer.scene = {
+  id: "transition-scene",
+  frames: [{
+    id: "bad-transition",
+    type: "dialogue",
+    transition: "legacy",
+    speaker: "Primary",
+    showSpeakerName: true,
+    additionalCharacters: [
+      createFrameCharacter({ id: "companion", name: "Companion", portrait: "companion.png", portraitPosition: "right", showName: true })
+    ],
+    textBlocks: [createTextBlock("Test")],
+    choices: []
+  }]
+};
 transitionBoundaryPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
 transitionBoundaryPlayer.participantIds = [];
 transitionBoundaryPlayer.loading = false;
@@ -506,6 +566,14 @@ Object.getPrototypeOf(VNPlayerApp.prototype)._prepareContext = async () => ({});
 const transitionBoundaryContext = await transitionBoundaryPlayer._prepareContext({});
 Object.getPrototypeOf(VNPlayerApp.prototype)._prepareContext = originalPrepareContext;
 assert.equal(transitionBoundaryContext.transitionClass, "transition-none", "Player boundary must reject unsupported transition classes from raw scene payloads");
+assert.equal(transitionBoundaryContext.frameCharacters.length, 2, "Player context must expose primary and additional frame characters together");
+assert.equal(transitionBoundaryContext.frameCharacters[0].name, "Primary");
+assert.equal(transitionBoundaryContext.frameCharacters[1].portraitSrc, "companion.png");
+assert.equal(transitionBoundaryContext.frameCharacters[1].showName, true, "Additional character names must obey their per-character visibility flag");
+transitionBoundaryPlayer.scene.frames[0].textPresentation = TEXT_PRESENTATIONS.CENTER;
+const centeredCharacterContext = await transitionBoundaryPlayer._prepareContext({});
+assert.equal(centeredCharacterContext.frameCharacters[0].showName, false, "Centered text must suppress the primary character name");
+assert.equal(centeredCharacterContext.frameCharacters[1].showName, false, "Centered text must suppress additional character names");
 
 const visualStatePlayer = Object.create(VNPlayerApp.prototype);
 visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portrait.png", portraitPosition: "center" };

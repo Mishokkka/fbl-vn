@@ -16,12 +16,97 @@
 }
 
 .fbl-vn-field-row.row-character {
-  grid-template-columns: minmax(170px, 230px) minmax(170px, 230px) 34px 34px;
+  grid-template-columns: minmax(170px, 260px) minmax(170px, 260px);
   justify-content: start;
 }
 
 .fbl-vn-field-row.row-portrait {
   grid-template-columns: minmax(140px, 180px) minmax(240px, 1fr) minmax(120px, 150px) 34px;
+}
+
+.fbl-vn-frame-characters {
+  display: grid;
+  gap: 7px;
+  margin: 2px 0 10px;
+}
+
+.fbl-vn-frame-characters-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fbl-vn-frame-characters-header h4 {
+  min-width: 0;
+}
+
+.fbl-vn-frame-characters-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.fbl-vn-frame-characters-actions > button:last-child {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
+
+.fbl-vn-frame-character-list {
+  display: grid;
+  gap: 6px;
+}
+
+.fbl-vn-frame-character-card {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid var(--vn-border);
+  border-radius: var(--vn-radius-md);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.fbl-vn-frame-character-card > header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+}
+
+.fbl-vn-frame-character-card > header > strong {
+  color: var(--vn-soft);
+  font-size: 12px;
+}
+
+.fbl-vn-frame-character-card > header > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vn-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fbl-vn-frame-character-card .fbl-vn-field-row {
+  margin-bottom: 0;
+}
+
+.fbl-vn-field-row.row-frame-character-visual {
+  grid-template-columns: minmax(130px, 180px) minmax(220px, 1fr) minmax(110px, 145px) 34px;
+}
+
+.fbl-vn-frame-character-card.is-primary .row-frame-character-visual {
+  grid-template-columns: minmax(130px, 180px) minmax(220px, 1fr) minmax(110px, 145px) 34px 34px;
+}
+
+.fbl-vn-frame-character-card .fbl-vn-row-icon {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
 }
 
 
@@ -95,8 +180,14 @@
   .fbl-vn-field-row.row-frame-title,
   .fbl-vn-field-row.row-background,
   .fbl-vn-field-row.row-character,
-  .fbl-vn-field-row.row-portrait {
+  .fbl-vn-field-row.row-portrait,
+  .fbl-vn-field-row.row-frame-character-visual,
+  .fbl-vn-frame-character-card.is-primary .row-frame-character-visual {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .fbl-vn-frame-character-card .icon-toggle-field {
+    justify-self: start;
   }
 }
 
