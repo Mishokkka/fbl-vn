@@ -240,13 +240,13 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     ["none", "Нет"],
                     ["fade", "Fade"],
                     ["dark", "Затемнение"]
-                ], frame ? frame.transition : undefined),
+                ], frame ? frame.transition : "none"),
                 vignetteOptions: this._options([
                     [VIGNETTE_MODES.AUTO, "Авто"],
                     [VIGNETTE_MODES.SCREEN, "По краям кадра"],
                     [VIGNETTE_MODES.TEXT, "Вокруг текста"],
                     [VIGNETTE_MODES.NONE, "Нет"]
-                ], frame ? frame.vignetteMode : VIGNETTE_MODES.AUTO),
+                ], frame ? frame.vignetteMode : VIGNETTE_MODES.NONE),
                 textPresentationOptions: this._options([
                     [TEXT_PRESENTATIONS.BOX, "Обычная панель"],
                     [TEXT_PRESENTATIONS.CENTER, "Текст по центру без панели"]
@@ -1470,7 +1470,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const clearBackgroundInput = this.element.querySelector("[name='frame.clearBackground']");
             frame.clearBackground = Boolean(clearBackgroundInput && clearBackgroundInput.checked);
             frame.transition = this._readValue("frame.transition", frame.transition);
-            frame.vignetteMode = this._readValue("frame.vignetteMode", frame.vignetteMode || VIGNETTE_MODES.AUTO);
+            frame.vignetteMode = this._readValue("frame.vignetteMode", frame.vignetteMode || VIGNETTE_MODES.NONE);
             frame.characterId = this._readValue("frame.characterId", frame.characterId || "");
             frame.portraitId = this._readValue("frame.portraitId", frame.portraitId || "");
             frame.speaker = this._readValue("frame.speaker", frame.speaker);

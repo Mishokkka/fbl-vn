@@ -366,7 +366,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const isParticipant = !isVoteMode || activeParticipants.includes(game.user.id);
         const canAdvance = this.started && isParticipant && (this.mode !== PLAYER_MODES.GM || this._isLeader());
         const portraitPosition = ["left", "center", "right"].includes(this.visualState.portraitPosition) ? this.visualState.portraitPosition : "left";
-        const transition = frame && frame.transition ? frame.transition : "fade";
+        const transition = frame && ["none", "fade", "dark"].includes(frame.transition) ? frame.transition : "none";
         const isChoice = Boolean(frame && frame.type === "choice");
         const isFinal = Boolean(frame && frame.isFinal === true);
         const isLastTextBlock = this.currentTextIndex >= Math.max(0, blocks.length - 1);
@@ -382,7 +382,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             { fallbackText: currentText }
         );
         const isCenteredText = Boolean(frame && frame.textPresentation === TEXT_PRESENTATIONS.CENTER);
-        const vignetteMode = frame && Object.values(VIGNETTE_MODES).includes(frame.vignetteMode) ? frame.vignetteMode : VIGNETTE_MODES.AUTO;
+        const vignetteMode = frame && Object.values(VIGNETTE_MODES).includes(frame.vignetteMode) ? frame.vignetteMode : VIGNETTE_MODES.NONE;
         const resolvedVignetteMode = vignetteMode === VIGNETTE_MODES.AUTO
             ? (isCenteredText ? VIGNETTE_MODES.TEXT : VIGNETTE_MODES.SCREEN)
             : vignetteMode;
