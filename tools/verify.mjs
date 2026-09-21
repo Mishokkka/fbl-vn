@@ -102,6 +102,7 @@ if (!preloaderSource.includes("this.inflight = new Map()") || !preloaderSource.i
 if (!playerSource.includes("VNPreloader.collectWindowPaths(this.scene") || !playerSource.includes("this._preloader.startBackgroundImages()")) errors.push("Player startup must wait only for the critical window and then background-load images");
 if (!playerSource.includes("await this._ensureFrameAssets(frame);") || !playerSource.includes("this._warmUpcomingAssets(frame);")) errors.push("Player frame transitions must prioritize current and nearby assets");
 if (!playerSource.includes("this._preloader?.cancel()")) errors.push("Closing the player must cancel further background preload scheduling");
+if (!playerSource.includes("payload.resumeState.visualState?.background") || !playerSource.includes("payload.resumeState.visualState?.portrait") || !playerSource.includes("options.extraPaths || []")) errors.push("Resume preload must include inherited visual-state assets");
 if (!playerTemplateSource.includes("Подготовка стартовых ассетов")) errors.push("Loading UI must describe the bounded startup preload rather than the whole scene");
 if (!socketSource.includes("options?.reenter === true") || !socketSource.includes("data.reenter = true")) errors.push("Socket advance payload must preserve explicit frame re-entry");
 if (!mainSource.includes("reenter: payload.reenter === true")) errors.push("Socket handler must forward the frame re-entry flag to the player");
