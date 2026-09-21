@@ -1,5 +1,5 @@
 import { applyChoiceCounterEffect, applyFrameCounterEffect, getInitialCounterState, getFrameTextBlocks, getTextBlock, isChoiceAvailable, resolveFrameNextRouting } from "../data/schema.js";
-import { VNPreloader } from "../playback/vn-preloader.js";
+import { VNPreloadController, VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
@@ -45,6 +45,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.loading = true;
         this.started = false;
         this._starting = false;
+        this._resuming = false;
         this.preloadDone = 0;
         this.preloadTotal = 0;
         this.currentFrameId = null;
@@ -73,10 +74,13 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._onWindowResize = () => this._applyFullscreenPosition();
         this._resizeBound = false;
         this._preloadPromise = null;
+        this._preloader = new VNPreloadController(this.scene);
+        this._backgroundPreloadPromise = null;
         this._disposed = false;
         this._preloadProgressRaf = null;
         this._pendingPreloadProgress = null;
         this._pendingRemoteFrames = VNPlayerApp.pendingAdvances.get(this.scene.id) || [];
+        this._playbackQueue = Promise.resolve();
         this._volumePanelOpen = false;
         this._contentHidden = false;
         this._volumeSaveTimer = null;
@@ -172,7 +176,13 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         });
         await app.render(true);
         if (payload.resumeState) {
-            await app.preload();
+            await app.preload({
+                frameId: payload.resumeState.currentFrameId || "",
+                extraPaths: [
+                    payload.resumeState.visualState?.background || "",
+                    payload.resumeState.visualState?.portrait || ""
+                ]
+            });
             await app.resume(payload.resumeState);
         }
         else {
@@ -201,16 +211,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             VNPlayerApp.pendingAdvances.set(sceneId, queued);
             return;
         }
-        if (app.loading || !app.started) {
+        if (app.loading || !app.started || app._starting || app._resuming) {
             app._pendingRemoteFrames.push({ frameId, textIndex, options });
             return;
         }
-        if (options && options.choiceId) app._applyChoiceEffectById(options.choiceId);
-        if (app.currentFrameId === frameId) {
-            if (options?.reenter === true) return app.goToFrame(frameId, { remote: true, textIndex });
-            return app._goToTextBlock(Number(textIndex || 0), { remote: true });
-        }
-        return app.goToFrame(frameId, { remote: true, textIndex });
+        return app._enqueuePlaybackOperation(() => app._applyRemoteAdvance(frameId, textIndex, options));
     }
 
     static closeScene(sceneId) {
@@ -247,34 +252,81 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         for (const app of VNPlayerApp.active.values()) app._onParticipantConnectionChange(user, connected);
     }
 
-    async preload() {
+    async preload(options = {}) {
         if (this._preloadPromise) return this._preloadPromise;
-        this._preloadPromise = this._preloadInner();
+        this._preloadPromise = this._preloadInner(options.frameId || "", options.extraPaths || []);
         return this._preloadPromise;
     }
 
-    async _preloadInner() {
-        const paths = VNPreloader.collectPaths(this.scene);
+    async _preloadInner(startFrameId = "", extraPaths = []) {
+        const startFrame = this._getFrame(startFrameId);
+        const paths = [...new Set([
+            ...VNPreloader.collectStartupWindowPaths(this.scene, startFrame?.id || "", { depth: 2, maxFrames: 12 }),
+            ...(Array.isArray(extraPaths) ? extraPaths : [])
+        ].filter(Boolean))];
         this.preloadTotal = paths.length;
         this.preloadDone = 0;
         this._pendingPreloadProgress = { done: 0, total: this.preloadTotal };
         this._flushPreloadProgressUpdate();
-        const results = await VNPreloader.preloadScene(this.scene, progress => {
-            this.preloadDone = progress.done;
-            this.preloadTotal = progress.total;
-            this._schedulePreloadProgressUpdate(progress);
-        }, paths);
+        const results = await this._preloader.ensurePaths(paths, {
+            concurrency: 6,
+            onProgress: progress => {
+                this.preloadDone = progress.done;
+                this.preloadTotal = progress.total;
+                this._schedulePreloadProgressUpdate(progress);
+            }
+        });
         this._flushPreloadProgressUpdate();
         if (this._disposed) return results;
-        const failed = Array.isArray(results) ? results.filter(result => result && result.ok === false) : [];
-        if (failed.length && game.user?.isGM) notifyWarn(`VN: не удалось предзагрузить ассеты: ${failed.length}. Катсцена будет запущена, но часть ресурсов может появиться с задержкой.`);
+
+        const criticalResults = startFrame ? await this._ensureFrameAssets(startFrame, 0) : [];
+        if (this._disposed) return results;
+        const failed = [
+            ...(Array.isArray(results) ? results : []),
+            ...(Array.isArray(criticalResults) ? criticalResults : [])
+        ].filter(result => result?.ok === false);
+        if (failed.length && game.user?.isGM) notifyWarn(`VN: не удалось подготовить ассеты: ${failed.length}. Катсцена будет запущена, но часть ресурсов может появиться с задержкой.`);
+
         this.loading = false;
-        VNSocket.signalReady(this.scene.id, this.leaderId);
         await this.render();
+        if (this._disposed) return results;
+        this._backgroundPreloadPromise = this._preloader.startBackgroundImages();
+        VNSocket.signalReady(this.scene.id, this.leaderId);
         if (VNPlayerApp.pendingStarts.has(this.scene.id)) {
             VNPlayerApp.pendingStarts.delete(this.scene.id);
             await this.start();
         }
+        return results;
+    }
+
+    async _ensureCriticalPaths(paths) {
+        if (this._disposed || !this._preloader) return [];
+        const uniquePaths = [...new Set((Array.isArray(paths) ? paths : []).filter(Boolean))];
+        if (!uniquePaths.length) return [];
+        const results = await this._preloader.ensurePaths(uniquePaths, { concurrency: 6 });
+        if (this._disposed) return results;
+        const failedPaths = results.filter(result => result?.ok === false && result.path).map(result => result.path);
+        if (!failedPaths.length) return results;
+        const retries = await this._preloader.ensurePaths(failedPaths, { concurrency: 6 });
+        const retryByPath = new Map(retries.map(result => [result.path, result]));
+        return results.map(result => retryByPath.get(result.path) || result);
+    }
+
+    _ensureFrameAssets(frame, textIndex = 0) {
+        if (!frame) return Promise.resolve([]);
+        return this._ensureCriticalPaths(VNPreloader.collectFrameEntryPaths(frame, textIndex));
+    }
+
+    _ensureTextBlockAssets(frame, textIndex = 0) {
+        const block = getTextBlock(frame, textIndex);
+        return this._ensureCriticalPaths(block?.voice ? [block.voice] : []);
+    }
+
+    _warmUpcomingAssets(frame) {
+        if (!frame?.id || this._disposed || !this._preloader) return;
+        void this._preloader.warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 2 }).catch(error => {
+            console.warn(`${MODULE_ID} | Nearby asset preload failed.`, error);
+        });
     }
 
     _schedulePreloadProgressUpdate(progress) {
@@ -323,41 +375,71 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     async resume(state = {}) {
-        if (this.loading || this._disposed) return;
-        this.started = true;
-        this.audio.pauseExternalAudio();
-        this.counterState = state.counterState && typeof state.counterState === "object" ? Object.assign({}, state.counterState) : getInitialCounterState(this.scene);
-        this.visualState = Object.assign(createVisualState(), state.visualState && typeof state.visualState === "object" ? state.visualState : {});
-        const frame = this._getFrame(state.currentFrameId);
-        if (!frame) {
-            this.started = false;
-            return this.start();
+        if (this.loading || this._disposed || this._resuming) return;
+        this._resuming = true;
+        try {
+            this.started = true;
+            this.audio.pauseExternalAudio();
+            this.counterState = state.counterState && typeof state.counterState === "object" ? Object.assign({}, state.counterState) : getInitialCounterState(this.scene);
+            this.visualState = Object.assign(createVisualState(), state.visualState && typeof state.visualState === "object" ? state.visualState : {});
+            const frame = this._getFrame(state.currentFrameId);
+            if (!frame) {
+                this.started = false;
+                return await this.start();
+            }
+            const blocks = getFrameTextBlocks(frame);
+            const requestedIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
+            await this._ensureFrameAssets(frame, requestedIndex);
+            if (this._disposed) return;
+            this.currentFrameId = frame.id;
+            this._contentHidden = false;
+            this.currentTextIndex = requestedIndex;
+            this._resetVoteForStep(frame.id, this.currentTextIndex);
+            await this.audio.applyFrame(frame);
+            await this._playCurrentVoice(frame);
+            await this.render();
+            this._warmUpcomingAssets(frame);
+            await this._flushPendingRemoteFrames();
         }
-        this.currentFrameId = frame.id;
-        this._contentHidden = false;
-        const blocks = getFrameTextBlocks(frame);
-        this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
-        this._resetVoteForStep(frame.id, this.currentTextIndex);
-        await this.audio.applyFrame(frame);
-        await this._playCurrentVoice(frame);
-        await this.render();
+        finally {
+            this._resuming = false;
+        }
     }
 
     async _flushPendingRemoteFrames() {
-        if (!this._pendingRemoteFrames.length) return;
-        const queued = this._pendingRemoteFrames.splice(0);
-        for (const item of queued) {
-            if (typeof item === "string") await this.goToFrame(item, { remote: true });
-            else {
-                if (item.options && item.options.choiceId) this._applyChoiceEffectById(item.options.choiceId);
-                if (this.currentFrameId === item.frameId && item.options?.reenter !== true) {
-                    await this._goToTextBlock(Number(item.textIndex || 0), { remote: true });
-                }
-                else {
-                    await this.goToFrame(item.frameId, { remote: true, textIndex: item.textIndex || 0 });
-                }
+        while (this._pendingRemoteFrames.length && !this._disposed) {
+            const item = this._pendingRemoteFrames.shift();
+            if (typeof item === "string") {
+                await this._enqueuePlaybackOperation(() => this._goToFrameNow(item, { remote: true }));
+            }
+            else if (item) {
+                await this._enqueuePlaybackOperation(() => this._applyRemoteAdvance(item.frameId, item.textIndex, item.options || {}));
             }
         }
+    }
+
+    _enqueuePlaybackOperation(operation) {
+        const previous = this._playbackQueue && typeof this._playbackQueue.then === "function"
+            ? this._playbackQueue
+            : Promise.resolve();
+        const run = previous
+            .catch(() => {})
+            .then(async () => {
+                if (this._disposed) return;
+                return operation();
+            });
+        this._playbackQueue = run.catch(error => {
+            console.error(`${MODULE_ID} | Playback operation failed.`, error);
+        });
+        return run;
+    }
+
+    async _applyRemoteAdvance(frameId, textIndex = 0, options = {}) {
+        if (options?.choiceId) this._applyChoiceEffectById(options.choiceId);
+        if (this.currentFrameId === frameId && options?.reenter !== true) {
+            return this._goToTextBlockNow(Number(textIndex || 0), { remote: true });
+        }
+        return this._goToFrameNow(frameId, { remote: true, textIndex });
     }
 
     _canCloseLocally() {
@@ -760,18 +842,25 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._resolvingVote = false;
     }
 
-    async goToFrame(frameId, options = {}) {
+    goToFrame(frameId, options = {}) {
+        return this._enqueuePlaybackOperation(() => this._goToFrameNow(frameId, options));
+    }
+
+    async _goToFrameNow(frameId, options = {}) {
         const remote = options.remote === true;
         const force = options.force === true;
         const frame = this._getFrame(frameId);
         if (!frame) return this.finish();
+        const blocks = getFrameTextBlocks(frame);
+        const requestedTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
+        const nextTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(requestedTextIndex) ? requestedTextIndex : 0));
+        await this._ensureFrameAssets(frame, nextTextIndex);
+        if (this._disposed) return;
         const reenter = this.currentFrameId === frame.id;
         this.currentFrameId = frame.id;
         this._contentHidden = false;
         this._applyFrameEffect(frame);
-        const blocks = getFrameTextBlocks(frame);
-        const requestedTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
-        this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(requestedTextIndex) ? requestedTextIndex : 0));
+        this.currentTextIndex = nextTextIndex;
         this._resetVoteForStep(frame.id, this.currentTextIndex);
         this._applyVisualState(frame);
         await this.audio.applyFrame(frame);
@@ -783,12 +872,19 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 reenter
             });
         }
+        this._warmUpcomingAssets(frame);
     }
 
-    async _goToTextBlock(index, options = {}) {
+    _goToTextBlock(index, options = {}) {
+        return this._enqueuePlaybackOperation(() => this._goToTextBlockNow(index, options));
+    }
+
+    async _goToTextBlockNow(index, options = {}) {
         const frame = this._getFrame(this.currentFrameId);
         const blocks = getFrameTextBlocks(frame);
         if (!frame || index < 0 || index >= blocks.length) return;
+        await this._ensureTextBlockAssets(frame, index);
+        if (this._disposed) return;
         this.currentTextIndex = index;
         this._contentHidden = false;
         this._resetVoteForStep(frame.id, this.currentTextIndex);
@@ -1138,6 +1234,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async close(options = {}) {
         this._disposed = true;
+        this._preloader?.cancel();
         this._cancelTypingAnimation();
         if (this._preloadProgressRaf !== null) cancelAnimationFrame(this._preloadProgressRaf);
         this._preloadProgressRaf = null;

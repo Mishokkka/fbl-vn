@@ -39,6 +39,7 @@ const socketSource = read("scripts/playback/vn-socket.js");
 const characterManagerSource = read("scripts/apps/vn-character-manager-app.js");
 const counterManagerSource = read("scripts/apps/vn-counter-manager-app.js");
 const playerSource = read("scripts/apps/vn-player-app.js");
+const preloaderSource = read("scripts/playback/vn-preloader.js");
 const schemaSource = read("scripts/data/schema.js");
 const migrationSource = read("scripts/data/migrations.js");
 const constantsSource = read("scripts/utils/constants.js");
@@ -93,10 +94,31 @@ if (!constantsSource.includes("DATA_SCHEMA_VERSION = 11")) errors.push("Data sch
 if (!migrationSource.includes("function migrateToV11")) errors.push("Schema v11 migration is missing");
 if (!playerSource.includes("splitTextGraphemes(plainText).length > 900") || !playerSource.includes("splitTextGraphemes(child.data)")) errors.push("Typewriter must count and reveal Unicode grapheme clusters");
 if (!read("scripts/utils/rich-text.js").includes("export function splitTextGraphemes")) errors.push("Shared grapheme segmentation helper is missing");
+if (!schemaSource.includes("export function collectFrameAssetPaths") || !schemaSource.includes("export function collectFrameEntryAssetPaths")) errors.push("Schema must expose full-frame and frame-entry asset collection for progressive preload");
+if (!preloaderSource.includes("collectWindowFrameIds") || !preloaderSource.includes("collectWindowPaths") || !preloaderSource.includes("collectStartupWindowPaths")) errors.push("Preloader must build bounded startup and nearby-frame windows");
+if (!preloaderSource.includes("STARTUP_WINDOW_DEPTH = 2") || !preloaderSource.includes("STARTUP_WINDOW_MAX_FRAMES = 12")) errors.push("Startup preload window must remain bounded");
+if (!preloaderSource.includes("BACKGROUND_CONCURRENCY = 1") || !preloaderSource.includes("collectBackgroundImagePaths")) errors.push("Whole-scene background preload must be image-only and leave network headroom");
+if (!preloaderSource.includes("this.inflight = new Map()") || !preloaderSource.includes("if (this.inflight.has(path)) return this.inflight.get(path)")) errors.push("Preloader must deduplicate concurrent asset requests");
+if (preloaderSource.includes("this.failed = new Map()") || preloaderSource.includes("this.failed.has(path)") || preloaderSource.includes("this.failed.set(path")) errors.push("Transient preload failures must not be cached permanently");
+if (!preloaderSource.includes("collectStartupWindowPaths(this.scene, startFrameId") || !preloaderSource.includes("for (const path of VNPreloader.collectFramePaths(frame)) paths.add(path)")) errors.push("Nearby warming must preload all current-frame assets but only frame-entry assets for future frames");
+if (!playerSource.includes("this._playbackQueue = Promise.resolve()") || !playerSource.includes("_enqueuePlaybackOperation(operation)") || !playerSource.includes("_applyRemoteAdvance(frameId")) errors.push("Player must serialize remote playback transitions");
+if (!playerSource.includes("return app._enqueuePlaybackOperation(() => app._applyRemoteAdvance")) errors.push("Live socket advances must enter the serialized playback queue");
+if (!playerSource.includes("app.loading || !app.started || app._starting || app._resuming")) errors.push("Remote advances must stay buffered while startup or reconnect restore is settling");
+if (!playerSource.includes("while (this._pendingRemoteFrames.length && !this._disposed)")) errors.push("Pending remote advances must be fully drained, including messages received during the drain");
+if (!playerSource.includes("const failedPaths = results.filter") || !playerSource.includes("await this._preloader.ensurePaths(failedPaths")) errors.push("Critical asset preload must immediately retry transient failures once");
+if (!playerSource.includes("VNPreloader.collectStartupWindowPaths(this.scene") || !playerSource.includes("this._preloader.startBackgroundImages()")) errors.push("Player startup must wait only for entry assets in the critical window and then background-load images");
+if (!playerSource.includes("await this._ensureFrameAssets(frame, nextTextIndex);") || !playerSource.includes("await this._ensureTextBlockAssets(frame, index);") || !playerSource.includes("this._warmUpcomingAssets(frame);")) errors.push("Frame and text transitions must prioritize only immediately required assets while warming nearby content");
+if (!playerSource.includes("warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 2 })")) errors.push("Speculative nearby preload must leave browser network headroom for critical requests");
+const preloadInnerBlock = playerSource.match(/async _preloadInner\([\s\S]*?\n\s*async _ensureCriticalPaths/)?.[0] || "";
+const preloadRenderIndex = preloadInnerBlock.indexOf("await this.render();");
+const preloadReadyIndex = preloadInnerBlock.indexOf("VNSocket.signalReady(this.scene.id, this.leaderId)");
+if (preloadRenderIndex < 0 || preloadReadyIndex < 0 || preloadReadyIndex < preloadRenderIndex) errors.push("Client must finish the loading-state render before signaling ready");
+if (!playerSource.includes("this._preloader?.cancel()")) errors.push("Closing the player must cancel further background preload scheduling");
+if (!playerSource.includes("payload.resumeState.visualState?.background") || !playerSource.includes("payload.resumeState.visualState?.portrait") || !playerSource.includes("options.extraPaths || []")) errors.push("Resume preload must include inherited visual-state assets");
+if (!playerTemplateSource.includes("Подготовка стартовых ассетов")) errors.push("Loading UI must describe the bounded startup preload rather than the whole scene");
 if (!socketSource.includes("options?.reenter === true") || !socketSource.includes("data.reenter = true")) errors.push("Socket advance payload must preserve explicit frame re-entry");
 if (!mainSource.includes("reenter: payload.reenter === true")) errors.push("Socket handler must forward the frame re-entry flag to the player");
-if (!playerSource.includes("const reenter = this.currentFrameId === frame.id") || !playerSource.includes("if (options?.reenter === true) return app.goToFrame")) errors.push("Player must distinguish synchronized self-loop re-entry from same-frame text advances");
-if (!playerSource.includes("this.currentFrameId === item.frameId && item.options?.reenter !== true")) errors.push("Queued remote advances must preserve text-block vs frame re-entry semantics");
+if (!playerSource.includes("const reenter = this.currentFrameId === frame.id") || !playerSource.includes("this.currentFrameId === frameId && options?.reenter !== true")) errors.push("Player must distinguish synchronized self-loop re-entry from same-frame text advances");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
@@ -139,8 +161,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.5.0") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.5.0")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.0") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.0")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",

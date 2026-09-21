@@ -2,7 +2,7 @@
   "id": "fbl-vn-cutscenes",
   "title": "FBL Visual Novel Cutscenes",
   "description": "Редактор и синхронный полноэкранный плеер катсцен в стиле визуальных новелл для Foundry VTT v13 и Forbidden Lands.",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "authors": [
     {
       "name": "Foundry JS"
