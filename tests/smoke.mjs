@@ -493,7 +493,21 @@ transitionBoundaryPlayer.currentFrameId = "bad-transition";
 transitionBoundaryPlayer.currentTextIndex = 0;
 transitionBoundaryPlayer.started = false;
 transitionBoundaryPlayer.mode = PLAYER_MODES.INDIVIDUAL;
-transitionBoundaryPlayer.scene = { id: "transition-scene", frames: [{ id: "bad-transition", type: "dialogue", transition: "legacy", textBlocks: [createTextBlock("Test")], choices: [] }] };
+transitionBoundaryPlayer.scene = {
+  id: "transition-scene",
+  frames: [{
+    id: "bad-transition",
+    type: "dialogue",
+    transition: "legacy",
+    speaker: "Primary",
+    showSpeakerName: true,
+    additionalCharacters: [
+      createFrameCharacter({ id: "companion", name: "Companion", portrait: "companion.png", portraitPosition: "right", showName: true })
+    ],
+    textBlocks: [createTextBlock("Test")],
+    choices: []
+  }]
+};
 transitionBoundaryPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
 transitionBoundaryPlayer.participantIds = [];
 transitionBoundaryPlayer.loading = false;
@@ -516,6 +530,10 @@ Object.getPrototypeOf(VNPlayerApp.prototype)._prepareContext = async () => ({});
 const transitionBoundaryContext = await transitionBoundaryPlayer._prepareContext({});
 Object.getPrototypeOf(VNPlayerApp.prototype)._prepareContext = originalPrepareContext;
 assert.equal(transitionBoundaryContext.transitionClass, "transition-none", "Player boundary must reject unsupported transition classes from raw scene payloads");
+assert.equal(transitionBoundaryContext.frameCharacters.length, 2, "Player context must expose primary and additional frame characters together");
+assert.equal(transitionBoundaryContext.frameCharacters[0].name, "Primary");
+assert.equal(transitionBoundaryContext.frameCharacters[1].portraitSrc, "companion.png");
+assert.equal(transitionBoundaryContext.frameCharacters[1].showName, true, "Additional character names must obey their per-character visibility flag");
 
 const visualStatePlayer = Object.create(VNPlayerApp.prototype);
 visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portrait.png", portraitPosition: "center" };
