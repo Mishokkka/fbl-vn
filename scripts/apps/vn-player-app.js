@@ -1,4 +1,4 @@
-import { applyChoiceCounterEffect, getInitialCounterState, getFrameTextBlocks, getTextBlock, isChoiceAvailable, resolveFrameNextRouting } from "../data/schema.js";
+import { applyChoiceCounterEffect, applyFrameCounterEffect, getInitialCounterState, getFrameTextBlocks, getTextBlock, isChoiceAvailable, resolveFrameNextRouting } from "../data/schema.js";
 import { VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
@@ -759,6 +759,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!frame) return this.finish();
         this.currentFrameId = frame.id;
         this._contentHidden = false;
+        this._applyFrameEffect(frame);
         const blocks = getFrameTextBlocks(frame);
         const requestedTextIndex = options.textIndex !== undefined ? Number(options.textIndex || 0) : 0;
         this.currentTextIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(requestedTextIndex) ? requestedTextIndex : 0));
@@ -1099,6 +1100,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const nextId = this._getNextFrameId(frame);
         if (!nextId) return this.finish();
         await this.goToFrame(nextId);
+    }
+
+    _applyFrameEffect(frame) {
+        this.counterState = applyFrameCounterEffect(frame, this.counterState);
     }
 
     _applyChoiceEffect(choice) {
