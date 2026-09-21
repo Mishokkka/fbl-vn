@@ -422,13 +422,17 @@ await queuedCharacterOperation();
 assert.equal(appliedCharacterId, "character-a", "Queued character selection must use the value captured during the change event");
 
 let routingToggleListener = null;
+let routingPointerDownListener = null;
 let routingPersistedEnabled = null;
 let routingRenderCount = 0;
 let routingQueued = null;
 let routingBlurCount = 0;
 const routingToggle = {
   checked: false,
-  addEventListener(type, listener) { if (type === "change") routingToggleListener = listener; },
+  addEventListener(type, listener) {
+    if (type === "change") routingToggleListener = listener;
+    if (type === "pointerdown") routingPointerDownListener = listener;
+  },
   blur() { routingBlurCount += 1; }
 };
 const routingShell = {
@@ -474,6 +478,8 @@ const routingRoot = {
 routingEditor._enableNextRoutingControls(routingRoot);
 assert.equal(routingDirectFields.hidden, false, "Direct next-frame fields must start visible when counter routing is disabled");
 assert.equal(routingConditionalFields.hidden, true, "Counter-routing fields must start hidden when disabled");
+assert.equal(typeof routingPointerDownListener, "function", "Counter-routing toggle must capture geometry before native checkbox focus");
+routingPointerDownListener();
 routingToggle.checked = true;
 routingToggleListener();
 assert.equal(routingShell.counterMode, true, "Counter-routing toggle must update the route card locally");
