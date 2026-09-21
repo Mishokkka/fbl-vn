@@ -174,7 +174,13 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         });
         await app.render(true);
         if (payload.resumeState) {
-            await app.preload({ frameId: payload.resumeState.currentFrameId || "" });
+            await app.preload({
+                frameId: payload.resumeState.currentFrameId || "",
+                extraPaths: [
+                    payload.resumeState.visualState?.background || "",
+                    payload.resumeState.visualState?.portrait || ""
+                ]
+            });
             await app.resume(payload.resumeState);
         }
         else {
@@ -251,13 +257,16 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async preload(options = {}) {
         if (this._preloadPromise) return this._preloadPromise;
-        this._preloadPromise = this._preloadInner(options.frameId || "");
+        this._preloadPromise = this._preloadInner(options.frameId || "", options.extraPaths || []);
         return this._preloadPromise;
     }
 
-    async _preloadInner(startFrameId = "") {
+    async _preloadInner(startFrameId = "", extraPaths = []) {
         const startFrame = this._getFrame(startFrameId);
-        const paths = VNPreloader.collectWindowPaths(this.scene, startFrame?.id || "", { depth: 2, maxFrames: 12 });
+        const paths = [...new Set([
+            ...VNPreloader.collectWindowPaths(this.scene, startFrame?.id || "", { depth: 2, maxFrames: 12 }),
+            ...(Array.isArray(extraPaths) ? extraPaths : [])
+        ].filter(Boolean))];
         this.preloadTotal = paths.length;
         this.preloadDone = 0;
         this._pendingPreloadProgress = { done: 0, total: this.preloadTotal };
