@@ -717,16 +717,26 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             routingFields.hidden = !enabled;
         };
 
+        const panel = root.closest?.(".fbl-vn-frame-panel") || null;
+        let pendingPosition = null;
+        let pendingScrollTop = null;
+        const captureBeforeActivation = () => {
+            pendingPosition = this._captureEditorPosition();
+            pendingScrollTop = panel?.scrollTop ?? null;
+        };
+
         sync(toggle.checked === true);
+        toggle.addEventListener("pointerdown", captureBeforeActivation);
         toggle.addEventListener("change", () => {
             const enabled = toggle.checked === true;
-            const position = this._captureEditorPosition();
-            const panel = root.closest?.(".fbl-vn-frame-panel") || null;
-            const scrollTop = panel?.scrollTop ?? null;
+            const position = pendingPosition || this._captureEditorPosition();
+            const scrollTop = pendingScrollTop ?? panel?.scrollTop ?? null;
+            pendingPosition = null;
+            pendingScrollTop = null;
 
-            // Firefox may scroll a visually hidden checkbox into view when its label is clicked.
-            // Drop focus before the route block changes height, then restore both the panel scroll
-            // position and the ApplicationV2 geometry explicitly.
+            // Capture pointer activation before the browser focuses the checkbox. Firefox can
+            // otherwise use focus scrolling while the route block changes height and cause the
+            // outer ApplicationV2 position/height to be recalculated.
             toggle.blur?.();
             sync(enabled);
             if (panel && scrollTop !== null) panel.scrollTop = scrollTop;
