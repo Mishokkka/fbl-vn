@@ -286,12 +286,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     async _ensureFrameAssets(frame) {
-        if (!frame || this._disposed) return [];
+        if (!frame || this._disposed || !this._preloader) return [];
         return this._preloader.ensureFrame(frame, { concurrency: 6 });
     }
 
     _warmUpcomingAssets(frame) {
-        if (!frame?.id || this._disposed) return;
+        if (!frame?.id || this._disposed || !this._preloader) return;
         void this._preloader.warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 4 }).catch(error => {
             console.warn(`${MODULE_ID} | Nearby asset preload failed.`, error);
         });
