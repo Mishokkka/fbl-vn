@@ -324,7 +324,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _warmUpcomingAssets(frame) {
         if (!frame?.id || this._disposed || !this._preloader) return;
-        void this._preloader.warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 4 }).catch(error => {
+        void this._preloader.warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 2 }).catch(error => {
             console.warn(`${MODULE_ID} | Nearby asset preload failed.`, error);
         });
     }
