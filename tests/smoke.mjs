@@ -422,28 +422,51 @@ await queuedCharacterOperation();
 assert.equal(appliedCharacterId, "character-a", "Queued character selection must use the value captured during the change event");
 
 let routingToggleListener = null;
-let routingCommitCount = 0;
+let routingPersistedEnabled = null;
 let routingRenderCount = 0;
 let routingQueued = null;
 const routingToggle = {
   checked: false,
   addEventListener(type, listener) { if (type === "change") routingToggleListener = listener; }
 };
+const routingShell = {
+  counterMode: false,
+  classList: {
+    toggle(name, enabled) {
+      assert.equal(name, "is-counter-routing");
+      routingShell.counterMode = enabled;
+    }
+  }
+};
+const routingDirectFields = { hidden: false };
+const routingConditionalFields = { hidden: true };
 const routingEditor = Object.create(VNEditorApp.prototype);
-routingEditor.element = { querySelector(selector) { return selector === "[name='frame.nextRouting.enabled']" ? routingToggle : null; } };
 routingEditor._enqueueEditorAction = operation => {
   routingQueued = Promise.resolve().then(operation);
   return routingQueued;
 };
-routingEditor._commitFromForm = async () => { routingCommitCount += 1; };
+routingEditor._persistNextRoutingState = async enabled => { routingPersistedEnabled = enabled; };
 routingEditor._renderPendingEditorParts = async () => { routingRenderCount += 1; };
-routingEditor._enableNextRoutingControls({ querySelector(selector) { return selector === "[name='frame.nextRouting.enabled']" ? routingToggle : null; } });
+const routingRoot = {
+  querySelector(selector) {
+    if (selector === "[data-next-routing-shell]") return routingShell;
+    if (selector === "[name='frame.nextRouting.enabled']") return routingToggle;
+    if (selector === "[data-frame-next-fields]") return routingDirectFields;
+    if (selector === "[data-next-routing-fields]") return routingConditionalFields;
+    return null;
+  }
+};
+routingEditor._enableNextRoutingControls(routingRoot);
+assert.equal(routingDirectFields.hidden, false, "Direct next-frame fields must start visible when counter routing is disabled");
+assert.equal(routingConditionalFields.hidden, true, "Counter-routing fields must start hidden when disabled");
 routingToggle.checked = true;
 routingToggleListener();
+assert.equal(routingShell.counterMode, true, "Counter-routing toggle must update the route card locally");
+assert.equal(routingDirectFields.hidden, true, "Direct next-frame fields must hide locally without rerendering the editor");
+assert.equal(routingConditionalFields.hidden, false, "Counter-routing fields must reveal locally without rerendering the editor");
 await routingQueued;
-assert.equal(routingCommitCount, 1, "Counter-routing toggle must persist through the editor action queue");
-assert.equal(routingRenderCount, 1, "Counter-routing toggle must rerender cleanly instead of mutating the panel layout in place");
-assert.equal(routingToggle.checked, true, "Counter-routing rerender must preserve the requested toggle value");
+assert.equal(routingPersistedEnabled, true, "Counter-routing toggle must persist through the editor action queue");
+assert.equal(routingRenderCount, 0, "Counter-routing toggle must not rerender ApplicationV2 parts or resize the editor window");
 
 const positionScene = createScene();
 positionScene.frames[0].portraitPosition = "right";
