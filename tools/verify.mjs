@@ -108,7 +108,10 @@ if (!playerSource.includes("while (this._pendingRemoteFrames.length && !this._di
 if (!playerSource.includes("const failedPaths = results.filter") || !playerSource.includes("await this._preloader.ensurePaths(failedPaths")) errors.push("Critical asset preload must immediately retry transient failures once");
 if (!playerSource.includes("VNPreloader.collectStartupWindowPaths(this.scene") || !playerSource.includes("this._preloader.startBackgroundImages()")) errors.push("Player startup must wait only for entry assets in the critical window and then background-load images");
 if (!playerSource.includes("await this._ensureFrameAssets(frame, nextTextIndex);") || !playerSource.includes("await this._ensureTextBlockAssets(frame, index);") || !playerSource.includes("this._warmUpcomingAssets(frame);")) errors.push("Frame and text transitions must prioritize only immediately required assets while warming nearby content");
-if (!playerSource.includes("await this.render();") || playerSource.indexOf("VNSocket.signalReady(this.scene.id, this.leaderId)") < playerSource.indexOf("await this.render();")) errors.push("Client must finish the loading-state render before signaling ready");
+const preloadInnerBlock = playerSource.match(/async _preloadInner\([\s\S]*?\n\s*async _ensureCriticalPaths/)?.[0] || "";
+const preloadRenderIndex = preloadInnerBlock.indexOf("await this.render();");
+const preloadReadyIndex = preloadInnerBlock.indexOf("VNSocket.signalReady(this.scene.id, this.leaderId)");
+if (preloadRenderIndex < 0 || preloadReadyIndex < 0 || preloadReadyIndex < preloadRenderIndex) errors.push("Client must finish the loading-state render before signaling ready");
 if (!playerSource.includes("this._preloader?.cancel()")) errors.push("Closing the player must cancel further background preload scheduling");
 if (!playerSource.includes("payload.resumeState.visualState?.background") || !playerSource.includes("payload.resumeState.visualState?.portrait") || !playerSource.includes("options.extraPaths || []")) errors.push("Resume preload must include inherited visual-state assets");
 if (!playerTemplateSource.includes("Подготовка стартовых ассетов")) errors.push("Loading UI must describe the bounded startup preload rather than the whole scene");
