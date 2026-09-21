@@ -80,7 +80,7 @@ const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
 const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
 const { AUDIO_ACTIONS, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
-const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } = await import("../scripts/utils/rich-text.js");
+const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
@@ -141,6 +141,8 @@ const formattedBlock = createTextBlock("Hello\nworld");
 assert.equal(formattedBlock.text, "Hello\nworld", "Rich text blocks must retain a plain-text representation");
 assert.equal(formattedBlock.richText, richTextFromPlainText("Hello\nworld"), "Plain text must be migrated into safe rich text");
 assert.equal(richTextToPlainText("<b>Hello</b><br>world"), "Hello\nworld", "Rich text plain-text conversion must preserve line breaks");
+const cursedSample = "A\u0301\u0323B\u0334\u035C";
+assert.deepEqual(splitTextGraphemes(cursedSample), ["A\u0301\u0323", "B\u0334\u035C"], "Typewriter grapheme segmentation must keep combining cursed-text marks attached to their visible letters");
 assert.equal(sanitizeRichTextHtml("<script>alert(1)</script><b>Hello</b>", { fallbackText: "Hello" }).includes("<script"), false, "Rich text sanitizer must never retain script markup");
 nested.id = "frame-nested";
 nested.branchId = branchId;
