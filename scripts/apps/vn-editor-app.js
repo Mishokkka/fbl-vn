@@ -705,17 +705,45 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _enableNextRoutingControls(root = this.element) {
         if (!root) return;
+        const shell = root.querySelector("[data-next-routing-shell]");
         const toggle = root.querySelector("[name='frame.nextRouting.enabled']");
-        if (!toggle) return;
+        const directFields = root.querySelector("[data-frame-next-fields]");
+        const routingFields = root.querySelector("[data-next-routing-fields]");
+        if (!shell || !toggle || !directFields || !routingFields) return;
+
+        const sync = enabled => {
+            shell.classList.toggle("is-counter-routing", enabled);
+            directFields.hidden = enabled;
+            routingFields.hidden = !enabled;
+        };
+
+        sync(toggle.checked === true);
         toggle.addEventListener("change", () => {
             const enabled = toggle.checked === true;
-            void this._enqueueEditorAction(async () => {
-                const liveToggle = this.element?.querySelector("[name='frame.nextRouting.enabled']");
-                if (liveToggle) liveToggle.checked = enabled;
-                await this._commitFromForm();
-                await this._renderPendingEditorParts();
-            });
+            sync(enabled);
+            void this._enqueueEditorAction(() => this._persistNextRoutingState(enabled));
         });
+    }
+
+    async _persistNextRoutingState(enabled) {
+        const original = this.selectedScene;
+        const scene = duplicateData(original);
+        if (!scene) return null;
+        const frame = (scene.frames || []).find(item => item.id === this.selectedFrameId);
+        if (!frame) return scene;
+        const current = frame.nextRouting && typeof frame.nextRouting === "object" ? frame.nextRouting : {};
+        frame.nextRouting = {
+            enabled: enabled === true,
+            counterId: this._readValue("frame.nextRouting.counterId", current.counterId || ""),
+            operator: this._readValue("frame.nextRouting.operator", current.operator || COUNTER_OPERATORS.GTE),
+            value: Number(this._readValue("frame.nextRouting.value", current.value || 0) || 0),
+            trueFrameId: this._readValue("frame.nextRouting.trueFrameId", current.trueFrameId || ""),
+            falseFrameId: this._readValue("frame.nextRouting.falseFrameId", current.falseFrameId || "")
+        };
+        const clean = sanitizeScene(scene);
+        const saved = await VNSceneStore.upsertScene(clean);
+        this.selectedSceneId = saved.id;
+        return saved;
     }
 
     _enableAudioCueControls(root = this.element) {

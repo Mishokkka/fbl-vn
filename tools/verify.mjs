@@ -48,6 +48,7 @@ const editorFrameTemplateSource = read("templates/editor-frame-panel.hbs");
 const playerTemplateSource = read("templates/player.hbs");
 const characterCssSource = read("styles/character-manager.css");
 const editorFormsCssSource = read("styles/editor-forms.css");
+const editorLayoutCssSource = read("styles/editor-layout.css");
 const playerCssSource = read("styles/player.css");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-actions")) errors.push("Player dialogue must contain a fixed action row");
@@ -85,9 +86,12 @@ if (!editorFrameTemplateSource.includes('name="frame.effectCounterId"') || !edit
 if (!editorSource.includes("frameEffectCounterOptions") || !editorSource.includes("frameEffectOperationOptions")) errors.push("Frame editor context must expose counter effect options");
 if (!playerSource.includes("this._applyFrameEffect(frame);") || !playerSource.includes("applyFrameCounterEffect")) errors.push("Player must apply a frame counter effect on frame entry");
 if (!counterManagerSource.includes("frameEffects") || !counterManagerSource.includes("frame.effectCounterId === counterId")) errors.push("Counter manager must count and clear frame counter effects");
-const nextRoutingControlBlock = editorSource.match(/_enableNextRoutingControls\(root = this\.element\)\s*\{([\s\S]*?)\n\s*\}\n\n\s*_enableAudioCueControls/)?.[1] || "";
-if (!nextRoutingControlBlock.includes("_enqueueEditorAction") || !nextRoutingControlBlock.includes("_commitFromForm")) errors.push("Counter-routing toggle must use the editor action queue and persist before rerendering");
-if (/\.hidden\s*=|\.disabled\s*=/.test(nextRoutingControlBlock)) errors.push("Counter-routing toggle must not mutate route field visibility or disabled state in place");
+const nextRoutingControlBlock = editorSource.match(/_enableNextRoutingControls\(root = this\.element\)\s*\{([\s\S]*?)\n\s*\}\n\n\s*async _persistNextRoutingState/)?.[1] || "";
+if (!nextRoutingControlBlock.includes("_enqueueEditorAction") || !nextRoutingControlBlock.includes("_persistNextRoutingState")) errors.push("Counter-routing toggle must persist through the editor action queue");
+if (!nextRoutingControlBlock.includes("directFields.hidden = enabled") || !nextRoutingControlBlock.includes("routingFields.hidden = !enabled")) errors.push("Counter-routing toggle must switch its two field groups locally");
+if (nextRoutingControlBlock.includes("_renderPendingEditorParts") || nextRoutingControlBlock.includes("_renderEditorParts") || nextRoutingControlBlock.includes("_commitFromForm")) errors.push("Counter-routing toggle must not rerender or recommit the ApplicationV2 editor");
+if (!editorSource.includes("async _persistNextRoutingState(enabled)") || !editorSource.includes("await VNSceneStore.upsertScene(clean)")) errors.push("Counter-routing state must persist without a panel rerender");
+if (!/\.fbl-vn-editor\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/.test(editorLayoutCssSource)) errors.push("Editor grid must stay contained inside the ApplicationV2 content area");
 if (!/\.fbl-vn-character-manager\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/.test(characterCssSource)) errors.push("Character manager must constrain its grid so the preset list can scroll");
 if (!/\.fbl-vn-character-list\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/.test(characterCssSource)) errors.push("Character preset list must retain vertical scrolling");
 if (!constantsSource.includes("DATA_SCHEMA_VERSION = 11")) errors.push("Data schema version must be 11");
@@ -161,8 +165,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.0") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.0")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.1") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.1")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
