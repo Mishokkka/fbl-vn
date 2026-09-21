@@ -286,6 +286,32 @@ assert.equal(positionScene.frames[0].portraitPosition, "right", "Applying a char
 VNSceneStore.getCharacter = savedGetCharacter;
 VNSceneStore.upsertScene = savedUpsertScene;
 
+const clearPortraitScene = createScene();
+const clearPortraitEntry = createFrameCharacter({
+  id: "clear-extra",
+  characterId: "clear-character",
+  portraitId: "clear-portrait",
+  name: "Clear Character",
+  portrait: "clear-me.png",
+  portraitPosition: "right"
+});
+clearPortraitScene.frames[0].additionalCharacters.push(clearPortraitEntry);
+const clearPortraitEditor = Object.create(VNEditorApp.prototype);
+clearPortraitEditor.selectedFrameId = clearPortraitScene.frames[0].id;
+clearPortraitEditor._commitFromForm = async () => clearPortraitScene;
+clearPortraitEditor._renderEditorParts = () => {};
+VNSceneStore.getCharacter = () => ({
+  id: "clear-character",
+  name: "Clear Character",
+  portraits: [{ id: "clear-portrait", label: "Main", path: "clear-me.png" }]
+});
+VNSceneStore.upsertScene = async value => value;
+await clearPortraitEditor._applyAdditionalCharacterPortrait("clear-extra", "");
+assert.equal(clearPortraitEntry.portraitId, "", "Choosing no portrait must clear an additional character portrait id");
+assert.equal(clearPortraitEntry.portrait, "", "Choosing no portrait must clear an additional character portrait path");
+VNSceneStore.getCharacter = savedGetCharacter;
+VNSceneStore.upsertScene = savedUpsertScene;
+
 const savedOpenGraph = VNEditorApp._onOpenGraph;
 let headerTargetSeen = null;
 VNEditorApp._onOpenGraph = async (_event, target) => { headerTargetSeen = target; };
@@ -544,6 +570,10 @@ assert.equal(transitionBoundaryContext.frameCharacters.length, 2, "Player contex
 assert.equal(transitionBoundaryContext.frameCharacters[0].name, "Primary");
 assert.equal(transitionBoundaryContext.frameCharacters[1].portraitSrc, "companion.png");
 assert.equal(transitionBoundaryContext.frameCharacters[1].showName, true, "Additional character names must obey their per-character visibility flag");
+transitionBoundaryPlayer.scene.frames[0].textPresentation = TEXT_PRESENTATIONS.CENTER;
+const centeredCharacterContext = await transitionBoundaryPlayer._prepareContext({});
+assert.equal(centeredCharacterContext.frameCharacters[0].showName, false, "Centered text must suppress the primary character name");
+assert.equal(centeredCharacterContext.frameCharacters[1].showName, false, "Centered text must suppress additional character names");
 
 const visualStatePlayer = Object.create(VNPlayerApp.prototype);
 visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portrait.png", portraitPosition: "center" };
