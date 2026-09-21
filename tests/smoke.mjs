@@ -126,8 +126,8 @@ assert.equal(nested.showSpeakerName, true, "New frames must show the primary cha
 assert.deepEqual(nested.additionalCharacters, [], "New frames must start with no additional characters");
 const extraCharacter = createFrameCharacter({ name: "Companion", portrait: "companion.png", portraitPosition: "right" });
 assert.equal(extraCharacter.showName, true, "Additional frame characters must show their names by default");
-nested.additionalCharacters.push(extraCharacter);
-assert.equal(collectAssetPaths({ frames: [nested] }).includes("companion.png"), true, "Additional character portraits must be preloaded");
+scene.frames[0].additionalCharacters.push(extraCharacter);
+assert.equal(collectAssetPaths({ frames: [scene.frames[0]] }).includes("companion.png"), true, "Additional character portraits must be preloaded");
 assert.equal(createCharacterPreset("Left default").defaultPosition, "left", "New character presets must default to the left");
 const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid", transition: "legacy" });
 assert.equal(invalidPositionFrame.portraitPosition, "left", "Invalid portrait positions must sanitize to left");
