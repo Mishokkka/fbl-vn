@@ -11,6 +11,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
     constructor(options = {}) {
         super(options);
         this.editor = options.editor || null;
+        this.expandedCharacterIds = new Set();
     }
 
     async _prepareContext(options) {
@@ -19,6 +20,8 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
             const copy = duplicateData(character);
             copy.portraits = Array.isArray(copy.portraits) ? copy.portraits : [];
             copy.positionOptions = this._positionOptions(copy.defaultPosition);
+            copy.portraitCount = copy.portraits.length;
+            copy.expanded = this.expandedCharacterIds.has(copy.id);
             return copy;
         });
         return Object.assign(context, {
@@ -30,6 +33,37 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
     _positionOptions(selected) {
         const pairs = [["left", "Слева"], ["center", "По центру"], ["right", "Справа"]];
         return pairs.map(pair => ({ value: pair[0], label: pair[1], selected: pair[0] === selected }));
+    }
+
+    _captureExpandedCharacters() {
+        if (!this.element) return;
+        this.expandedCharacterIds = new Set(
+            [...this.element.querySelectorAll("details[data-character-row][open]")]
+                .map(row => row.dataset.characterId)
+                .filter(Boolean)
+        );
+    }
+
+    _attachPartListeners(partId, htmlElement, options) {
+        super._attachPartListeners(partId, htmlElement, options);
+        if (partId !== "main") return;
+
+        for (const row of htmlElement.querySelectorAll("details[data-character-row]")) {
+            row.addEventListener("toggle", () => {
+                const characterId = row.dataset.characterId;
+                if (!characterId) return;
+                if (row.open) this.expandedCharacterIds.add(characterId);
+                else this.expandedCharacterIds.delete(characterId);
+            });
+        }
+
+        for (const input of htmlElement.querySelectorAll("[data-character-name]")) {
+            input.addEventListener("input", () => {
+                const row = input.closest("[data-character-row]");
+                const summaryName = row ? row.querySelector("[data-character-summary-name]") : null;
+                if (summaryName) summaryName.textContent = input.value.trim() || "Без имени";
+            });
+        }
     }
 
     _readCharacters() {
@@ -82,6 +116,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
     static async _onAddCharacter(event, target) {
         event.preventDefault();
         const characters = this._readCharacters();
+        this._captureExpandedCharacters();
         characters.push(createCharacterPreset("Новый персонаж", "Основной", "", "left"));
         await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
@@ -94,7 +129,9 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         const character = characters.find(item => item.id === target.dataset.characterId);
         if (!character) return;
         if (!await confirmDialog(`Удалить пресет «${character.name}»?`, { title: "Удаление персонажа", yes: "Удалить", no: "Отмена" })) return;
+        this._captureExpandedCharacters();
         await VNSceneStore.replaceCharacters(characters.filter(item => item.id !== character.id));
+        this.expandedCharacterIds.delete(character.id);
         this._refreshEditor();
         this.render();
     }
@@ -105,6 +142,8 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         const character = characters.find(item => item.id === target.dataset.characterId);
         if (!character) return;
         character.portraits.push(createCharacterPortrait("Новый портрет", ""));
+        this._captureExpandedCharacters();
+        this.expandedCharacterIds.add(character.id);
         await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
         this.render();
@@ -116,6 +155,8 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         const character = characters.find(item => item.id === target.dataset.characterId);
         if (!character) return;
         character.portraits = character.portraits.filter(portrait => portrait.id !== target.dataset.portraitId);
+        this._captureExpandedCharacters();
+        this.expandedCharacterIds.add(character.id);
         await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
         this.render();

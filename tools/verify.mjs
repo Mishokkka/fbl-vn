@@ -34,9 +34,12 @@ for (const file of walk("scripts", ".js")) {
 }
 
 const editorSource = read("scripts/apps/vn-editor-app.js");
+const characterManagerSource = read("scripts/apps/vn-character-manager-app.js");
 const playerSource = read("scripts/apps/vn-player-app.js");
 const schemaSource = read("scripts/data/schema.js");
+const characterTemplateSource = read("templates/character-manager.hbs");
 const playerTemplateSource = read("templates/player.hbs");
+const characterCssSource = read("styles/character-manager.css");
 const playerCssSource = read("styles/player.css");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-actions")) errors.push("Player dialogue must contain a fixed action row");
@@ -54,6 +57,11 @@ if (!/\.fbl-vn-centered-actions\s*\{[\s\S]*?right:\s*calc\(var\(--vn-dialogue-in
 if (!playerTemplateSource.includes('class="fbl-vn-centered-actions"')) errors.push("Centered text actions wrapper is missing");
 if (!/clean\.transition\s*=\s*\["none",\s*"fade",\s*"dark"\]\.includes\(clean\.transition\)\s*\?\s*clean\.transition\s*:\s*"none"/.test(schemaSource)) errors.push("Frame sanitization must reject unsupported transition values");
 if (!/const transition\s*=\s*frame && \["none",\s*"fade",\s*"dark"\]\.includes\(frame\.transition\)\s*\?\s*frame\.transition\s*:\s*"none"/.test(playerSource)) errors.push("Player must reject unsupported transition classes from raw scene payloads");
+if (!characterManagerSource.includes("this.expandedCharacterIds = new Set()")) errors.push("Character manager must start with every preset collapsed");
+if (!characterManagerSource.includes("copy.expanded = this.expandedCharacterIds.has(copy.id)")) errors.push("Character manager must preserve expanded cards across rerenders");
+if (!characterTemplateSource.includes('<details class="fbl-vn-character-card"') || !characterTemplateSource.includes('<summary class="fbl-vn-character-summary">')) errors.push("Character presets must render as collapsible details/summary cards");
+if (!characterTemplateSource.includes("{{#if expanded}}open{{/if}}")) errors.push("Character preset open state must be conditional rather than always expanded");
+if (!/\.fbl-vn-character-card\[open\] \.fbl-vn-character-chevron\s*\{[\s\S]*?transform:\s*rotate\(90deg\)/.test(characterCssSource)) errors.push("Expanded character cards must expose a visible disclosure state");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
@@ -96,8 +104,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.3.1") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.3.1")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.3.2") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.3.2")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",

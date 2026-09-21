@@ -69,6 +69,7 @@ globalThis.Audio = class {
 };
 globalThis.Image = class {};
 
+const { VNCharacterManagerApp } = await import("../scripts/apps/vn-character-manager-app.js");
 const { VNEditorApp } = await import("../scripts/apps/vn-editor-app.js");
 const { VNGraphApp } = await import("../scripts/apps/vn-graph-app.js");
 const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
@@ -82,6 +83,21 @@ const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } = awa
 const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
+
+const characterManager = new VNCharacterManagerApp();
+assert.equal(characterManager.expandedCharacterIds.size, 0, "Character presets must be collapsed when the manager first opens");
+characterManager.element = {
+  querySelectorAll(selector) {
+    assert.equal(selector, "details[data-character-row][open]");
+    return [
+      { dataset: { characterId: "character-a" } },
+      { dataset: { characterId: "character-b" } }
+    ];
+  }
+};
+characterManager._captureExpandedCharacters();
+assert.deepEqual([...characterManager.expandedCharacterIds], ["character-a", "character-b"], "Expanded character cards must be captured before a manager rerender");
+
 const scene = createScene();
 scene.title = "Smoke";
 const branchId = scene.branches[0].id;

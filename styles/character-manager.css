@@ -29,15 +29,69 @@
 }
 
 .fbl-vn-character-card {
-  display: grid;
-  gap: 8px;
-  padding: 8px;
+  overflow: hidden;
   border: 1px solid var(--vn-border);
   border-radius: var(--vn-radius-md);
   background: var(--vn-surface-1);
 }
 
-.fbl-vn-character-card > header {
+.fbl-vn-character-summary {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fbl-vn-character-summary::-webkit-details-marker {
+  display: none;
+}
+
+.fbl-vn-character-summary:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.fbl-vn-character-summary:focus-visible {
+  outline: 2px solid var(--vn-accent);
+  outline-offset: -2px;
+}
+
+.fbl-vn-character-chevron {
+  color: var(--vn-muted);
+  transition: transform 120ms ease;
+}
+
+.fbl-vn-character-card[open] .fbl-vn-character-chevron {
+  transform: rotate(90deg);
+}
+
+.fbl-vn-character-summary-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vn-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fbl-vn-character-summary-count {
+  color: var(--vn-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.fbl-vn-character-card-body {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--vn-border);
+}
+
+.fbl-vn-character-fields {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(160px, 220px) 34px 34px;
   gap: 6px;
@@ -60,7 +114,7 @@
   background: rgba(0, 0, 0, 0.15);
 }
 
-.fbl-vn-character-card > header > button,
+.fbl-vn-character-fields > button,
 .fbl-vn-portrait-row > button {
   width: 34px;
   min-width: 34px;
@@ -68,7 +122,7 @@
 }
 
 @media (max-width: 700px) {
-  .fbl-vn-character-card > header {
+  .fbl-vn-character-fields {
     grid-template-columns: minmax(0, 1fr) minmax(120px, 180px) 34px 34px;
   }
 
@@ -78,11 +132,19 @@
 }
 
 @media (max-width: 540px) {
-  .fbl-vn-character-card > header {
+  .fbl-vn-character-summary {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .fbl-vn-character-summary-count {
+    grid-column: 2;
+  }
+
+  .fbl-vn-character-fields {
     grid-template-columns: minmax(0, 1fr) 34px 34px;
   }
 
-  .fbl-vn-character-card > header .form-group:nth-child(2) {
+  .fbl-vn-character-fields .form-group:nth-child(2) {
     grid-column: 1 / -1;
     grid-row: 2;
   }
