@@ -89,6 +89,8 @@ if (!/\.fbl-vn-character-manager\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\
 if (!/\.fbl-vn-character-list\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/.test(characterCssSource)) errors.push("Character preset list must retain vertical scrolling");
 if (!constantsSource.includes("DATA_SCHEMA_VERSION = 11")) errors.push("Data schema version must be 11");
 if (!migrationSource.includes("function migrateToV11")) errors.push("Schema v11 migration is missing");
+if (!playerSource.includes("splitTextGraphemes(plainText).length > 900") || !playerSource.includes("splitTextGraphemes(child.data)")) errors.push("Typewriter must count and reveal Unicode grapheme clusters");
+if (!read("scripts/utils/rich-text.js").includes("export function splitTextGraphemes")) errors.push("Shared grapheme segmentation helper is missing");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
