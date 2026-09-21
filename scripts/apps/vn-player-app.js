@@ -391,7 +391,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     _enqueuePlaybackOperation(operation) {
-        const run = this._playbackQueue
+        const previous = this._playbackQueue && typeof this._playbackQueue.then === "function"
+            ? this._playbackQueue
+            : Promise.resolve();
+        const run = previous
             .catch(() => {})
             .then(async () => {
                 if (this._disposed) return;
