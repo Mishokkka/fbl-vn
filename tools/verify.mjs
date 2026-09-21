@@ -35,8 +35,11 @@ for (const file of walk("scripts", ".js")) {
 
 const editorSource = read("scripts/apps/vn-editor-app.js");
 const characterManagerSource = read("scripts/apps/vn-character-manager-app.js");
+const counterManagerSource = read("scripts/apps/vn-counter-manager-app.js");
 const playerSource = read("scripts/apps/vn-player-app.js");
 const schemaSource = read("scripts/data/schema.js");
+const migrationSource = read("scripts/data/migrations.js");
+const constantsSource = read("scripts/utils/constants.js");
 const characterTemplateSource = read("templates/character-manager.hbs");
 const editorFrameTemplateSource = read("templates/editor-frame-panel.hbs");
 const playerTemplateSource = read("templates/player.hbs");
@@ -73,6 +76,19 @@ if (!playerSource.includes("frameCharacters.push")) errors.push("Player context 
 if (!playerSource.includes("frame?.showSpeakerName !== false && !isCenteredText") || !playerSource.includes("character.showName !== false && !isCenteredText")) errors.push("Centered text must suppress all character name badges");
 if (!editorSource.includes('if (!portraitId) {') || !editorSource.includes('entry.portrait = "";')) errors.push("Additional character portrait selection must support clearing the portrait");
 if (!/\.fbl-vn-frame-character-card\s*\{/.test(editorFormsCssSource)) errors.push("Frame character editor cards must be styled");
+if (!schemaSource.includes('effectCounterId: ""') || !schemaSource.includes("export function applyFrameCounterEffect")) errors.push("Frame schema must support counter effects");
+if (!schemaSource.includes("missing-frame-effect-counter")) errors.push("Scene validation must report missing frame-effect counters");
+if (!editorFrameTemplateSource.includes('name="frame.effectCounterId"') || !editorFrameTemplateSource.includes('name="frame.effectOperation"') || !editorFrameTemplateSource.includes('name="frame.effectValue"')) errors.push("Frame editor must expose counter effect controls");
+if (!editorSource.includes("frameEffectCounterOptions") || !editorSource.includes("frameEffectOperationOptions")) errors.push("Frame editor context must expose counter effect options");
+if (!playerSource.includes("this._applyFrameEffect(frame);") || !playerSource.includes("applyFrameCounterEffect")) errors.push("Player must apply a frame counter effect on frame entry");
+if (!counterManagerSource.includes("frameEffects") || !counterManagerSource.includes("frame.effectCounterId === counterId")) errors.push("Counter manager must count and clear frame counter effects");
+const nextRoutingControlBlock = editorSource.match(/_enableNextRoutingControls\(root = this\.element\)\s*\{([\s\S]*?)\n\s*\}\n\n\s*_enableAudioCueControls/)?.[1] || "";
+if (!nextRoutingControlBlock.includes("_enqueueEditorAction") || !nextRoutingControlBlock.includes("_commitFromForm")) errors.push("Counter-routing toggle must use the editor action queue and persist before rerendering");
+if (/\.hidden\s*=|\.disabled\s*=/.test(nextRoutingControlBlock)) errors.push("Counter-routing toggle must not mutate route field visibility or disabled state in place");
+if (!/\.fbl-vn-character-manager\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/.test(characterCssSource)) errors.push("Character manager must constrain its grid so the preset list can scroll");
+if (!/\.fbl-vn-character-list\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/.test(characterCssSource)) errors.push("Character preset list must retain vertical scrolling");
+if (!constantsSource.includes("DATA_SCHEMA_VERSION = 11")) errors.push("Data schema version must be 11");
+if (!migrationSource.includes("function migrateToV11")) errors.push("Schema v11 migration is missing");
 if (/\.fbl-vn-speaker\s*\{[\s\S]*?min-width:\s*180px/.test(playerCssSource)) errors.push("Speaker badge must not retain the old fixed minimum width");
 const expectedEditorParts = ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"];
 const partsBlock = editorSource.match(/VNEditorApp\.PARTS\s*=\s*\{([\s\S]*?)\n\};\s*$/m)?.[1] || "";
@@ -115,8 +131,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.4.0") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.4.0")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.5.0") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.5.0")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
