@@ -386,6 +386,38 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const resolvedVignetteMode = vignetteMode === VIGNETTE_MODES.AUTO
             ? (isCenteredText ? VIGNETTE_MODES.TEXT : VIGNETTE_MODES.SCREEN)
             : vignetteMode;
+        const frameCharacters = [];
+        const primaryName = frame && frame.speaker ? String(frame.speaker) : "";
+        const primaryPortrait = this.visualState.portrait || "";
+        const primaryShowName = Boolean(primaryName) && frame?.showSpeakerName !== false && !isCenteredText;
+        if (primaryPortrait || primaryShowName) {
+            frameCharacters.push({
+                id: "primary",
+                name: primaryName,
+                portraitSrc: primaryPortrait,
+                portraitAlt: primaryName,
+                portraitClass: `portrait-${portraitPosition}`,
+                hasPortrait: Boolean(primaryPortrait),
+                showName: primaryShowName
+            });
+        }
+        for (const character of frame && Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : []) {
+            if (!character || typeof character !== "object") continue;
+            const position = ["left", "center", "right"].includes(character.portraitPosition) ? character.portraitPosition : "right";
+            const name = String(character.name || "");
+            const portrait = String(character.portrait || "");
+            const showName = Boolean(name) && character.showName !== false && !isCenteredText;
+            if (!portrait && !showName) continue;
+            frameCharacters.push({
+                id: String(character.id || ""),
+                name,
+                portraitSrc: portrait,
+                portraitAlt: name,
+                portraitClass: `portrait-${position}`,
+                hasPortrait: Boolean(portrait),
+                showName
+            });
+        }
         return Object.assign(context, {
             scene: this.scene,
             frame,
@@ -407,8 +439,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             portraitAlt: frame && frame.speaker ? frame.speaker : "",
             backgroundSrc: this.visualState.background || "",
             transitionClass: `transition-${transition}`,
-            hasPortrait: Boolean(this.visualState.portrait),
-            hasSpeaker: Boolean(frame && frame.speaker) && !isCenteredText,
+            hasPortrait: frameCharacters.some(character => character.hasPortrait),
+            hasSpeaker: frameCharacters.some(character => character.showName),
+            frameCharacters,
             isCenteredText,
             showScreenVignette: resolvedVignetteMode === VIGNETTE_MODES.SCREEN,
             showTextVignette: resolvedVignetteMode === VIGNETTE_MODES.TEXT,
