@@ -1,5 +1,5 @@
 import { VNSceneStore } from "../data/scene-store.js";
-import { clearFrameReferences, createAudioCue, createChoice, createFrame, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
+import { clearFrameReferences, createAudioCue, createChoice, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { VNPlayerApp } from "./vn-player-app.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
@@ -256,6 +256,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 hasCharacters: characters.length > 0,
                 characterOptions: this._characterOptions(characters, frame ? frame.characterId : ""),
                 characterPortraitOptions: this._characterPortraitOptions(selectedCharacter, frame ? frame.portraitId : ""),
+                additionalFrameCharacters: this._buildAdditionalCharacterViews(frame, characters, state.characterById),
                 selectedTextBlocks,
                 hasMultipleTextBlocks: selectedTextBlocks.length > 1,
                 selectedChoices: this._buildChoiceViews(frame, renderIndex),
@@ -1416,6 +1417,24 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const portraits = character && Array.isArray(character.portraits) ? character.portraits : [];
         for (const portrait of portraits) options.push({ value: portrait.id, label: portrait.label || portrait.path, selected: portrait.id === selected });
         return options;
+    }
+
+    _buildAdditionalCharacterViews(frame, characters, characterById) {
+        const entries = frame && Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : [];
+        return entries.map((entry, index) => {
+            const character = entry.characterId ? characterById.get(entry.characterId) || null : null;
+            return Object.assign({}, entry, {
+                index: index + 2,
+                characterOptions: this._characterOptions(characters, entry.characterId || ""),
+                portraitOptions: this._characterPortraitOptions(character, entry.portraitId || ""),
+                positionOptions: this._options([
+                    ["left", "Слева"],
+                    ["center", "По центру"],
+                    ["right", "Справа"]
+                ], entry.portraitPosition || "right"),
+                portraitInputName: `frame.additionalCharacters.${entry.id}.portrait`
+            });
+        });
     }
 
     _frameTypeLabel(type) {
