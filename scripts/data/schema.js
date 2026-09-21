@@ -347,7 +347,7 @@ export function sanitizeFrame(frame) {
     clean.isFinal = clean.isFinal === true;
     clean.background || (clean.background = "");
     clean.clearBackground = clean.clearBackground === true;
-    clean.transition || (clean.transition = "none");
+    clean.transition = ["none", "fade", "dark"].includes(clean.transition) ? clean.transition : "none";
     clean.characterId || (clean.characterId = "");
     clean.portraitId || (clean.portraitId = "");
     clean.speaker || (clean.speaker = "");
