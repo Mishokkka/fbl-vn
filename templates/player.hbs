@@ -58,24 +58,27 @@
           </div>
         {{/unless}}
 
-        {{#if isCenteredText}}
-          {{#unless showChoices}}
-            {{#if canAdvance}}
-              <button type="button" class="fbl-vn-next {{#if localHasVoted}}is-voted{{/if}}" data-action="next" {{#if localHasVoted}}disabled{{/if}}>
-                {{#if isVoteMode}}
-                  <span data-vote-action-label>{{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}</span>
-                  <span class="fbl-vn-vote-count">{{voteCount}} / {{voteTotal}}</span>
-                {{else}}
-                  Продолжить
-                {{/if}}
-              </button>
-            {{else}}
-              <div class="fbl-vn-wait">Ожидание ведущего</div>
-            {{/if}}
-          {{/unless}}
-        {{/if}}
       </div>
     </div>
+
+    {{#if isCenteredText}}
+      {{#unless showChoices}}
+        <div class="fbl-vn-centered-actions">
+          {{#if canAdvance}}
+            <button type="button" class="fbl-vn-next {{#if localHasVoted}}is-voted{{/if}}" data-action="next" {{#if localHasVoted}}disabled{{/if}}>
+              {{#if isVoteMode}}
+                <span data-vote-action-label>{{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}</span>
+                <span class="fbl-vn-vote-count">{{voteCount}} / {{voteTotal}}</span>
+              {{else}}
+                Продолжить
+              {{/if}}
+            </button>
+          {{else}}
+            <div class="fbl-vn-wait">Ожидание ведущего</div>
+          {{/if}}
+        </div>
+      {{/unless}}
+    {{/if}}
 
     {{#if showChoices}}
       <div class="fbl-vn-choice-overlay">
