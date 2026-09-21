@@ -233,6 +233,15 @@ const startupVoicePaths = VNPreloader.collectStartupWindowPaths(startupVoiceScen
 assert.equal(startupVoicePaths.includes("voice-1.ogg"), true, "Startup preload must include the first immediately playable voice");
 assert.equal(startupVoicePaths.includes("voice-2.ogg"), false, "Startup preload must not block on later voices from the same frame");
 assert.equal(startupVoicePaths.includes("voice-3.ogg"), false, "Startup preload must not block on all long voices from the same frame");
+const voicedNext = createFrame("dialogue");
+voicedNext.id = "voiced-next";
+voicedNext.branchId = voicedFrame.branchId;
+voicedNext.textBlocks = [createTextBlock("Next one"), createTextBlock("Next two")];
+voicedNext.textBlocks[0].voice = "next-voice-1.ogg";
+voicedNext.textBlocks[1].voice = "next-voice-2.ogg";
+voicedFrame.isFinal = false;
+voicedFrame.next = voicedNext.id;
+startupVoiceScene.frames.push(voicedNext);
 const backgroundImages = VNPreloader.collectBackgroundImagePaths(preloadScene);
 assert.equal(backgroundImages.includes("preload-beyond.webp"), true, "Distant images must be eligible for low-priority background preload");
 assert.equal(backgroundImages.some(path => path.endsWith(".ogg")), false, "Long-form audio must not be swept into the whole-scene background preload");
@@ -251,6 +260,14 @@ preloadCalls.length = 0;
 await backgroundController.startBackgroundImages();
 assert.equal(preloadCalls.includes("preload-beyond.webp"), true, "Background preload must eventually warm distant images");
 assert.equal(preloadCalls.some(path => path.endsWith(".ogg")), false, "Background preload must leave distant audio for nearby-frame warming");
+preloadCalls.length = 0;
+const voiceWarmController = new VNPreloadController(startupVoiceScene);
+await voiceWarmController.warmWindow(voicedFrame.id, { depth: 2, maxFrames: 12, concurrency: 4 });
+assert.equal(preloadCalls.includes("voice-1.ogg"), true, "Nearby warming must include the current frame's first voice");
+assert.equal(preloadCalls.includes("voice-2.ogg"), true, "Nearby warming must fill later voices for the current frame in the background");
+assert.equal(preloadCalls.includes("voice-3.ogg"), true, "Nearby warming must fill all remaining voices for the current frame in the background");
+assert.equal(preloadCalls.includes("next-voice-1.ogg"), true, "Nearby warming must include the entry voice of an upcoming frame");
+assert.equal(preloadCalls.includes("next-voice-2.ogg"), false, "Nearby warming must not sweep every long voice from future frames");
 
 let transientAttempts = 0;
 VNPreloader.preloadPath = async path => {
