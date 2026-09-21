@@ -581,25 +581,31 @@ export function getNextFrameId(scene, frame, counterState = {}) {
     return sameBranch[index + 1] ? sameBranch[index + 1].id : null;
 }
 
+export function collectFrameAssetPaths(frame) {
+    const assets = new Set();
+    if (!frame || typeof frame !== "object") return [];
+    if (frame.background) assets.add(frame.background);
+    if (frame.portrait) assets.add(frame.portrait);
+    for (const character of Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : []) {
+        if (character?.portrait) assets.add(character.portrait);
+    }
+    for (const cue of Array.isArray(frame.musicCues) ? frame.musicCues : []) {
+        if (cue.action === AUDIO_ACTIONS.PLAY && cue.src) assets.add(cue.src);
+    }
+    for (const cue of Array.isArray(frame.sfxCues) ? frame.sfxCues : []) {
+        if (cue.action === AUDIO_ACTIONS.PLAY && cue.src) assets.add(cue.src);
+    }
+    for (const block of getFrameTextBlocks(frame)) {
+        if (block.voice) assets.add(block.voice);
+    }
+    return [...assets];
+}
+
 export function collectAssetPaths(scene) {
     const assets = new Set();
     const frames = scene && Array.isArray(scene.frames) ? scene.frames : [];
     for (const frame of frames) {
-        if (frame.background) assets.add(frame.background);
-        if (frame.portrait) assets.add(frame.portrait);
-        for (const character of Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : []) {
-            if (character?.portrait) assets.add(character.portrait);
-        }
-        for (const cue of Array.isArray(frame.musicCues) ? frame.musicCues : []) {
-            if (cue.action === AUDIO_ACTIONS.PLAY && cue.src) assets.add(cue.src);
-        }
-        for (const cue of Array.isArray(frame.sfxCues) ? frame.sfxCues : []) {
-            if (cue.action === AUDIO_ACTIONS.PLAY && cue.src) assets.add(cue.src);
-        }
-        const blocks = getFrameTextBlocks(frame);
-        for (const block of blocks) {
-            if (block.voice) assets.add(block.voice);
-        }
+        for (const path of collectFrameAssetPaths(frame)) assets.add(path);
     }
     return [...assets];
 }
