@@ -387,6 +387,16 @@ assert.equal(migratedFrame.textPresentation, TEXT_PRESENTATIONS.BOX, "Legacy fra
 assert.equal(migratedFrame.vignetteMode, VIGNETTE_MODES.AUTO, "Legacy frames must migrate to automatic vignette behavior");
 assert.equal(migratedFrame.showSpeakerName, true, "Legacy frames must show the primary name after migration");
 assert.deepEqual(migratedFrame.additionalCharacters, [], "Legacy frames must migrate with no additional characters");
+
+const legacyCenteredMigration = migrateData({
+  schemaVersion: 9,
+  version: 3,
+  scenes: [{ id: "legacy-centered", frames: [{ id: "legacy-centered-frame", textPresentation: "center", additionalCharacters: undefined }], frameFolders: [], branches: [] }],
+  assets: [],
+  characters: []
+});
+assert.equal(legacyCenteredMigration.scenes[0].frames[0].showSpeakerName, false, "Schema v10 migration must preserve the old centered-text behavior where speaker names were hidden");
+assert.deepEqual(legacyCenteredMigration.scenes[0].frames[0].additionalCharacters, [], "Schema v10 migration must initialize an empty additional-character list");
 assert.equal(typeof migratedFrame.textBlocks[0].richText, "string", "Legacy text blocks must gain rich text storage");
 assert.equal(migratedFrame.musicCues.length, 1, "Legacy music must migrate into one channel cue");
 assert.equal(migratedFrame.musicCues[0].channel, "music-1");
