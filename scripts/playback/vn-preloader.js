@@ -6,7 +6,7 @@ const PRELOAD_TIMEOUT_MS = 5000;
 const STARTUP_WINDOW_DEPTH = 2;
 const STARTUP_WINDOW_MAX_FRAMES = 12;
 const STARTUP_CONCURRENCY = 6;
-const BACKGROUND_CONCURRENCY = 2;
+const BACKGROUND_CONCURRENCY = 1;
 
 function uniquePaths(paths) {
     return [...new Set((Array.isArray(paths) ? paths : []).filter(path => typeof path === "string" && path))];
