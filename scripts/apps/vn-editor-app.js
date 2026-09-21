@@ -2385,6 +2385,36 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (search) search.value = target.dataset.emptyLabel || "";
     }
 
+    static async _onAddFrameCharacter(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        frame.additionalCharacters = Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : [];
+        const occupied = new Set();
+        if (frame.hidePortrait !== true && frame.portrait) occupied.add(frame.portraitPosition || "left");
+        for (const character of frame.additionalCharacters) {
+            if (character?.portrait) occupied.add(character.portraitPosition || "right");
+        }
+        const portraitPosition = ["right", "left", "center"].find(position => !occupied.has(position)) || "right";
+        frame.additionalCharacters.push(createFrameCharacter({ portraitPosition }));
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["resources", "frames", "framePanel"]);
+    }
+
+    static async _onDeleteFrameCharacter(event, target) {
+        event.preventDefault();
+        const entryId = target.dataset.frameCharacterId || "";
+        if (!entryId) return;
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        frame.additionalCharacters = (Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : [])
+            .filter(character => character.id !== entryId);
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["resources", "frames", "framePanel"]);
+    }
+
     static _onPickAsset(event, target) {
         event.preventDefault();
         const field = target.dataset.field;
@@ -2548,6 +2578,8 @@ VNEditorApp.DEFAULT_OPTIONS = {
         duplicateChoice: queuedEditorAction(VNEditorApp._onDuplicateChoice),
         moveChoice: queuedEditorAction(VNEditorApp._onMoveChoice),
         clearFrameTarget: queuedEditorAction(VNEditorApp._onClearFrameTarget),
+        addFrameCharacter: queuedEditorAction(VNEditorApp._onAddFrameCharacter),
+        deleteFrameCharacter: queuedEditorAction(VNEditorApp._onDeleteFrameCharacter),
         pickAsset: queuedEditorAction(VNEditorApp._onPickAsset),
         saveCharacterPreset: queuedEditorAction(VNEditorApp._onSaveCharacterPreset),
         openCharacterManager: queuedEditorAction(VNEditorApp._onOpenCharacterManager),
