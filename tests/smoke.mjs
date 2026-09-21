@@ -70,6 +70,7 @@ globalThis.Audio = class {
 globalThis.Image = class {};
 
 const { VNCharacterManagerApp } = await import("../scripts/apps/vn-character-manager-app.js");
+const { VNCounterManagerApp } = await import("../scripts/apps/vn-counter-manager-app.js");
 const { VNEditorApp } = await import("../scripts/apps/vn-editor-app.js");
 const { VNGraphApp } = await import("../scripts/apps/vn-graph-app.js");
 const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
@@ -410,6 +411,18 @@ const frameEffect = { effectCounterId: routeCounter.id, effectOperation: COUNTER
 const frameEffectState = applyFrameCounterEffect(frameEffect, { [routeCounter.id]: 1 });
 assert.equal(frameEffectState[routeCounter.id], 3, "Any frame must be able to change a counter when entered");
 assert.equal(resolveFrameNextRouting(nested, frameEffectState).frameId, "frame-root", "Frame effects must be visible to conditional routing after the frame is entered");
+const counterUsageManager = Object.create(VNCounterManagerApp.prototype);
+const frameEffectUsage = counterUsageManager._buildCounterUsage({
+  counters: [routeCounter],
+  frames: [{
+    effectCounterId: routeCounter.id,
+    effectOperation: COUNTER_EFFECTS.ADD,
+    effectValue: 2,
+    choices: [],
+    nextRouting: { enabled: false, counterId: "" }
+  }]
+}).get(routeCounter.id);
+assert.equal(frameEffectUsage.frameEffects, 1, "Counter manager usage must count effects attached directly to frames");
 assert.equal(getFrameReferences(scene, "frame-root").some(ref => ref.type === "counter-true" && ref.frameId === "frame-nested"), true, "Conditional outcomes must be reported as frame references");
 
 const legacyScene = createScene();
@@ -490,7 +503,7 @@ assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
 assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 10, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 11, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
 for (const invalidSchemaVersion of [-1, 7.5, 12]) {
   assert.throws(
