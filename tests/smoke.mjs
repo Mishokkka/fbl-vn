@@ -77,7 +77,8 @@ const { VNPlayerApp } = await import("../scripts/apps/vn-player-app.js");
 const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
-const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
+const { VNPreloadController, VNPreloader } = await import("../scripts/playback/vn-preloader.js");
+const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
 const { AUDIO_ACTIONS, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
@@ -150,6 +151,86 @@ nested.folderId = "folder-b";
 nested.sort = 0;
 scene.frames.push(nested);
 scene.startFrame = "frame-root";
+
+const preloadScene = createScene();
+const preloadRoot = preloadScene.frames[0];
+preloadRoot.id = "preload-root";
+preloadRoot.background = "preload-root.webp";
+preloadRoot.textBlocks[0].voice = "preload-root.ogg";
+preloadRoot.isFinal = false;
+const preloadA = createFrame("dialogue");
+preloadA.id = "preload-a";
+preloadA.branchId = preloadRoot.branchId;
+preloadA.background = "preload-a.webp";
+preloadA.musicCues = [createAudioCue("music", { channel: "score", src: "preload-a.ogg", loop: true })];
+preloadA.next = "preload-deep";
+const preloadB = createFrame("choice");
+preloadB.id = "preload-b";
+preloadB.branchId = preloadRoot.branchId;
+preloadB.background = "preload-b.webp";
+preloadB.choices = [{ id: "preload-choice", text: "Branch", next: "preload-choice-target" }];
+const preloadDeep = createFrame("dialogue");
+preloadDeep.id = "preload-deep";
+preloadDeep.branchId = preloadRoot.branchId;
+preloadDeep.background = "preload-deep.webp";
+preloadDeep.next = "preload-beyond";
+const preloadChoiceTarget = createFrame("dialogue");
+preloadChoiceTarget.id = "preload-choice-target";
+preloadChoiceTarget.branchId = preloadRoot.branchId;
+preloadChoiceTarget.background = "preload-choice.webp";
+const preloadBeyond = createFrame("dialogue");
+preloadBeyond.id = "preload-beyond";
+preloadBeyond.branchId = preloadRoot.branchId;
+preloadBeyond.background = "preload-beyond.webp";
+preloadBeyond.textBlocks[0].voice = "preload-beyond.ogg";
+preloadRoot.nextRouting = {
+  enabled: true,
+  counterId: "preload-counter",
+  operator: "gte",
+  value: 1,
+  trueFrameId: preloadA.id,
+  falseFrameId: preloadB.id
+};
+preloadScene.frames = [preloadRoot, preloadA, preloadB, preloadDeep, preloadChoiceTarget, preloadBeyond];
+preloadScene.startFrame = preloadRoot.id;
+
+assert.deepEqual(
+  VNPreloader.collectWindowFrameIds(preloadScene, preloadRoot.id, { depth: 2, maxFrames: 12 }),
+  ["preload-root", "preload-a", "preload-b", "preload-deep", "preload-choice-target"],
+  "Startup preload must walk nearby direct, conditional, and choice branches without loading the whole scene"
+);
+assert.deepEqual(
+  VNPreloader.collectWindowFrameIds(preloadScene, preloadRoot.id, { depth: 2, maxFrames: 3 }),
+  ["preload-root", "preload-a", "preload-b"],
+  "Startup preload must cap pathological branch fan-out"
+);
+const startupPaths = VNPreloader.collectWindowPaths(preloadScene, preloadRoot.id, { depth: 2, maxFrames: 12 });
+assert.equal(startupPaths.includes("preload-root.webp"), true);
+assert.equal(startupPaths.includes("preload-root.ogg"), true, "Startup window must include audio for immediately reachable frames");
+assert.equal(startupPaths.includes("preload-choice.webp"), true, "Startup window must include assets behind nearby choices");
+assert.equal(startupPaths.includes("preload-beyond.webp"), false, "Startup window must not block on distant frame images");
+assert.equal(startupPaths.includes("preload-beyond.ogg"), false, "Startup window must not block on distant audio");
+assert.deepEqual(collectFrameAssetPaths(preloadRoot).sort(), ["preload-root.ogg", "preload-root.webp"]);
+const backgroundImages = VNPreloader.collectBackgroundImagePaths(preloadScene);
+assert.equal(backgroundImages.includes("preload-beyond.webp"), true, "Distant images must be eligible for low-priority background preload");
+assert.equal(backgroundImages.some(path => path.endsWith(".ogg")), false, "Long-form audio must not be swept into the whole-scene background preload");
+
+const savedPreloadPath = VNPreloader.preloadPath;
+const preloadCalls = [];
+VNPreloader.preloadPath = async path => { preloadCalls.push(path); };
+const preloadController = new VNPreloadController(preloadScene);
+await Promise.all([
+  preloadController.ensurePaths(["preload-root.webp", "preload-a.webp"], { concurrency: 2 }),
+  preloadController.ensurePaths(["preload-a.webp", "preload-b.webp"], { concurrency: 2 })
+]);
+assert.equal(preloadCalls.filter(path => path === "preload-a.webp").length, 1, "Concurrent priority preloads must share one in-flight request per asset");
+const backgroundController = new VNPreloadController(preloadScene);
+preloadCalls.length = 0;
+await backgroundController.startBackgroundImages();
+assert.equal(preloadCalls.includes("preload-beyond.webp"), true, "Background preload must eventually warm distant images");
+assert.equal(preloadCalls.some(path => path.endsWith(".ogg")), false, "Background preload must leave distant audio for nearby-frame warming");
+VNPreloader.preloadPath = savedPreloadPath;
+
 await VNSceneStore.setData({ schemaVersion: 11, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const stored = VNSceneStore.getScene(scene.id);
