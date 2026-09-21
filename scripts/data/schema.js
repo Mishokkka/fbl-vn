@@ -128,6 +128,9 @@ export function createFrame(type = FRAME_TYPES.DIALOGUE) {
         textBlocks: [createTextBlock("")],
         musicCues: [],
         sfxCues: [],
+        effectCounterId: "",
+        effectOperation: COUNTER_EFFECTS.NONE,
+        effectValue: 0,
         next: "",
         nextRouting: createFrameNextRouting(),
         choices: []
@@ -405,6 +408,10 @@ export function sanitizeFrame(frame) {
     delete clean.musicMode;
     delete clean.music;
     delete clean.sfx;
+    clean.effectCounterId || (clean.effectCounterId = "");
+    clean.effectOperation = Object.values(COUNTER_EFFECTS).includes(clean.effectOperation) ? clean.effectOperation : COUNTER_EFFECTS.NONE;
+    clean.effectValue = Math.max(0, normalizeNumber(clean.effectValue, 0));
+    if (!clean.effectCounterId || !clean.effectOperation || !clean.effectValue) clean.effectOperation = COUNTER_EFFECTS.NONE;
     clean.next || (clean.next = "");
     clean.nextRouting = sanitizeFrameNextRouting(clean.nextRouting || clean.sceneRouting);
     delete clean.sceneRouting;
@@ -521,14 +528,22 @@ export function resolveFrameNextRouting(frame, counterState = {}) {
     };
 }
 
-export function applyChoiceCounterEffect(choice, counterState = {}) {
+export function applyCounterEffect(effect, counterState = {}) {
     const next = Object.assign({}, counterState || {});
-    if (!choice || !choice.effectCounterId || !choice.effectOperation) return next;
-    const amount = Math.max(0, normalizeNumber(choice.effectValue, 0));
+    if (!effect || !effect.effectCounterId || !effect.effectOperation) return next;
+    const amount = Math.max(0, normalizeNumber(effect.effectValue, 0));
     if (!amount) return next;
-    const current = normalizeNumber(next[choice.effectCounterId], 0);
-    next[choice.effectCounterId] = choice.effectOperation === COUNTER_EFFECTS.SUBTRACT ? current - amount : current + amount;
+    const current = normalizeNumber(next[effect.effectCounterId], 0);
+    next[effect.effectCounterId] = effect.effectOperation === COUNTER_EFFECTS.SUBTRACT ? current - amount : current + amount;
     return next;
+}
+
+export function applyChoiceCounterEffect(choice, counterState = {}) {
+    return applyCounterEffect(choice, counterState);
+}
+
+export function applyFrameCounterEffect(frame, counterState = {}) {
+    return applyCounterEffect(frame, counterState);
 }
 
 export function getFrame(scene, frameId) {
@@ -777,6 +792,9 @@ export function validateScene(scene) {
         const frame = frames[index];
         const label = getFrameLabel(frame, index);
         const nextRouting = sanitizeFrameNextRouting(frame.nextRouting);
+        if (frame.effectCounterId && !counterIds.has(frame.effectCounterId)) {
+            issues.push(issue(ISSUE_SEVERITY.WARNING, "missing-frame-effect-counter", `В кадре «${label}» указан несуществующий счётчик изменения.`, { frameId: frame.id, field: "frame.effectCounterId" }));
+        }
         if (nextRouting.enabled) {
             if (frame.isFinal) {
                 issues.push(issue(ISSUE_SEVERITY.WARNING, "frame-routing-final", `Кадр «${label}» отмечен финальным, поэтому проверка счётчика для следующего кадра не выполнится.`, { frameId: frame.id, field: "frame.isFinal" }));
