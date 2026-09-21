@@ -366,7 +366,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const isParticipant = !isVoteMode || activeParticipants.includes(game.user.id);
         const canAdvance = this.started && isParticipant && (this.mode !== PLAYER_MODES.GM || this._isLeader());
         const portraitPosition = ["left", "center", "right"].includes(this.visualState.portraitPosition) ? this.visualState.portraitPosition : "left";
-        const transition = frame && frame.transition ? frame.transition : "none";
+        const transition = frame && ["none", "fade", "dark"].includes(frame.transition) ? frame.transition : "none";
         const isChoice = Boolean(frame && frame.type === "choice");
         const isFinal = Boolean(frame && frame.isFinal === true);
         const isLastTextBlock = this.currentTextIndex >= Math.max(0, blocks.length - 1);
