@@ -18,7 +18,7 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
     }
 
     _buildCounterUsage(scene) {
-        const usageById = new Map((scene?.counters || []).map(counter => [counter.id, { choiceConditions: 0, choiceEffects: 0, nextRoutings: 0, total: 0 }]));
+        const usageById = new Map((scene?.counters || []).map(counter => [counter.id, { choiceConditions: 0, choiceEffects: 0, frameEffects: 0, nextRoutings: 0, total: 0 }]));
         for (const frame of scene && Array.isArray(scene.frames) ? scene.frames : []) {
             for (const choice of Array.isArray(frame.choices) ? frame.choices : []) {
                 const conditionUsage = usageById.get(choice.conditionCounterId);
@@ -26,15 +26,17 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
                 const effectUsage = usageById.get(choice.effectCounterId);
                 if (effectUsage) effectUsage.choiceEffects += 1;
             }
+            const frameEffectUsage = usageById.get(frame.effectCounterId);
+            if (frameEffectUsage && frame.effectOperation && Number(frame.effectValue || 0) > 0) frameEffectUsage.frameEffects += 1;
             const routingUsage = frame?.nextRouting?.enabled ? usageById.get(frame.nextRouting.counterId) : null;
             if (routingUsage) routingUsage.nextRoutings += 1;
         }
-        for (const usage of usageById.values()) usage.total = usage.choiceConditions + usage.choiceEffects + usage.nextRoutings;
+        for (const usage of usageById.values()) usage.total = usage.choiceConditions + usage.choiceEffects + usage.frameEffects + usage.nextRoutings;
         return usageById;
     }
 
     _usageForCounter(scene, counterId) {
-        return this._buildCounterUsage(scene).get(counterId) || { choiceConditions: 0, choiceEffects: 0, nextRoutings: 0, total: 0 };
+        return this._buildCounterUsage(scene).get(counterId) || { choiceConditions: 0, choiceEffects: 0, frameEffects: 0, nextRoutings: 0, total: 0 };
     }
 
     async _prepareContext(options) {
@@ -42,10 +44,11 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
         const scene = this._getScene();
         const usageById = this._buildCounterUsage(scene);
         const counters = (scene && Array.isArray(scene.counters) ? scene.counters : []).map((counter, index) => {
-            const usage = usageById.get(counter.id) || { choiceConditions: 0, choiceEffects: 0, nextRoutings: 0, total: 0 };
+            const usage = usageById.get(counter.id) || { choiceConditions: 0, choiceEffects: 0, frameEffects: 0, nextRoutings: 0, total: 0 };
             const usageParts = [];
             if (usage.choiceConditions) usageParts.push(`условия: ${usage.choiceConditions}`);
-            if (usage.choiceEffects) usageParts.push(`эффекты: ${usage.choiceEffects}`);
+            if (usage.choiceEffects) usageParts.push(`эффекты выборов: ${usage.choiceEffects}`);
+            if (usage.frameEffects) usageParts.push(`эффекты кадров: ${usage.frameEffects}`);
             if (usage.nextRoutings) usageParts.push(`условные переходы: ${usage.nextRoutings}`);
             return {
                 ...counter,
@@ -144,6 +147,11 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
             }
         }
         for (const frame of scene.frames || []) {
+            if (frame.effectCounterId === counterId) {
+                frame.effectCounterId = "";
+                frame.effectOperation = COUNTER_EFFECTS.NONE;
+                frame.effectValue = 0;
+            }
             if (frame.nextRouting?.counterId !== counterId) continue;
             frame.nextRouting.enabled = false;
             frame.nextRouting.counterId = "";
