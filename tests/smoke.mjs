@@ -425,9 +425,11 @@ let routingToggleListener = null;
 let routingPersistedEnabled = null;
 let routingRenderCount = 0;
 let routingQueued = null;
+let routingBlurCount = 0;
 const routingToggle = {
   checked: false,
-  addEventListener(type, listener) { if (type === "change") routingToggleListener = listener; }
+  addEventListener(type, listener) { if (type === "change") routingToggleListener = listener; },
+  blur() { routingBlurCount += 1; }
 };
 const routingShell = {
   counterMode: false,
@@ -441,13 +443,26 @@ const routingShell = {
 const routingDirectFields = { hidden: false };
 const routingConditionalFields = { hidden: true };
 const routingEditor = Object.create(VNEditorApp.prototype);
+let routingPositionCaptureCount = 0;
+let routingPositionStabilizeCount = 0;
+const capturedRoutingPosition = { top: 42, left: 55, width: 900, height: 700 };
+routingEditor._captureEditorPosition = () => {
+  routingPositionCaptureCount += 1;
+  return capturedRoutingPosition;
+};
+routingEditor._stabilizeEditorPosition = position => {
+  routingPositionStabilizeCount += 1;
+  assert.equal(position, capturedRoutingPosition);
+};
 routingEditor._enqueueEditorAction = operation => {
   routingQueued = Promise.resolve().then(operation);
   return routingQueued;
 };
 routingEditor._persistNextRoutingState = async enabled => { routingPersistedEnabled = enabled; };
 routingEditor._renderPendingEditorParts = async () => { routingRenderCount += 1; };
+const routingPanel = { scrollTop: 123 };
 const routingRoot = {
+  closest(selector) { return selector === ".fbl-vn-frame-panel" ? routingPanel : null; },
   querySelector(selector) {
     if (selector === "[data-next-routing-shell]") return routingShell;
     if (selector === "[name='frame.nextRouting.enabled']") return routingToggle;
@@ -464,9 +479,25 @@ routingToggleListener();
 assert.equal(routingShell.counterMode, true, "Counter-routing toggle must update the route card locally");
 assert.equal(routingDirectFields.hidden, true, "Direct next-frame fields must hide locally without rerendering the editor");
 assert.equal(routingConditionalFields.hidden, false, "Counter-routing fields must reveal locally without rerendering the editor");
+assert.equal(routingBlurCount, 1, "Counter-routing toggle must release focus before the route block changes height");
+assert.equal(routingPanel.scrollTop, 123, "Counter-routing toggle must preserve frame panel scroll position");
+assert.equal(routingPositionCaptureCount, 1, "Counter-routing toggle must snapshot ApplicationV2 geometry before changing layout");
+assert.equal(routingPositionStabilizeCount, 1, "Counter-routing toggle must restore ApplicationV2 geometry after changing layout");
 await routingQueued;
 assert.equal(routingPersistedEnabled, true, "Counter-routing toggle must persist through the editor action queue");
 assert.equal(routingRenderCount, 0, "Counter-routing toggle must not rerender ApplicationV2 parts or resize the editor window");
+
+const positionLockEditor = Object.create(VNEditorApp.prototype);
+Object.defineProperty(positionLockEditor, "position", { value: { top: 11, left: 22, width: 333, height: 444 }, configurable: true });
+positionLockEditor.element = {
+  getBoundingClientRect() { return { top: 1, left: 2, width: 3, height: 4 }; }
+};
+const capturedPosition = positionLockEditor._captureEditorPosition();
+assert.deepEqual(capturedPosition, { top: 11, left: 22, width: 333, height: 444 }, "Position snapshot must prefer ApplicationV2's current geometry");
+let restoredPosition = null;
+positionLockEditor.setPosition = value => { restoredPosition = value; };
+positionLockEditor._restoreEditorPosition(capturedPosition);
+assert.deepEqual(restoredPosition, capturedPosition, "Position restore must write the exact captured ApplicationV2 geometry");
 
 const positionScene = createScene();
 positionScene.frames[0].portraitPosition = "right";
