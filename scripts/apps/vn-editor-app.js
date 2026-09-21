@@ -949,6 +949,13 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!scene || !frame || !entry || !entry.characterId) return;
         const character = VNSceneStore.getCharacter(entry.characterId);
         if (!character) return;
+        if (!portraitId) {
+            entry.portraitId = "";
+            entry.portrait = "";
+            await VNSceneStore.upsertScene(scene);
+            this._renderEditorParts(["frames", "framePanel"]);
+            return;
+        }
         const portraits = Array.isArray(character.portraits) ? character.portraits : [];
         const portrait = portraits.find(item => item.id === portraitId) || portraits[0] || null;
         if (portrait) {
