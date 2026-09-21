@@ -264,6 +264,7 @@
 }
 
 .fbl-vn-editor .fbl-vn-route-toggle {
+  position: relative;
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -279,11 +280,13 @@
 
 .fbl-vn-editor .fbl-vn-route-toggle input {
   position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .fbl-vn-editor .fbl-vn-route-toggle-box {
