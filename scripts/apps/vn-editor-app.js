@@ -717,11 +717,63 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             routingFields.hidden = !enabled;
         };
 
+        const panel = root.closest?.(".fbl-vn-frame-panel") || null;
+        let pendingPosition = null;
+        let pendingScrollTop = null;
+        const captureBeforeActivation = () => {
+            pendingPosition = this._captureEditorPosition();
+            pendingScrollTop = panel?.scrollTop ?? null;
+        };
+
         sync(toggle.checked === true);
+        toggle.addEventListener("pointerdown", captureBeforeActivation);
         toggle.addEventListener("change", () => {
             const enabled = toggle.checked === true;
+            const position = pendingPosition || this._captureEditorPosition();
+            const scrollTop = pendingScrollTop ?? panel?.scrollTop ?? null;
+            pendingPosition = null;
+            pendingScrollTop = null;
+
+            // Capture pointer activation before the browser focuses the checkbox. Firefox can
+            // otherwise use focus scrolling while the route block changes height and cause the
+            // outer ApplicationV2 position/height to be recalculated.
+            toggle.blur?.();
             sync(enabled);
+            if (panel && scrollTop !== null) panel.scrollTop = scrollTop;
+            this._stabilizeEditorPosition(position);
+
             void this._enqueueEditorAction(() => this._persistNextRoutingState(enabled));
+        });
+    }
+
+    _captureEditorPosition() {
+        const rect = this.element?.getBoundingClientRect?.();
+        const current = this.position || {};
+        const numberOr = (value, fallback) => value !== null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : fallback;
+        return {
+            top: numberOr(current.top, rect?.top),
+            left: numberOr(current.left, rect?.left),
+            width: numberOr(current.width, rect?.width),
+            height: numberOr(current.height, rect?.height)
+        };
+    }
+
+    _restoreEditorPosition(position) {
+        if (!position || typeof this.setPosition !== "function") return;
+        const clean = {};
+        for (const key of ["top", "left", "width", "height"]) {
+            if (Number.isFinite(position[key])) clean[key] = position[key];
+        }
+        if (Object.keys(clean).length) this.setPosition(clean);
+    }
+
+    _stabilizeEditorPosition(position) {
+        this._restoreEditorPosition(position);
+        const raf = globalThis.requestAnimationFrame;
+        if (typeof raf !== "function") return;
+        raf(() => {
+            this._restoreEditorPosition(position);
+            raf(() => this._restoreEditorPosition(position));
         });
     }
 
