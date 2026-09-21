@@ -149,7 +149,6 @@ for (const forbidden of [
 ]) {
   if (editorSource.includes(forbidden)) errors.push(`Queued editor callback still depends on event.currentTarget: ${forbidden}`);
 }
-const socketSource = read("scripts/playback/vn-socket.js");
 if (!/socketMessageHandler\s*=\s*payload\s*=>\s*this\._onMessage\(payload\)/.test(socketSource) || !/game\.socket\.on\(SOCKET_NAME,\s*socketMessageHandler\)/.test(socketSource)) errors.push("Socket listener must consume the module payload as Foundry's single callback argument");
 if (!/const senderId\s*=\s*game\.user\?\.id/.test(socketSource) || !/senderId,\s*\n\s*data/.test(socketSource)) errors.push("Socket payload must publish the current Foundry user id in the module envelope");
 if (/game\.socket\.on\(SOCKET_NAME,\s*\(payload,\s*senderId\)/.test(socketSource)) errors.push("Socket listener still relies on a second callback sender-id argument");
