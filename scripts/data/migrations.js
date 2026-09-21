@@ -47,6 +47,10 @@ export function migrateData(source) {
         migrateToV9(data);
         schemaVersion = 9;
     }
+    if (schemaVersion < 10) {
+        migrateToV10(data);
+        schemaVersion = 10;
+    }
     data.schemaVersion = DATA_SCHEMA_VERSION;
     return data;
 }
@@ -321,6 +325,20 @@ function migrateToV9(data) {
         for (const frame of scene.frames) {
             if (!frame || typeof frame !== "object") continue;
             if (!["auto", "screen", "text", "none"].includes(frame.vignetteMode)) frame.vignetteMode = "auto";
+        }
+    }
+}
+
+
+function migrateToV10(data) {
+    data.scenes = Array.isArray(data.scenes) ? data.scenes : [];
+    for (const scene of data.scenes) {
+        if (!scene || typeof scene !== "object") continue;
+        scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
+        for (const frame of scene.frames) {
+            if (!frame || typeof frame !== "object") continue;
+            if (frame.showSpeakerName === undefined) frame.showSpeakerName = true;
+            if (!Array.isArray(frame.additionalCharacters)) frame.additionalCharacters = [];
         }
     }
 }
