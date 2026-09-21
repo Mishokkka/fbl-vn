@@ -61,52 +61,129 @@
               </label>
             </div>
   
-            <div class="fbl-vn-field-row row-character">
-              <div class="form-group">
-                <label for="fbl-vn-frame-character">Пресет персонажа</label>
-                <select id="fbl-vn-frame-character" name="frame.characterId" data-character-select>
-                  {{#each characterOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
+            <section class="fbl-vn-frame-characters">
+              <header class="fbl-vn-frame-characters-header">
+                <h4>Персонажи в кадре</h4>
+                <div class="fbl-vn-frame-characters-actions">
+                  <button type="button" data-action="addFrameCharacter"><i class="fa-solid fa-plus"></i> Добавить персонажа</button>
+                  <button type="button" data-action="openCharacterManager" title="Редактировать пресеты персонажей" aria-label="Редактировать пресеты персонажей"><i class="fa-solid fa-users-gear"></i></button>
+                </div>
+              </header>
+
+              <div class="fbl-vn-frame-character-list">
+                <article class="fbl-vn-frame-character-card is-primary">
+                  <header>
+                    <strong>Персонаж 1</strong>
+                    <span>Основной</span>
+                    <button type="button" class="fbl-vn-row-icon" data-action="saveCharacterPreset" title="Сохранить текущего говорящего и портрет как пресет персонажа" aria-label="Сохранить пресет персонажа"><i class="fa-solid fa-user-plus"></i></button>
+                  </header>
+
+                  <div class="fbl-vn-field-row row-character">
+                    <div class="form-group">
+                      <label for="fbl-vn-frame-character">Пресет персонажа</label>
+                      <select id="fbl-vn-frame-character" name="frame.characterId" data-character-select>
+                        {{#each characterOptions}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label for="fbl-vn-frame-portrait-preset">Портрет пресета</label>
+                      <select id="fbl-vn-frame-portrait-preset" name="frame.portraitId" data-character-portrait-select>
+                        {{#each characterPortraitOptions}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="fbl-vn-field-row row-frame-character-visual">
+                    <div class="form-group">
+                      <label for="fbl-vn-frame-speaker">Имя</label>
+                      <input id="fbl-vn-frame-speaker" type="text" name="frame.speaker" value="{{selectedFrame.speaker}}" placeholder="Имя персонажа" />
+                    </div>
+                    <div class="form-group path-field">
+                      <label for="fbl-vn-frame-portrait">Портрет / спрайт</label>
+                      <input id="fbl-vn-frame-portrait" type="text" name="frame.portrait" value="{{selectedFrame.portrait}}" placeholder="Путь к изображению. Пусто = оставить предыдущий портрет." />
+                      <button type="button" data-action="pickAsset" data-field="frame.portrait" data-picker-type="image" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                    </div>
+                    <div class="form-group">
+                      <label for="fbl-vn-frame-position">Позиция</label>
+                      <select id="fbl-vn-frame-position" name="frame.portraitPosition">
+                        {{#each positionOptions}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <label class="form-group icon-toggle-field" title="Показывать имя" aria-label="Показывать имя">
+                      <span class="field-label-spacer" aria-hidden="true"></span>
+                      <input type="checkbox" name="frame.showSpeakerName" {{#if selectedFrame.showSpeakerName}}checked{{/if}} />
+                      <span class="icon-toggle"><i class="fa-solid fa-id-badge"></i></span>
+                    </label>
+                    <label class="form-group icon-toggle-field" title="Скрыть портрет" aria-label="Скрыть портрет">
+                      <span class="field-label-spacer" aria-hidden="true"></span>
+                      <input type="checkbox" name="frame.hidePortrait" {{#if selectedFrame.hidePortrait}}checked{{/if}} />
+                      <span class="icon-toggle"><i class="fa-solid fa-user-slash"></i></span>
+                    </label>
+                  </div>
+                </article>
+
+                {{#each additionalFrameCharacters}}
+                  <article class="fbl-vn-frame-character-card" data-additional-character-row data-frame-character-id="{{id}}">
+                    <header>
+                      <strong>Персонаж {{index}}</strong>
+                      <span>{{#if name}}{{name}}{{else}}Дополнительный{{/if}}</span>
+                      <button type="button" class="danger fbl-vn-row-icon" data-action="deleteFrameCharacter" data-frame-character-id="{{id}}" title="Убрать персонажа из кадра" aria-label="Убрать персонажа из кадра"><i class="fa-solid fa-trash"></i></button>
+                    </header>
+
+                    <div class="fbl-vn-field-row row-character">
+                      <div class="form-group">
+                        <label>Пресет персонажа</label>
+                        <select data-frame-character-select>
+                          {{#each characterOptions}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="form-group">
+                        <label>Портрет пресета</label>
+                        <select data-frame-character-portrait-select>
+                          {{#each portraitOptions}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="fbl-vn-field-row row-frame-character-visual">
+                      <div class="form-group">
+                        <label>Имя</label>
+                        <input type="text" data-frame-character-name value="{{name}}" placeholder="Имя персонажа" />
+                      </div>
+                      <div class="form-group path-field">
+                        <label>Портрет / спрайт</label>
+                        <input type="text" name="{{portraitInputName}}" data-frame-character-portrait value="{{portrait}}" placeholder="Путь к изображению" />
+                        <button type="button" data-action="pickAsset" data-field="{{portraitInputName}}" data-picker-type="image" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
+                      </div>
+                      <div class="form-group">
+                        <label>Позиция</label>
+                        <select data-frame-character-position>
+                          {{#each positionOptions}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <label class="form-group icon-toggle-field" title="Показывать имя" aria-label="Показывать имя">
+                        <span class="field-label-spacer" aria-hidden="true"></span>
+                        <input type="checkbox" data-frame-character-show-name {{#if showName}}checked{{/if}} />
+                        <span class="icon-toggle"><i class="fa-solid fa-id-badge"></i></span>
+                      </label>
+                    </div>
+                  </article>
+                {{/each}}
               </div>
-              <div class="form-group">
-                <label for="fbl-vn-frame-portrait-preset">Портрет пресета</label>
-                <select id="fbl-vn-frame-portrait-preset" name="frame.portraitId" data-character-portrait-select>
-                  {{#each characterPortraitOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <button type="button" class="fbl-vn-row-icon unlabeled" data-action="saveCharacterPreset" title="Сохранить текущего говорящего и портрет как пресет персонажа" aria-label="Сохранить пресет персонажа"><i class="fa-solid fa-user-plus"></i></button>
-              <button type="button" class="fbl-vn-row-icon unlabeled" data-action="openCharacterManager" title="Редактировать пресеты персонажей" aria-label="Редактировать пресеты персонажей"><i class="fa-solid fa-users-gear"></i></button>
-            </div>
-  
-            <div class="fbl-vn-field-row row-portrait">
-              <div class="form-group">
-                <label for="fbl-vn-frame-speaker">Говорящий</label>
-                <input id="fbl-vn-frame-speaker" type="text" name="frame.speaker" value="{{selectedFrame.speaker}}" placeholder="Имя персонажа" />
-              </div>
-              <div class="form-group path-field">
-                <label for="fbl-vn-frame-portrait">Портрет / спрайт</label>
-                <input id="fbl-vn-frame-portrait" type="text" name="frame.portrait" value="{{selectedFrame.portrait}}" placeholder="Путь к изображению. Пусто = оставить предыдущий портрет." />
-                <button type="button" data-action="pickAsset" data-field="frame.portrait" data-picker-type="image" title="Выбрать файл" aria-label="Выбрать файл"><i class="fa-solid fa-folder-open"></i></button>
-              </div>
-              <div class="form-group">
-                <label for="fbl-vn-frame-position">Позиция</label>
-                <select id="fbl-vn-frame-position" name="frame.portraitPosition">
-                  {{#each positionOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <label class="form-group icon-toggle-field" title="Скрыть портрет" aria-label="Скрыть портрет">
-                <span class="field-label-spacer" aria-hidden="true"></span>
-                <input type="checkbox" name="frame.hidePortrait" {{#if selectedFrame.hidePortrait}}checked{{/if}} />
-                <span class="icon-toggle"><i class="fa-solid fa-user-slash"></i></span>
-              </label>
-            </div>
-  
+            </section>
+
             <section class="fbl-vn-text-blocks">
               <header>
                 <h4>Текстовые блоки</h4>
