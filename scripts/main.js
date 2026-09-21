@@ -54,7 +54,10 @@ function registerSocketOnce() {
     VNSocket.registerHandlers({
         open: payload => VNPlayerApp.openScene(payload),
         start: payload => VNPlayerApp.startScene(payload.sceneId),
-        advance: payload => VNPlayerApp.advanceScene(payload.sceneId, payload.frameId, payload.textIndex, { choiceId: payload.choiceId || "" }),
+        advance: payload => VNPlayerApp.advanceScene(payload.sceneId, payload.frameId, payload.textIndex, {
+            choiceId: payload.choiceId || "",
+            reenter: payload.reenter === true
+        }),
         close: payload => VNPlayerApp.closeScene(payload.sceneId),
         vote: (payload, senderId) => VNPlayerApp.recordVote(payload, senderId),
         voteState: payload => VNPlayerApp.updateVoteState(payload),
