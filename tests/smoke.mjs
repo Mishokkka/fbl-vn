@@ -489,9 +489,10 @@ assert.equal(routingRenderCount, 0, "Counter-routing toggle must not rerender Ap
 
 const positionLockEditor = Object.create(VNEditorApp.prototype);
 Object.defineProperty(positionLockEditor, "position", { value: { top: 11, left: 22, width: 333, height: 444 }, configurable: true });
-positionLockEditor.element = {
-  getBoundingClientRect() { return { top: 1, left: 2, width: 3, height: 4 }; }
-};
+Object.defineProperty(positionLockEditor, "element", {
+  value: { getBoundingClientRect() { return { top: 1, left: 2, width: 3, height: 4 }; } },
+  configurable: true
+});
 const capturedPosition = positionLockEditor._captureEditorPosition();
 assert.deepEqual(capturedPosition, { top: 11, left: 22, width: 333, height: 444 }, "Position snapshot must prefer ApplicationV2's current geometry");
 let restoredPosition = null;
