@@ -581,9 +581,9 @@ export function getNextFrameId(scene, frame, counterState = {}) {
     return sameBranch[index + 1] ? sameBranch[index + 1].id : null;
 }
 
-export function collectFrameAssetPaths(frame) {
+function collectFrameBaseAssetPaths(frame) {
     const assets = new Set();
-    if (!frame || typeof frame !== "object") return [];
+    if (!frame || typeof frame !== "object") return assets;
     if (frame.background) assets.add(frame.background);
     if (frame.portrait) assets.add(frame.portrait);
     for (const character of Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : []) {
@@ -595,6 +595,19 @@ export function collectFrameAssetPaths(frame) {
     for (const cue of Array.isArray(frame.sfxCues) ? frame.sfxCues : []) {
         if (cue.action === AUDIO_ACTIONS.PLAY && cue.src) assets.add(cue.src);
     }
+    return assets;
+}
+
+export function collectFrameEntryAssetPaths(frame, textIndex = 0) {
+    const assets = collectFrameBaseAssetPaths(frame);
+    const blocks = getFrameTextBlocks(frame);
+    const index = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number.isFinite(Number(textIndex)) ? Number(textIndex) : 0));
+    if (blocks[index]?.voice) assets.add(blocks[index].voice);
+    return [...assets];
+}
+
+export function collectFrameAssetPaths(frame) {
+    const assets = collectFrameBaseAssetPaths(frame);
     for (const block of getFrameTextBlocks(frame)) {
         if (block.voice) assets.add(block.voice);
     }
