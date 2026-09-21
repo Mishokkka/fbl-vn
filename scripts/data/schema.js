@@ -71,6 +71,37 @@ export function createAudioCue(kind = "music", options = {}) {
     };
 }
 
+export function createFrameCharacter(options = {}) {
+    return {
+        id: options.id || randomId("frame-character"),
+        characterId: String(options.characterId || ""),
+        portraitId: String(options.portraitId || ""),
+        name: String(options.name || ""),
+        portrait: String(options.portrait || ""),
+        portraitPosition: ["left", "center", "right"].includes(options.portraitPosition) ? options.portraitPosition : "right",
+        showName: options.showName !== false
+    };
+}
+
+export function sanitizeFrameCharacter(character, usedIds = null) {
+    const source = character !== null && typeof character === "object" && !Array.isArray(character) ? character : {};
+    const clean = duplicateData(source);
+    let id = typeof clean.id === "string" ? clean.id.trim() : "";
+    if (!id || usedIds?.has(id)) {
+        do id = randomId("frame-character");
+        while (usedIds?.has(id));
+    }
+    clean.id = id;
+    usedIds?.add(id);
+    clean.characterId = String(clean.characterId || "");
+    clean.portraitId = String(clean.portraitId || "");
+    clean.name = String(clean.name || "");
+    clean.portrait = String(clean.portrait || "");
+    clean.portraitPosition = ["left", "center", "right"].includes(clean.portraitPosition) ? clean.portraitPosition : "right";
+    clean.showName = clean.showName !== false;
+    return clean;
+}
+
 export function createFrame(type = FRAME_TYPES.DIALOGUE) {
     const base = {
         id: randomId("frame"),
@@ -89,6 +120,8 @@ export function createFrame(type = FRAME_TYPES.DIALOGUE) {
         portrait: "",
         hidePortrait: false,
         portraitPosition: "left",
+        showSpeakerName: true,
+        additionalCharacters: [],
         vignetteMode: VIGNETTE_MODES.NONE,
         textPresentation: TEXT_PRESENTATIONS.BOX,
         text: "",
@@ -354,6 +387,11 @@ export function sanitizeFrame(frame) {
     clean.portrait || (clean.portrait = "");
     clean.hidePortrait = clean.hidePortrait === true;
     clean.portraitPosition = ["left", "center", "right"].includes(clean.portraitPosition) ? clean.portraitPosition : "left";
+    clean.showSpeakerName = clean.showSpeakerName !== false;
+    const frameCharacterIds = new Set();
+    clean.additionalCharacters = Array.isArray(clean.additionalCharacters)
+        ? clean.additionalCharacters.map(character => sanitizeFrameCharacter(character, frameCharacterIds))
+        : [];
     clean.vignetteMode = Object.values(VIGNETTE_MODES).includes(clean.vignetteMode) ? clean.vignetteMode : VIGNETTE_MODES.NONE;
     clean.textPresentation = Object.values(TEXT_PRESENTATIONS).includes(clean.textPresentation) ? clean.textPresentation : TEXT_PRESENTATIONS.BOX;
     clean.text || (clean.text = "");
@@ -534,6 +572,9 @@ export function collectAssetPaths(scene) {
     for (const frame of frames) {
         if (frame.background) assets.add(frame.background);
         if (frame.portrait) assets.add(frame.portrait);
+        for (const character of Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : []) {
+            if (character?.portrait) assets.add(character.portrait);
+        }
         for (const cue of Array.isArray(frame.musicCues) ? frame.musicCues : []) {
             if (cue.action === AUDIO_ACTIONS.PLAY && cue.src) assets.add(cue.src);
         }
