@@ -890,6 +890,68 @@ assert.ok(graphData.edges.length >= 2);
 assert.equal(graphData.edges.some(edge => edge.label === "Если да"), true, "Graph must show the true conditional edge");
 assert.equal(graphData.edges.some(edge => edge.label === "Если нет"), true, "Graph must show the false conditional edge");
 
+let compactToggleListener = null;
+let compactToggleRenderCount = 0;
+const compactToggle = {
+  checked: false,
+  dataset: {},
+  addEventListener(type, listener) {
+    if (type === "change") compactToggleListener = listener;
+  }
+};
+const toggleGraph = Object.create(VNGraphApp.prototype);
+toggleGraph.hideLinearFrames = false;
+toggleGraph.render = () => { compactToggleRenderCount += 1; };
+Object.defineProperty(toggleGraph, "element", {
+  value: {
+    querySelector(selector) {
+      return selector === "[data-compact-toggle]" ? compactToggle : null;
+    }
+  },
+  configurable: true
+});
+toggleGraph._bindGraphControls();
+assert.equal(typeof compactToggleListener, "function", "Compact graph toggle must bind directly to the checkbox change event");
+compactToggle.checked = true;
+compactToggleListener({ currentTarget: compactToggle });
+assert.equal(toggleGraph.hideLinearFrames, true, "Compact graph toggle must read the checkbox state from the change event");
+assert.equal(compactToggleRenderCount, 1, "Compact graph toggle must rerender after changing mode");
+
+const layoutFrames = [
+  { id: "layout-a0", branchId: "layout-a" },
+  { id: "layout-a1", branchId: "layout-a" },
+  { id: "layout-b0", branchId: "layout-b" },
+  { id: "layout-b1", branchId: "layout-b" }
+];
+const layoutOutgoing = new Map([
+  ["layout-a0", [{ targetId: "layout-a1" }]],
+  ["layout-a1", [{ targetId: "layout-b0" }]],
+  ["layout-b0", [{ targetId: "layout-b1" }]],
+  ["layout-b1", [{ targetId: "layout-a1" }]]
+]);
+const layoutScene = {
+  startFrame: "layout-a0",
+  branches: [
+    { id: "layout-a", name: "A" },
+    { id: "layout-b", name: "B" }
+  ]
+};
+const cycleAwareLevels = graph._calculateLevels(layoutScene, layoutFrames, layoutOutgoing);
+assert.equal(cycleAwareLevels.get("layout-a0"), 0, "Layout must place the acyclic entry before a cross-branch cycle");
+assert.equal(cycleAwareLevels.get("layout-a1"), 1, "Cycle members must receive deterministic consecutive ranks");
+assert.equal(cycleAwareLevels.get("layout-b0"), 2, "Cross-branch cycle ranking must remain deterministic");
+assert.equal(cycleAwareLevels.get("layout-b1"), 3, "The final cycle member must receive the final local rank");
+const cycleAwarePositions = graph._calculateAutoPositions(layoutScene, layoutFrames, layoutOutgoing);
+assert.equal(cycleAwarePositions.get("layout-a0").y, cycleAwarePositions.get("layout-a1").y, "Frames in the same branch should remain in the same vertical lane when they do not collide");
+assert.ok(cycleAwarePositions.get("layout-b0").y > cycleAwarePositions.get("layout-a1").y, "Different branches must be separated into vertical lanes");
+assert.equal(new Set([...cycleAwarePositions.values()].map(position => `${position.x}:${position.y}`)).size, layoutFrames.length, "Auto-layout must not overlap nodes in the cross-branch cycle fixture");
+const forwardRoute = graph._pathFromPoints({ x: 28, y: 28, w: 250, h: 104 }, { x: 358, y: 28, w: 250, h: 104 }, 0);
+assert.equal(forwardRoute.isReturn, false, "Forward graph edges must use the normal left-to-right route");
+assert.match(forwardRoute.path, / H .* V .* H /, "Forward graph edges must use bounded orthogonal routing");
+const returnRoute = graph._pathFromPoints({ x: 1018, y: 242, w: 250, h: 104 }, { x: 358, y: 28, w: 250, h: 104 }, 0);
+assert.equal(returnRoute.isReturn, true, "Backward cross-branch edges must be recognized as return edges");
+assert.match(returnRoute.path, / H .* V .* H /, "Return edges must use the dedicated right-side routing lane");
+
 const compactConditional = createScene();
 const compactBranch = compactConditional.branches[0];
 compactBranch.id = "compact-main";
