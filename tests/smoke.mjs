@@ -889,6 +889,99 @@ assert.equal(graphData.visibleFrameCount, 2);
 assert.ok(graphData.edges.length >= 2);
 assert.equal(graphData.edges.some(edge => edge.label === "Если да"), true, "Graph must show the true conditional edge");
 assert.equal(graphData.edges.some(edge => edge.label === "Если нет"), true, "Graph must show the false conditional edge");
+
+const compactConditional = createScene();
+const compactBranch = compactConditional.branches[0];
+compactBranch.id = "compact-main";
+const compactStart = compactConditional.frames[0];
+compactStart.id = "compact-start";
+compactStart.branchId = compactBranch.id;
+compactStart.isFinal = false;
+compactStart.next = "";
+const compactGate = createFrame("dialogue");
+compactGate.id = "compact-gate";
+compactGate.branchId = compactBranch.id;
+compactGate.isFinal = false;
+compactGate.nextRouting = {
+  enabled: true,
+  counterId: "counter-compact",
+  operator: "gte",
+  value: 1,
+  trueFrameId: "compact-yes",
+  falseFrameId: "compact-no"
+};
+const compactYes = createFrame("dialogue");
+compactYes.id = "compact-yes";
+compactYes.branchId = compactBranch.id;
+compactYes.isFinal = true;
+const compactNo = createFrame("dialogue");
+compactNo.id = "compact-no";
+compactNo.branchId = compactBranch.id;
+compactNo.isFinal = true;
+compactConditional.frames = [compactStart, compactGate, compactYes, compactNo];
+compactConditional.startFrame = compactStart.id;
+graph.hideLinearFrames = true;
+const compactConditionalGraph = graph._buildGraph(compactConditional);
+assert.equal(compactConditionalGraph.nodes.some(node => node.id === compactGate.id && !node.isVirtual), true, "Compact graph must keep counter-routing branch points visible");
+assert.equal(compactConditionalGraph.nodes.some(node => node.isBroken), false, "A valid hidden counter-routing frame must never become a broken-link node");
+assert.equal(compactConditionalGraph.edges.some(edge => edge.sourceId === compactGate.id && edge.label === "Если да" && edge.targetId === compactYes.id), true, "Compact graph must retain the true edge after a counter-routing branch point");
+assert.equal(compactConditionalGraph.edges.some(edge => edge.sourceId === compactGate.id && edge.label === "Если нет" && edge.targetId === compactNo.id), true, "Compact graph must retain the false edge after a counter-routing branch point");
+
+const compactCrossBranch = createScene();
+const compactBranchA = compactCrossBranch.branches[0];
+compactBranchA.id = "cross-a";
+const compactBranchB = { id: "cross-b", name: "Cross B", sort: 1000 };
+compactCrossBranch.branches.push(compactBranchB);
+const crossStart = compactCrossBranch.frames[0];
+crossStart.id = "cross-start";
+crossStart.branchId = compactBranchA.id;
+crossStart.isFinal = false;
+crossStart.next = "cross-entry";
+const crossEntry = createFrame("dialogue");
+crossEntry.id = "cross-entry";
+crossEntry.branchId = compactBranchB.id;
+crossEntry.isFinal = false;
+crossEntry.next = "";
+const crossEnd = createFrame("dialogue");
+crossEnd.id = "cross-end";
+crossEnd.branchId = compactBranchB.id;
+crossEnd.isFinal = true;
+compactCrossBranch.frames = [crossStart, crossEntry, crossEnd];
+compactCrossBranch.startFrame = crossStart.id;
+const compactCrossBranchGraph = graph._buildGraph(compactCrossBranch);
+assert.equal(compactCrossBranchGraph.nodes.some(node => node.id === crossEntry.id && !node.isVirtual), true, "Compact graph must keep the destination side of a cross-branch transition visible");
+assert.equal(compactCrossBranchGraph.nodes.some(node => node.isBroken), false, "A valid cross-branch transition must not render as a broken link");
+assert.equal(compactCrossBranchGraph.edges.some(edge => edge.sourceId === crossStart.id && edge.targetId === crossEntry.id && !edge.isBroken), true, "Compact graph must preserve the actual cross-branch hand-off edge");
+
+const compactChoiceCondition = createScene();
+const compactChoiceBranch = compactChoiceCondition.branches[0];
+compactChoiceBranch.id = "choice-condition-a";
+const compactChoiceTargetBranch = { id: "choice-condition-b", name: "Choice target", sort: 1000 };
+compactChoiceCondition.branches.push(compactChoiceTargetBranch);
+const conditionedChoice = compactChoiceCondition.frames[0];
+conditionedChoice.id = "conditioned-choice";
+conditionedChoice.branchId = compactChoiceBranch.id;
+conditionedChoice.type = "choice";
+conditionedChoice.isFinal = false;
+conditionedChoice.choices = [{
+  id: "conditioned-option",
+  text: "Доступно по счётчику",
+  next: "conditioned-target",
+  conditionCounterId: "condition-counter",
+  conditionOperator: "gte",
+  conditionValue: 1
+}];
+const conditionedTarget = createFrame("dialogue");
+conditionedTarget.id = "conditioned-target";
+conditionedTarget.branchId = compactChoiceTargetBranch.id;
+conditionedTarget.isFinal = true;
+compactChoiceCondition.frames = [conditionedChoice, conditionedTarget];
+compactChoiceCondition.startFrame = conditionedChoice.id;
+const compactChoiceConditionGraph = graph._buildGraph(compactChoiceCondition);
+assert.equal(compactChoiceConditionGraph.nodes.some(node => node.isBroken), false, "Choice availability conditions must not turn a valid target into a broken graph link");
+assert.equal(compactChoiceConditionGraph.edges.some(edge => edge.sourceId === conditionedChoice.id && edge.targetId === conditionedTarget.id && edge.isChoice), true, "Choice availability metadata must preserve the choice target edge");
+
+graph.hideLinearFrames = false;
 const cycleFrames = [{ id: "cycle-a" }, { id: "cycle-b" }];
 const cycleOutgoing = new Map([
   ["cycle-a", [{ targetId: "cycle-b" }]],
