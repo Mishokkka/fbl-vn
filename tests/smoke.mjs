@@ -890,6 +890,127 @@ assert.ok(graphData.edges.length >= 2);
 assert.equal(graphData.edges.some(edge => edge.label === "Если да"), true, "Graph must show the true conditional edge");
 assert.equal(graphData.edges.some(edge => edge.label === "Если нет"), true, "Graph must show the false conditional edge");
 
+let compactToggleListener = null;
+let compactToggleRenderCount = 0;
+const compactToggle = {
+  checked: false,
+  dataset: {},
+  addEventListener(type, listener) {
+    if (type === "change") compactToggleListener = listener;
+  }
+};
+const toggleGraph = Object.create(VNGraphApp.prototype);
+toggleGraph.hideLinearFrames = false;
+toggleGraph.render = () => { compactToggleRenderCount += 1; };
+Object.defineProperty(toggleGraph, "element", {
+  value: {
+    querySelector(selector) {
+      return selector === "[data-compact-toggle]" ? compactToggle : null;
+    }
+  },
+  configurable: true
+});
+toggleGraph._bindGraphControls();
+assert.equal(typeof compactToggleListener, "function", "Compact graph toggle must bind directly to the checkbox change event");
+compactToggle.checked = true;
+compactToggleListener({ currentTarget: compactToggle });
+assert.equal(toggleGraph.hideLinearFrames, true, "Compact graph toggle must read the checkbox state from the change event");
+assert.equal(compactToggleRenderCount, 1, "Compact graph toggle must rerender after changing mode");
+
+const compactLinearScene = createScene();
+const compactLinearBranch = compactLinearScene.branches[0];
+compactLinearBranch.id = "compact-linear";
+const compactLinearStart = compactLinearScene.frames[0];
+compactLinearStart.id = "compact-linear-start";
+compactLinearStart.branchId = compactLinearBranch.id;
+compactLinearStart.isFinal = false;
+compactLinearStart.next = "";
+const compactLinearMiddle = createFrame("dialogue");
+compactLinearMiddle.id = "compact-linear-middle";
+compactLinearMiddle.branchId = compactLinearBranch.id;
+compactLinearMiddle.isFinal = false;
+compactLinearMiddle.next = "";
+const compactLinearEnd = createFrame("dialogue");
+compactLinearEnd.id = "compact-linear-end";
+compactLinearEnd.branchId = compactLinearBranch.id;
+compactLinearEnd.isFinal = true;
+compactLinearScene.frames = [compactLinearStart, compactLinearMiddle, compactLinearEnd];
+compactLinearScene.startFrame = compactLinearStart.id;
+graph.hideLinearFrames = true;
+const compactLinearGraph = graph._buildGraph(compactLinearScene);
+assert.equal(compactLinearGraph.visibleFrameCount, 2, "Compact mode must actually remove a purely linear intermediate frame");
+assert.equal(compactLinearGraph.nodes.some(node => node.id === compactLinearMiddle.id), false, "Compact mode must not render the hidden linear frame");
+assert.equal(compactLinearGraph.edges.some(edge => edge.sourceId === compactLinearStart.id && edge.targetId === compactLinearEnd.id && !edge.isBroken), true, "Compact mode must bridge across hidden linear frames");
+
+graph.hideLinearFrames = false;
+
+const layoutFrames = [
+  { id: "layout-a0", branchId: "layout-a" },
+  { id: "layout-a1", branchId: "layout-a" },
+  { id: "layout-b0", branchId: "layout-b" },
+  { id: "layout-b1", branchId: "layout-b" }
+];
+const layoutOutgoing = new Map([
+  ["layout-a0", [{ targetId: "layout-a1" }]],
+  ["layout-a1", [{ targetId: "layout-b0" }]],
+  ["layout-b0", [{ targetId: "layout-b1" }]],
+  ["layout-b1", [{ targetId: "layout-a1" }]]
+]);
+const layoutScene = {
+  startFrame: "layout-a0",
+  branches: [
+    { id: "layout-a", name: "A" },
+    { id: "layout-b", name: "B" }
+  ]
+};
+const cycleAwareLevels = graph._calculateLevels(layoutScene, layoutFrames, layoutOutgoing);
+assert.equal(cycleAwareLevels.get("layout-a0"), 0, "Layout must place the acyclic entry before a cross-branch cycle");
+assert.equal(cycleAwareLevels.get("layout-a1"), 1, "Cycle members must receive deterministic consecutive ranks");
+assert.equal(cycleAwareLevels.get("layout-b0"), 2, "Cross-branch cycle ranking must remain deterministic");
+assert.equal(cycleAwareLevels.get("layout-b1"), 3, "The final cycle member must receive the final local rank");
+const cycleAwarePositions = graph._calculateAutoPositions(layoutScene, layoutFrames, layoutOutgoing);
+assert.equal(cycleAwarePositions.get("layout-a0").y, cycleAwarePositions.get("layout-a1").y, "Frames in the same branch should remain in the same vertical lane when they do not collide");
+assert.ok(cycleAwarePositions.get("layout-b0").y > cycleAwarePositions.get("layout-a1").y, "Different branches must be separated into vertical lanes");
+assert.equal(new Set([...cycleAwarePositions.values()].map(position => `${position.x}:${position.y}`)).size, layoutFrames.length, "Auto-layout must not overlap nodes in the cross-branch cycle fixture");
+const forwardRoute = graph._pathFromPoints({ x: 28, y: 28, w: 250, h: 104 }, { x: 358, y: 28, w: 250, h: 104 }, 0);
+assert.equal(forwardRoute.isReturn, false, "Forward graph edges must use the normal left-to-right route");
+assert.match(forwardRoute.path, / H .* V .* H /, "Forward graph edges must use bounded orthogonal routing");
+const returnRoute = graph._pathFromPoints({ x: 1018, y: 242, w: 250, h: 104 }, { x: 358, y: 28, w: 250, h: 104 }, 0);
+assert.equal(returnRoute.isReturn, true, "Backward cross-branch edges must be recognized as return edges");
+assert.match(returnRoute.path, / H .* V .* H /, "Return edges must use the dedicated right-side routing lane");
+
+const returnFanScene = createScene();
+const returnFanBranch = returnFanScene.branches[0];
+returnFanBranch.id = "return-fan";
+const returnFanStart = returnFanScene.frames[0];
+returnFanStart.id = "return-fan-start";
+returnFanStart.branchId = returnFanBranch.id;
+returnFanStart.isFinal = false;
+returnFanStart.next = "return-fan-choice";
+const returnFanChoice = createFrame("choice");
+returnFanChoice.id = "return-fan-choice";
+returnFanChoice.branchId = returnFanBranch.id;
+returnFanChoice.type = "choice";
+returnFanChoice.isFinal = false;
+returnFanChoice.choices = Array.from({ length: 14 }, (_, index) => ({
+  id: `return-fan-choice-${index}`,
+  text: `Назад ${index + 1}`,
+  next: returnFanStart.id
+}));
+returnFanScene.frames = [returnFanStart, returnFanChoice];
+returnFanScene.startFrame = returnFanStart.id;
+graph.hideLinearFrames = false;
+const returnFanGraph = graph._buildGraph(returnFanScene);
+const returnFanEdges = returnFanGraph.edges.filter(edge => edge.sourceId === returnFanChoice.id && edge.isReturn);
+assert.equal(returnFanEdges.length, 14, "Return-fan fixture must create all 14 backward choice edges");
+const widestReturnEdge = returnFanEdges.reduce((widest, edge) => edge.sourceIndex > widest.sourceIndex ? edge : widest, returnFanEdges[0]);
+const returnFanSource = returnFanGraph.nodes.find(node => node.id === returnFanChoice.id);
+const returnFanTarget = returnFanGraph.nodes.find(node => node.id === returnFanStart.id);
+const widestReturnRoute = graph._pathFromPoints(returnFanSource, returnFanTarget, widestReturnEdge.sourceIndex);
+const widestReturnX = Math.max(returnFanSource.x + returnFanSource.w, returnFanTarget.x + returnFanTarget.w) + 42 + widestReturnEdge.sourceIndex * 16;
+assert.equal(widestReturnRoute.isReturn, true, "Widest fan edge must use return routing");
+assert.ok(returnFanGraph.canvasWidth >= widestReturnX + 150, "Canvas must reserve enough right-side gutter for high-index return lanes and their labels");
+
 const compactConditional = createScene();
 const compactBranch = compactConditional.branches[0];
 compactBranch.id = "compact-main";

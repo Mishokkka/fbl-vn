@@ -46,10 +46,12 @@ const migrationSource = read("scripts/data/migrations.js");
 const constantsSource = read("scripts/utils/constants.js");
 const characterTemplateSource = read("templates/character-manager.hbs");
 const editorFrameTemplateSource = read("templates/editor-frame-panel.hbs");
+const graphTemplateSource = read("templates/graph.hbs");
 const playerTemplateSource = read("templates/player.hbs");
 const characterCssSource = read("styles/character-manager.css");
 const editorFormsCssSource = read("styles/editor-forms.css");
 const editorLayoutCssSource = read("styles/editor-layout.css");
+const graphCssSource = read("styles/graph.css");
 const playerCssSource = read("styles/player.css");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-actions")) errors.push("Player dialogue must contain a fixed action row");
@@ -92,6 +94,12 @@ if (!graphSource.includes("const isBranchPoint = links.length !== 1 || links.som
 const crossBranchPromotionBlock = graphSource.match(/if\s*\(\(frame\.branchId\s*\|\|\s*""\)\s*!==\s*\(target\.branchId\s*\|\|\s*""\)\)\s*\{([^}]*)\}/)?.[1] || "";
 if (!/visible\.add\(frame\.id\);/.test(crossBranchPromotionBlock) || !/visible\.add\(target\.id\);/.test(crossBranchPromotionBlock)) errors.push("Compact graph must preserve both source and target of the same cross-branch hand-off");
 if (!graphSource.includes("Defensive closure") || !graphSource.includes("this._resolveVisibleTarget(link.targetId, visible, outgoing, frameMap)")) errors.push("Compact graph must promote valid hidden resolver stops instead of rendering them as broken links");
+if (!graphTemplateSource.includes("data-compact-toggle") || graphTemplateSource.includes('data-action="toggleLinearFrames"')) errors.push("Compact graph checkbox must use a direct change listener instead of ApplicationV2 action dispatch");
+if (!graphSource.includes('_bindGraphControls()') || !graphSource.includes('toggle.addEventListener("change"') || !graphSource.includes("input?.checked === true")) errors.push("Compact graph toggle must read the checkbox state from a change event");
+if (!graphSource.includes("Kosaraju with explicit stacks") || !graphSource.includes("componentById") || !graphSource.includes("componentEdges") || !graphSource.includes("_calculateAutoPositions")) errors.push("Graph auto-layout must use cycle-aware component ranking and branch lanes");
+if (!graphSource.includes("RETURN_EDGE_GAP") || !graphSource.includes("const isReturn = targetLeft <= sourceRight + 18") || !graphSource.includes(" H ") || !graphSource.includes(" V ")) errors.push("Graph edges must use bounded orthogonal routing with a dedicated return lane");
+if (!graphSource.includes("let maxReturnIndex = 0") || !graphSource.includes("if (edge.isReturn) maxReturnIndex = Math.max(maxReturnIndex, edge.sourceIndex || 0)") || !graphSource.includes("maxReturnIndex * 16 + 150")) errors.push("Graph canvas must reserve enough width for high-index return lanes");
+if (!graphTemplateSource.includes("{{#if isReturn}}is-return{{/if}}") || !/\.graph-edge\.is-return\s*\{/.test(graphCssSource)) errors.push("Return edges must expose a distinct graph class");
 const nextRoutingControlBlock = editorSource.match(/_enableNextRoutingControls\(root = this\.element\)\s*\{([\s\S]*?)\n\s*\}\n\n\s*async _persistNextRoutingState/)?.[1] || "";
 if (!nextRoutingControlBlock.includes("_enqueueEditorAction") || !nextRoutingControlBlock.includes("_persistNextRoutingState")) errors.push("Counter-routing toggle must persist through the editor action queue");
 if (!nextRoutingControlBlock.includes("directFields.hidden = enabled") || !nextRoutingControlBlock.includes("routingFields.hidden = !enabled")) errors.push("Counter-routing toggle must switch its two field groups locally");
@@ -176,8 +184,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.5") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.5")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.6") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.6")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",

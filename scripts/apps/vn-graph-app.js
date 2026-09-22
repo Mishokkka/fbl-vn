@@ -9,6 +9,8 @@ const NODE_W = 250;
 const NODE_H = 104;
 const COL_W = 330;
 const ROW_H = 142;
+const BRANCH_GAP = 72;
+const RETURN_EDGE_GAP = 42;
 const PAD_X = 28;
 const PAD_Y = 28;
 
@@ -93,71 +95,62 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
         }
 
-        const levels = this._calculateLevels(scene, visibleFrames, outgoing);
-        const buckets = new Map();
-        for (const frame of visibleFrames) {
-            const level = levels.has(frame.id) ? levels.get(frame.id) : 0;
-            if (!buckets.has(level)) buckets.set(level, []);
-            buckets.get(level).push(frame.id);
-        }
-
+        const autoPositions = this._calculateAutoPositions(scene, visibleFrames, outgoing);
         const graphPositions = scene && scene.graphPositions && typeof scene.graphPositions === "object" ? scene.graphPositions : {};
         const nodes = [];
         const nodeInfo = new Map();
-        const sortedLevels = [...buckets.keys()].sort((a, b) => a - b);
-        for (const level of sortedLevels) {
-            const ids = buckets.get(level);
-            for (let row = 0; row < ids.length; row += 1) {
-                const id = ids[row];
-                const record = frameMap.get(id);
-                if (!record) continue;
-                const frame = record.frame;
-                const textLine = this._compactLine(frameDisplayName(frame), "Без текста");
-                const speakerLine = this._compactLine(frame.speaker || "Без говорящего", "Без говорящего");
-                const backgroundLine = this._compactLine(frame.background || "Фон не задан", "Фон не задан");
-                const stored = graphPositions[frame.id] || null;
-                const x = stored && Number.isFinite(Number(stored.x)) ? Number(stored.x) : PAD_X + level * COL_W;
-                const y = stored && Number.isFinite(Number(stored.y)) ? Number(stored.y) : PAD_Y + row * ROW_H;
-                const node = {
-                    id: frame.id,
-                    domId: this._domId(frame.id),
-                    index: record.index + 1,
-                    title: textLine,
-                    textLine,
-                    speakerLine,
-                    backgroundLine,
-                    type: frame.type,
-                    isStart: scene && scene.startFrame === frame.id,
-                    isUnreachable: scene && frame.id !== scene.startFrame && (incoming.has(frame.id) ? incoming.get(frame.id) : 0) === 0 && (rawIncoming.has(frame.id) ? rawIncoming.get(frame.id) : 0) === 0,
-                    hasIssue: issueFrameIds.has(frame.id),
-                    style: `left:${x}px;top:${y}px;width:${NODE_W}px;height:${NODE_H}px;`,
-                    x,
-                    y,
-                    w: NODE_W,
-                    h: NODE_H,
-                    isVirtual: false,
-                    isTerminal: false,
-                    isBroken: false
-                };
-                nodes.push(node);
-                nodeInfo.set(frame.id, node);
-            }
+        for (const frame of visibleFrames) {
+            const record = frameMap.get(frame.id);
+            if (!record) continue;
+            const textLine = this._compactLine(frameDisplayName(frame), "Без текста");
+            const speakerLine = this._compactLine(frame.speaker || "Без говорящего", "Без говорящего");
+            const backgroundLine = this._compactLine(frame.background || "Фон не задан", "Фон не задан");
+            const stored = graphPositions[frame.id] || null;
+            const fallback = autoPositions.get(frame.id) || { x: PAD_X, y: PAD_Y };
+            const x = stored && Number.isFinite(Number(stored.x)) ? Number(stored.x) : fallback.x;
+            const y = stored && Number.isFinite(Number(stored.y)) ? Number(stored.y) : fallback.y;
+            const node = {
+                id: frame.id,
+                domId: this._domId(frame.id),
+                index: record.index + 1,
+                title: textLine,
+                textLine,
+                speakerLine,
+                backgroundLine,
+                type: frame.type,
+                isStart: scene && scene.startFrame === frame.id,
+                isUnreachable: scene && frame.id !== scene.startFrame && (incoming.has(frame.id) ? incoming.get(frame.id) : 0) === 0 && (rawIncoming.has(frame.id) ? rawIncoming.get(frame.id) : 0) === 0,
+                hasIssue: issueFrameIds.has(frame.id),
+                style: `left:${x}px;top:${y}px;width:${NODE_W}px;height:${NODE_H}px;`,
+                x,
+                y,
+                w: NODE_W,
+                h: NODE_H,
+                isVirtual: false,
+                isTerminal: false,
+                isBroken: false
+            };
+            nodes.push(node);
+            nodeInfo.set(frame.id, node);
         }
 
-        const nodeCountByLevel = new Map();
+        const occupiedYByLevel = new Map();
         for (const node of nodes) {
             const level = this._levelFromX(node.x);
-            nodeCountByLevel.set(level, (nodeCountByLevel.get(level) || 0) + 1);
+            if (!occupiedYByLevel.has(level)) occupiedYByLevel.set(level, []);
+            occupiedYByLevel.get(level).push(node.y);
         }
         const virtualByKey = new Map();
         const getVirtualNode = (kind, sourceNode, link, linkIndex) => {
             const key = `${kind}:${sourceNode.id}:${linkIndex}:${link.targetId || ""}`;
             if (virtualByKey.has(key)) return virtualByKey.get(key);
             const level = this._levelFromX(sourceNode.x) + 1;
-            const existingAtLevel = nodeCountByLevel.get(level) || 0;
-            nodeCountByLevel.set(level, existingAtLevel + 1);
+            const occupied = occupiedYByLevel.get(level) || [];
+            let y = Math.max(PAD_Y, sourceNode.y + linkIndex * ROW_H);
+            while (occupied.some(existingY => Math.abs(existingY - y) < NODE_H + 24)) y += ROW_H;
+            occupied.push(y);
+            occupiedYByLevel.set(level, occupied);
             const x = PAD_X + level * COL_W;
-            const y = PAD_Y + existingAtLevel * ROW_H;
             const id = `${kind}-${sourceNode.id}-${linkIndex}`;
             const node = {
                 id,
@@ -205,6 +198,13 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             maxX = Math.max(maxX, node.x + node.w + PAD_X);
             maxY = Math.max(maxY, node.y + node.h + PAD_Y);
         }
+        // Return lanes fan out by 16px per zero-based source index. Size the gutter from
+        // actual return edges so large forward-only choice lists do not inflate the canvas.
+        let maxReturnIndex = 0;
+        for (const edge of edges) {
+            if (edge.isReturn) maxReturnIndex = Math.max(maxReturnIndex, edge.sourceIndex || 0);
+        }
+        maxX += RETURN_EDGE_GAP + maxReturnIndex * 16 + 150;
         return { nodes, edges, canvasWidth: maxX, canvasHeight: maxY, frameCount: frames.length, visibleFrameCount: visibleFrames.length, issueCount: issues.length };
     }
 
@@ -323,28 +323,180 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _calculateLevels(scene, frames, outgoing) {
         const levels = new Map();
         if (!frames.length) return levels;
-        const startId = scene && scene.startFrame ? scene.startFrame : frames[0].id;
-        levels.set(startId, 0);
-        const queue = [startId];
-        let cursor = 0;
-        while (cursor < queue.length) {
-            const id = queue[cursor++];
-            const level = levels.get(id) ?? 0;
-            const links = outgoing.get(id) || [];
-            for (const link of links) {
-                if (!link.targetId || levels.has(link.targetId) || !outgoing.has(link.targetId)) continue;
-                levels.set(link.targetId, Math.max(0, level + 1));
-                queue.push(link.targetId);
+
+        const ids = frames.map(frame => frame.id);
+        const idSet = new Set(ids);
+        const order = new Map(ids.map((id, index) => [id, index]));
+        const adjacency = new Map();
+        const reverse = new Map(ids.map(id => [id, []]));
+        for (const id of ids) {
+            const next = [];
+            const seen = new Set();
+            for (const link of outgoing.get(id) || []) {
+                const targetId = link.targetId || "";
+                if (!targetId || !idSet.has(targetId) || seen.has(targetId)) continue;
+                seen.add(targetId);
+                next.push(targetId);
+                reverse.get(targetId).push(id);
+            }
+            adjacency.set(id, next);
+        }
+
+        // Kosaraju with explicit stacks keeps large cyclic scenes safe from recursion limits.
+        const visited = new Set();
+        const finish = [];
+        for (const root of ids) {
+            if (visited.has(root)) continue;
+            visited.add(root);
+            const stack = [{ id: root, index: 0 }];
+            while (stack.length) {
+                const top = stack[stack.length - 1];
+                const next = adjacency.get(top.id) || [];
+                if (top.index < next.length) {
+                    const targetId = next[top.index++];
+                    if (visited.has(targetId)) continue;
+                    visited.add(targetId);
+                    stack.push({ id: targetId, index: 0 });
+                    continue;
+                }
+                finish.push(top.id);
+                stack.pop();
             }
         }
-        let fallbackLevel = 0;
-        for (const frame of frames) {
-            if (!levels.has(frame.id)) {
-                levels.set(frame.id, fallbackLevel);
-                fallbackLevel += 1;
+
+        const componentById = new Map();
+        const components = [];
+        visited.clear();
+        for (let i = finish.length - 1; i >= 0; i -= 1) {
+            const root = finish[i];
+            if (visited.has(root)) continue;
+            const members = [];
+            const stack = [root];
+            visited.add(root);
+            while (stack.length) {
+                const id = stack.pop();
+                members.push(id);
+                for (const previous of reverse.get(id) || []) {
+                    if (visited.has(previous)) continue;
+                    visited.add(previous);
+                    stack.push(previous);
+                }
+            }
+            members.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+            const componentId = components.length;
+            for (const id of members) componentById.set(id, componentId);
+            components.push({ id: componentId, members });
+        }
+
+        const componentEdges = new Map(components.map(component => [component.id, new Set()]));
+        const indegree = new Map(components.map(component => [component.id, 0]));
+        for (const [sourceId, targets] of adjacency) {
+            const sourceComponent = componentById.get(sourceId);
+            for (const targetId of targets) {
+                const targetComponent = componentById.get(targetId);
+                if (sourceComponent === targetComponent || componentEdges.get(sourceComponent).has(targetComponent)) continue;
+                componentEdges.get(sourceComponent).add(targetComponent);
+                indegree.set(targetComponent, (indegree.get(targetComponent) || 0) + 1);
+            }
+        }
+
+        const componentOrder = component => Math.min(...component.members.map(id => order.get(id) ?? Number.MAX_SAFE_INTEGER));
+        const ready = components.filter(component => (indegree.get(component.id) || 0) === 0);
+        ready.sort((a, b) => componentOrder(a) - componentOrder(b));
+        const topo = [];
+        while (ready.length) {
+            const component = ready.shift();
+            topo.push(component);
+            for (const targetId of componentEdges.get(component.id) || []) {
+                indegree.set(targetId, (indegree.get(targetId) || 0) - 1);
+                if ((indegree.get(targetId) || 0) !== 0) continue;
+                ready.push(components[targetId]);
+                ready.sort((a, b) => componentOrder(a) - componentOrder(b));
+            }
+        }
+        if (topo.length !== components.length) {
+            for (const component of components) {
+                if (!topo.includes(component)) topo.push(component);
+            }
+        }
+
+        const baseRank = new Map(components.map(component => [component.id, 0]));
+        for (const component of topo) {
+            const base = baseRank.get(component.id) || 0;
+            const span = Math.max(1, component.members.length);
+            const endRank = base + span - 1;
+            for (const targetId of componentEdges.get(component.id) || []) {
+                baseRank.set(targetId, Math.max(baseRank.get(targetId) || 0, endRank + 1));
+            }
+        }
+
+        for (const component of components) {
+            const base = baseRank.get(component.id) || 0;
+            for (let index = 0; index < component.members.length; index += 1) {
+                levels.set(component.members[index], base + index);
             }
         }
         return levels;
+    }
+
+    _calculateAutoPositions(scene, frames, outgoing) {
+        const positions = new Map();
+        if (!frames.length) return positions;
+        const levels = this._calculateLevels(scene, frames, outgoing);
+        const order = new Map(frames.map((frame, index) => [frame.id, index]));
+
+        const branchIds = [];
+        const seenBranches = new Set();
+        const usedBranches = new Set(frames.map(frame => frame.branchId || ""));
+        for (const branch of Array.isArray(scene?.branches) ? scene.branches : []) {
+            const branchId = branch.id || "";
+            if (!usedBranches.has(branchId) || seenBranches.has(branchId)) continue;
+            seenBranches.add(branchId);
+            branchIds.push(branchId);
+        }
+        for (const frame of frames) {
+            const branchId = frame.branchId || "";
+            if (seenBranches.has(branchId)) continue;
+            seenBranches.add(branchId);
+            branchIds.push(branchId);
+        }
+        if (!branchIds.length) branchIds.push("");
+
+        const groupsByBranch = new Map();
+        const maxRowsByBranch = new Map(branchIds.map(branchId => [branchId, 1]));
+        for (const frame of frames) {
+            const branchId = frame.branchId || "";
+            const level = levels.get(frame.id) ?? 0;
+            if (!groupsByBranch.has(branchId)) groupsByBranch.set(branchId, new Map());
+            const byLevel = groupsByBranch.get(branchId);
+            if (!byLevel.has(level)) byLevel.set(level, []);
+            byLevel.get(level).push(frame.id);
+        }
+        for (const [branchId, byLevel] of groupsByBranch) {
+            for (const idsAtLevel of byLevel.values()) {
+                idsAtLevel.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+                maxRowsByBranch.set(branchId, Math.max(maxRowsByBranch.get(branchId) || 1, idsAtLevel.length));
+            }
+        }
+
+        const branchBaseY = new Map();
+        let y = PAD_Y;
+        for (const branchId of branchIds) {
+            branchBaseY.set(branchId, y);
+            y += (maxRowsByBranch.get(branchId) || 1) * ROW_H + BRANCH_GAP;
+        }
+
+        for (const frame of frames) {
+            const branchId = frame.branchId || "";
+            const level = levels.get(frame.id) ?? 0;
+            const idsAtLevel = groupsByBranch.get(branchId)?.get(level) || [];
+            const row = Math.max(0, idsAtLevel.indexOf(frame.id));
+            positions.set(frame.id, {
+                x: PAD_X + level * COL_W,
+                y: (branchBaseY.get(branchId) ?? PAD_Y) + row * ROW_H
+            });
+        }
+        return positions;
     }
 
     _edgeView(source, target, link, index) {
@@ -362,6 +514,7 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             labelStyle: `left:${view.lx}px;top:${view.ly}px;`,
             isChoice: link.kind === "choice",
             isConditional: link.kind === "condition",
+            isReturn: view.isReturn === true,
             isBroken: target.isBroken,
             isTerminal: target.isTerminal
         };
@@ -370,9 +523,21 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
     async _onRender(context, options) {
         await super._onRender(context, options);
         this._applyGraphTransform();
+        this._bindGraphControls();
         this._bindGraphInteraction();
         this._cacheGraphDom();
         this._redrawEdgesLive();
+    }
+
+    _bindGraphControls() {
+        const toggle = this.element?.querySelector?.("[data-compact-toggle]");
+        if (!toggle || toggle.dataset.vnGraphToggleBound === "true") return;
+        toggle.dataset.vnGraphToggleBound = "true";
+        toggle.addEventListener("change", event => {
+            const input = event.currentTarget;
+            this.hideLinearFrames = input?.checked === true;
+            this.render();
+        });
     }
 
     _bindGraphInteraction() {
@@ -582,9 +747,11 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (!source || !target) continue;
             const view = this._pathFromPoints(source, target, edge.sourceIndex);
             edge.path.setAttribute("d", view.path);
+            edge.path.classList.toggle("is-return", view.isReturn === true);
             if (edge.label) {
                 edge.label.style.left = `${view.lx}px`;
                 edge.label.style.top = `${view.ly}px`;
+                edge.label.classList.toggle("is-return", view.isReturn === true);
             }
         }
     }
@@ -592,11 +759,35 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _pathFromPoints(source, target, index) {
         const sourceY = source.y + Math.min(source.h - 18, 34 + index * 18);
         const targetY = target.y + target.h / 2;
-        const sourceX = source.x + source.w;
-        const targetX = target.x;
-        const dx = Math.max(70, Math.abs(targetX - sourceX) * 0.45);
-        const path = `M ${sourceX} ${sourceY} C ${sourceX + dx} ${sourceY}, ${targetX - dx} ${targetY}, ${targetX} ${targetY}`;
-        return { path, lx: Math.round((sourceX + targetX) / 2 - 60), ly: Math.round((sourceY + targetY) / 2 - 11) };
+        const sourceRight = source.x + source.w;
+        const targetLeft = target.x;
+        const targetRight = target.x + target.w;
+        const isReturn = targetLeft <= sourceRight + 18;
+
+        if (!isReturn) {
+            const gap = Math.max(1, targetLeft - sourceRight);
+            const offsetLimit = Math.max(0, Math.min(24, gap / 2 - 10));
+            const laneOffset = Math.max(-offsetLimit, Math.min(offsetLimit, (index - 0.5) * 8));
+            const midX = Math.round(sourceRight + gap / 2 + laneOffset);
+            const path = `M ${sourceRight} ${sourceY} H ${midX} V ${targetY} H ${targetLeft}`;
+            return {
+                path,
+                lx: Math.round(midX - 60),
+                ly: Math.round((sourceY + targetY) / 2 - 11),
+                isReturn: false
+            };
+        }
+
+        // Back-edges and same-column edges use a dedicated lane to the right of both nodes.
+        // This keeps branch returns out of the node bodies instead of producing giant cubic loops.
+        const routeX = Math.round(Math.max(sourceRight, targetRight) + RETURN_EDGE_GAP + index * 16);
+        const path = `M ${sourceRight} ${sourceY} H ${routeX} V ${targetY} H ${targetRight}`;
+        return {
+            path,
+            lx: Math.round(routeX - 132),
+            ly: Math.round((sourceY + targetY) / 2 - 11),
+            isReturn: true
+        };
     }
 
     async _saveNodePosition(id, x, y) {
@@ -628,12 +819,6 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return "Реплика";
     }
 
-    static async _onToggleLinearFrames(event, target) {
-        event.stopPropagation();
-        this.hideLinearFrames = target && target.checked === true;
-        this.render();
-    }
-
     async _saveAutoLayout() {
         if (!this.sceneId) return;
         const scene = VNSceneStore.getScene(this.sceneId);
@@ -647,6 +832,9 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         scene.graphPositions = positions;
         await VNSceneStore.upsertScene(scene);
+        this._panX = 0;
+        this._panY = 0;
+        this._zoom = 1;
     }
 
     static async _onAutoLayout(event, target) {
@@ -661,6 +849,9 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!scene) return;
         scene.graphPositions = {};
         await VNSceneStore.upsertScene(scene);
+        this._panX = 0;
+        this._panY = 0;
+        this._zoom = 1;
         this.render();
     }
 }
@@ -679,7 +870,6 @@ VNGraphApp.DEFAULT_OPTIONS = {
         height: 760
     },
     actions: {
-        toggleLinearFrames: VNGraphApp._onToggleLinearFrames,
         autoLayout: VNGraphApp._onAutoLayout,
         resetLayout: VNGraphApp._onResetLayout
     }

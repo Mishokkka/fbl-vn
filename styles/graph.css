@@ -115,6 +115,10 @@
   stroke: #d2a85f;
   stroke-dasharray: 7 5;
 }
+
+.fbl-vn-graph-lines .graph-edge.is-return {
+  stroke-linejoin: round;
+}
 .fbl-vn-graph-lines .graph-edge.is-terminal {
   stroke: rgba(167, 159, 145, 0.58);
   stroke-dasharray: 7 5;
@@ -152,6 +156,10 @@
 .fbl-vn-graph .graph-edge-label.is-conditional {
   border-color: rgba(210, 168, 95, 0.58);
   color: #e6c88f;
+}
+
+.fbl-vn-graph .graph-edge-label.is-return {
+  border-style: dashed;
 }
 .fbl-vn-graph .graph-edge-label.is-terminal {
   color: var(--vn-muted);
