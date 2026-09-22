@@ -890,32 +890,26 @@ assert.ok(graphData.edges.length >= 2);
 assert.equal(graphData.edges.some(edge => edge.label === "Если да"), true, "Graph must show the true conditional edge");
 assert.equal(graphData.edges.some(edge => edge.label === "Если нет"), true, "Graph must show the false conditional edge");
 
-let compactToggleListener = null;
 let compactToggleRenderCount = 0;
-const compactToggle = {
-  checked: false,
-  dataset: {},
-  addEventListener(type, listener) {
-    if (type === "change") compactToggleListener = listener;
-  }
-};
+let compactToggleRenderOptions = null;
 const toggleGraph = Object.create(VNGraphApp.prototype);
 toggleGraph.hideLinearFrames = false;
-toggleGraph.render = () => { compactToggleRenderCount += 1; };
-Object.defineProperty(toggleGraph, "element", {
-  value: {
-    querySelector(selector) {
-      return selector === "[data-compact-toggle]" ? compactToggle : null;
-    }
-  },
-  configurable: true
-});
-toggleGraph._bindGraphControls();
-assert.equal(typeof compactToggleListener, "function", "Compact graph toggle must bind directly to the checkbox change event");
-compactToggle.checked = true;
-compactToggleListener({ currentTarget: compactToggle });
-assert.equal(toggleGraph.hideLinearFrames, true, "Compact graph toggle must read the checkbox state from the change event");
-assert.equal(compactToggleRenderCount, 1, "Compact graph toggle must rerender after changing mode");
+toggleGraph.render = async options => {
+  compactToggleRenderCount += 1;
+  compactToggleRenderOptions = options;
+};
+let compactTogglePrevented = false;
+await VNGraphApp.DEFAULT_OPTIONS.actions.toggleLinearFrames.call(toggleGraph, {
+  preventDefault() { compactTogglePrevented = true; }
+}, null);
+assert.equal(compactTogglePrevented, true, "Compact graph action must prevent the button default");
+assert.equal(toggleGraph.hideLinearFrames, true, "Compact graph action must toggle the application state");
+assert.equal(compactToggleRenderCount, 1, "Compact graph action must rerender after changing mode");
+assert.deepEqual(compactToggleRenderOptions, { parts: ["main"] }, "Compact graph action must explicitly rerender the Handlebars main part");
+await VNGraphApp.DEFAULT_OPTIONS.actions.toggleLinearFrames.call(toggleGraph, {
+  preventDefault() {}
+}, null);
+assert.equal(toggleGraph.hideLinearFrames, false, "Compact graph action must toggle back off on the next click");
 
 const compactLinearScene = createScene();
 const compactLinearBranch = compactLinearScene.branches[0];
