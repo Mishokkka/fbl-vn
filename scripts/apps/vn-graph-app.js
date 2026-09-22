@@ -221,27 +221,14 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 visible.add(frame.id);
             }
 
-            // A compact graph may collapse linear frames, but it must not collapse the point
-            // where control crosses from one editor branch into another. Keeping both sides of
-            // that hand-off visible makes cross-branch links deterministic and prevents the
-            // destination from being mistaken for a missing frame.
-            for (const link of links) {
-                if (!link.targetId) continue;
-                const target = frameMap.get(link.targetId);
-                if (!target) continue;
-                if ((frame.branchId || "") !== (target.branchId || "")) {
-                    visible.add(frame.id);
-                    visible.add(target.id);
-                }
-            }
         }
 
         if (!visible.size && frames[0]) visible.add(frames[0].id);
 
-        // Defensive closure: _resolveVisibleTarget intentionally stops at hidden branch points
-        // and cycles. Such a frame is valid, not broken, so promote it to a visible anchor.
-        // Iterate until every visible source resolves only to another visible frame, a real
-        // missing id, or a terminal.
+        // All real branch points are already visible above. If resolution still stops on an
+        // existing hidden frame, it means a purely linear hidden cycle has no visible anchor.
+        // Promote only that cycle stop. Crossing editor branches alone is not a reason to keep
+        // linear dialogue frames visible in compact mode.
         let changed = true;
         while (changed) {
             changed = false;
