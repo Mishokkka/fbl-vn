@@ -979,6 +979,38 @@ const returnRoute = graph._pathFromPoints({ x: 1018, y: 242, w: 250, h: 104 }, {
 assert.equal(returnRoute.isReturn, true, "Backward cross-branch edges must be recognized as return edges");
 assert.match(returnRoute.path, / H .* V .* H /, "Return edges must use the dedicated right-side routing lane");
 
+const returnFanScene = createScene();
+const returnFanBranch = returnFanScene.branches[0];
+returnFanBranch.id = "return-fan";
+const returnFanStart = returnFanScene.frames[0];
+returnFanStart.id = "return-fan-start";
+returnFanStart.branchId = returnFanBranch.id;
+returnFanStart.isFinal = false;
+returnFanStart.next = "return-fan-choice";
+const returnFanChoice = createFrame("choice");
+returnFanChoice.id = "return-fan-choice";
+returnFanChoice.branchId = returnFanBranch.id;
+returnFanChoice.type = "choice";
+returnFanChoice.isFinal = false;
+returnFanChoice.choices = Array.from({ length: 14 }, (_, index) => ({
+  id: `return-fan-choice-${index}`,
+  text: `Назад ${index + 1}`,
+  next: returnFanStart.id
+}));
+returnFanScene.frames = [returnFanStart, returnFanChoice];
+returnFanScene.startFrame = returnFanStart.id;
+graph.hideLinearFrames = false;
+const returnFanGraph = graph._buildGraph(returnFanScene);
+const returnFanEdges = returnFanGraph.edges.filter(edge => edge.sourceId === returnFanChoice.id && edge.isReturn);
+assert.equal(returnFanEdges.length, 14, "Return-fan fixture must create all 14 backward choice edges");
+const widestReturnEdge = returnFanEdges.reduce((widest, edge) => edge.sourceIndex > widest.sourceIndex ? edge : widest, returnFanEdges[0]);
+const returnFanSource = returnFanGraph.nodes.find(node => node.id === returnFanChoice.id);
+const returnFanTarget = returnFanGraph.nodes.find(node => node.id === returnFanStart.id);
+const widestReturnRoute = graph._pathFromPoints(returnFanSource, returnFanTarget, widestReturnEdge.sourceIndex);
+const widestReturnX = Math.max(returnFanSource.x + returnFanSource.w, returnFanTarget.x + returnFanTarget.w) + 42 + widestReturnEdge.sourceIndex * 16;
+assert.equal(widestReturnRoute.isReturn, true, "Widest fan edge must use return routing");
+assert.ok(returnFanGraph.canvasWidth >= widestReturnX + 150, "Canvas must reserve enough right-side gutter for high-index return lanes and their labels");
+
 const compactConditional = createScene();
 const compactBranch = compactConditional.branches[0];
 compactBranch.id = "compact-main";
