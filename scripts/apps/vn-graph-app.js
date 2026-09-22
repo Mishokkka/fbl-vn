@@ -198,8 +198,13 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             maxX = Math.max(maxX, node.x + node.w + PAD_X);
             maxY = Math.max(maxY, node.y + node.h + PAD_Y);
         }
-        // Reserve a right-side routing gutter for backward/cyclic edges and their labels.
-        maxX += RETURN_EDGE_GAP + 150;
+        // Return lanes fan out by 16px per zero-based source index. Size the gutter from
+        // actual return edges so large forward-only choice lists do not inflate the canvas.
+        let maxReturnIndex = 0;
+        for (const edge of edges) {
+            if (edge.isReturn) maxReturnIndex = Math.max(maxReturnIndex, edge.sourceIndex || 0);
+        }
+        maxX += RETURN_EDGE_GAP + maxReturnIndex * 16 + 150;
         return { nodes, edges, canvasWidth: maxX, canvasHeight: maxY, frameCount: frames.length, visibleFrameCount: visibleFrames.length, issueCount: issues.length };
     }
 
