@@ -259,13 +259,22 @@
   box-shadow: 0 12px 28px rgba(0,0,0,0.52), 0 0 0 1px rgba(182, 138, 74, 0.7);
 }
 
-.fbl-vn-graph-head .graph-toggle {
+.fbl-vn-graph-head button.legend.graph-toggle {
   cursor: pointer;
   user-select: none;
+  font: inherit;
+  color: var(--vn-muted);
 }
 
-.fbl-vn-graph-head .graph-toggle input {
-  margin: 0;
+.fbl-vn-graph-head button.legend.graph-toggle.is-active {
+  border-color: rgba(182, 138, 74, 0.62);
+  background: rgba(182, 138, 74, 0.18);
+  color: var(--vn-text);
+}
+
+.fbl-vn-graph-head button.legend.graph-toggle i {
+  width: 12px;
+  text-align: center;
 }
 
 .fbl-vn-graph-head button.legend.graph-button {
