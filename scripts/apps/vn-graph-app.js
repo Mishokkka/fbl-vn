@@ -195,6 +195,8 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             maxX = Math.max(maxX, node.x + node.w + PAD_X);
             maxY = Math.max(maxY, node.y + node.h + PAD_Y);
         }
+        // Reserve a right-side routing gutter for backward/cyclic edges and their labels.
+        maxX += RETURN_EDGE_GAP + 150;
         return { nodes, edges, canvasWidth: maxX, canvasHeight: maxY, frameCount: frames.length, visibleFrameCount: visibleFrames.length, issueCount: issues.length };
     }
 
@@ -735,9 +737,11 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (!source || !target) continue;
             const view = this._pathFromPoints(source, target, edge.sourceIndex);
             edge.path.setAttribute("d", view.path);
+            edge.path.classList.toggle("is-return", view.isReturn === true);
             if (edge.label) {
                 edge.label.style.left = `${view.lx}px`;
                 edge.label.style.top = `${view.ly}px`;
+                edge.label.classList.toggle("is-return", view.isReturn === true);
             }
         }
     }
@@ -834,6 +838,9 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!scene) return;
         scene.graphPositions = {};
         await VNSceneStore.upsertScene(scene);
+        this._panX = 0;
+        this._panY = 0;
+        this._zoom = 1;
         this.render();
     }
 }
