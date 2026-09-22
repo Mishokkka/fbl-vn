@@ -453,20 +453,21 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         if (!branchIds.length) branchIds.push("");
 
-        const groups = new Map();
+        const groupsByBranch = new Map();
         const maxRowsByBranch = new Map(branchIds.map(branchId => [branchId, 1]));
         for (const frame of frames) {
             const branchId = frame.branchId || "";
             const level = levels.get(frame.id) ?? 0;
-            const key = `${branchId}::${level}`;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key).push(frame.id);
+            if (!groupsByBranch.has(branchId)) groupsByBranch.set(branchId, new Map());
+            const byLevel = groupsByBranch.get(branchId);
+            if (!byLevel.has(level)) byLevel.set(level, []);
+            byLevel.get(level).push(frame.id);
         }
-        for (const [key, idsAtLevel] of groups) {
-            idsAtLevel.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
-            const split = key.lastIndexOf("::");
-            const branchId = key.slice(0, split);
-            maxRowsByBranch.set(branchId, Math.max(maxRowsByBranch.get(branchId) || 1, idsAtLevel.length));
+        for (const [branchId, byLevel] of groupsByBranch) {
+            for (const idsAtLevel of byLevel.values()) {
+                idsAtLevel.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+                maxRowsByBranch.set(branchId, Math.max(maxRowsByBranch.get(branchId) || 1, idsAtLevel.length));
+            }
         }
 
         const branchBaseY = new Map();
@@ -479,8 +480,8 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         for (const frame of frames) {
             const branchId = frame.branchId || "";
             const level = levels.get(frame.id) ?? 0;
-            const key = `${branchId}::${level}`;
-            const row = Math.max(0, (groups.get(key) || []).indexOf(frame.id));
+            const idsAtLevel = groupsByBranch.get(branchId)?.get(level) || [];
+            const row = Math.max(0, idsAtLevel.indexOf(frame.id));
             positions.set(frame.id, {
                 x: PAD_X + level * COL_W,
                 y: (branchBaseY.get(branchId) ?? PAD_Y) + row * ROW_H
