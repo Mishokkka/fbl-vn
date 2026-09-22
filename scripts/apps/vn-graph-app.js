@@ -510,21 +510,9 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
     async _onRender(context, options) {
         await super._onRender(context, options);
         this._applyGraphTransform();
-        this._bindGraphControls();
         this._bindGraphInteraction();
         this._cacheGraphDom();
         this._redrawEdgesLive();
-    }
-
-    _bindGraphControls() {
-        const toggle = this.element?.querySelector?.("[data-compact-toggle]");
-        if (!toggle || toggle.dataset.vnGraphToggleBound === "true") return;
-        toggle.dataset.vnGraphToggleBound = "true";
-        toggle.addEventListener("change", event => {
-            const input = event.currentTarget;
-            this.hideLinearFrames = input?.checked === true;
-            this.render();
-        });
     }
 
     _bindGraphInteraction() {
@@ -806,6 +794,12 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return "Реплика";
     }
 
+    static async _onToggleLinearFrames(event, target) {
+        event.preventDefault();
+        this.hideLinearFrames = this.hideLinearFrames !== true;
+        await this.render({ parts: ["main"] });
+    }
+
     async _saveAutoLayout() {
         if (!this.sceneId) return;
         const scene = VNSceneStore.getScene(this.sceneId);
@@ -857,6 +851,7 @@ VNGraphApp.DEFAULT_OPTIONS = {
         height: 760
     },
     actions: {
+        toggleLinearFrames: VNGraphApp._onToggleLinearFrames,
         autoLayout: VNGraphApp._onAutoLayout,
         resetLayout: VNGraphApp._onResetLayout
     }
