@@ -89,7 +89,8 @@ if (!editorSource.includes("frameEffectCounterOptions") || !editorSource.include
 if (!playerSource.includes("this._applyFrameEffect(frame);") || !playerSource.includes("applyFrameCounterEffect")) errors.push("Player must apply a frame counter effect on frame entry");
 if (!counterManagerSource.includes("frameEffects") || !counterManagerSource.includes("frame.effectCounterId === counterId")) errors.push("Counter manager must count and clear frame counter effects");
 if (!graphSource.includes("const isBranchPoint = links.length !== 1 || links.some(link => link.kind === \"condition\")")) errors.push("Compact graph must keep non-linear counter-routing frames visible");
-if (!graphSource.includes("(frame.branchId || \"\") !== (target.branchId || \"\")") || !graphSource.includes("visible.add(target.id)")) errors.push("Compact graph must preserve cross-branch hand-off nodes");
+const crossBranchPromotionBlock = graphSource.match(/if\s*\(\(frame\.branchId\s*\|\|\s*""\)\s*!==\s*\(target\.branchId\s*\|\|\s*""\)\)\s*\{([^}]*)\}/)?.[1] || "";
+if (!/visible\.add\(frame\.id\);/.test(crossBranchPromotionBlock) || !/visible\.add\(target\.id\);/.test(crossBranchPromotionBlock)) errors.push("Compact graph must preserve both source and target of the same cross-branch hand-off");
 if (!graphSource.includes("Defensive closure") || !graphSource.includes("this._resolveVisibleTarget(link.targetId, visible, outgoing, frameMap)")) errors.push("Compact graph must promote valid hidden resolver stops instead of rendering them as broken links");
 const nextRoutingControlBlock = editorSource.match(/_enableNextRoutingControls\(root = this\.element\)\s*\{([\s\S]*?)\n\s*\}\n\n\s*async _persistNextRoutingState/)?.[1] || "";
 if (!nextRoutingControlBlock.includes("_enqueueEditorAction") || !nextRoutingControlBlock.includes("_persistNextRoutingState")) errors.push("Counter-routing toggle must persist through the editor action queue");
