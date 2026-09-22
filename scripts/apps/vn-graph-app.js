@@ -28,6 +28,7 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._graphDomCache = null;
         this._graphRedrawRaf = null;
         this._pendingNodePosition = null;
+        this._compactPositions = new Map();
         this._onWindowMouseMove = event => this._onGraphMouseMove(event);
         this._onWindowMouseUp = event => this._onGraphMouseUp(event);
     }
@@ -105,7 +106,11 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const textLine = this._compactLine(frameDisplayName(frame), "Без текста");
             const speakerLine = this._compactLine(frame.speaker || "Без говорящего", "Без говорящего");
             const backgroundLine = this._compactLine(frame.background || "Фон не задан", "Фон не задан");
-            const stored = graphPositions[frame.id] || null;
+            // Full and compact graphs have different topology. Reusing full-graph coordinates
+            // in compact mode leaves the surviving anchors tens of thousands of pixels apart.
+            // Keep compact drag positions session-local so toggling modes never damages the
+            // user's persistent full-graph layout.
+            const stored = compact ? (this._compactPositions.get(frame.id) || null) : (graphPositions[frame.id] || null);
             const fallback = autoPositions.get(frame.id) || { x: PAD_X, y: PAD_Y };
             const x = stored && Number.isFinite(Number(stored.x)) ? Number(stored.x) : fallback.x;
             const y = stored && Number.isFinite(Number(stored.y)) ? Number(stored.y) : fallback.y;
@@ -767,6 +772,10 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async _saveNodePosition(id, x, y) {
         if (!id || !this.sceneId) return;
+        if (this.hideLinearFrames === true) {
+            this._compactPositions.set(id, { x, y });
+            return;
+        }
         const scene = VNSceneStore.getScene(this.sceneId);
         if (!scene) return;
         scene.graphPositions = scene.graphPositions && typeof scene.graphPositions === "object" ? scene.graphPositions : {};
@@ -802,6 +811,13 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async _saveAutoLayout() {
         if (!this.sceneId) return;
+        if (this.hideLinearFrames === true) {
+            this._compactPositions.clear();
+            this._panX = 0;
+            this._panY = 0;
+            this._zoom = 1;
+            return;
+        }
         const scene = VNSceneStore.getScene(this.sceneId);
         if (!scene) return;
         const draft = Object.assign({}, scene, { graphPositions: {} });
@@ -826,10 +842,15 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static async _onResetLayout(event, target) {
         event.preventDefault();
-        const scene = VNSceneStore.getScene(this.sceneId);
-        if (!scene) return;
-        scene.graphPositions = {};
-        await VNSceneStore.upsertScene(scene);
+        if (this.hideLinearFrames === true) {
+            this._compactPositions.clear();
+        }
+        else {
+            const scene = VNSceneStore.getScene(this.sceneId);
+            if (!scene) return;
+            scene.graphPositions = {};
+            await VNSceneStore.upsertScene(scene);
+        }
         this._panX = 0;
         this._panY = 0;
         this._zoom = 1;
