@@ -890,26 +890,43 @@ assert.ok(graphData.edges.length >= 2);
 assert.equal(graphData.edges.some(edge => edge.label === "Если да"), true, "Graph must show the true conditional edge");
 assert.equal(graphData.edges.some(edge => edge.label === "Если нет"), true, "Graph must show the false conditional edge");
 
+let compactToggleChangeListener = null;
 let compactToggleRenderCount = 0;
-let compactToggleRenderOptions = null;
+let compactToggleRenderArgument = null;
+const compactToggle = {
+  checked: false,
+  dataset: {},
+  addEventListener(type, listener) {
+    if (type === "change") compactToggleChangeListener = listener;
+  }
+};
 const toggleGraph = Object.create(VNGraphApp.prototype);
 toggleGraph.hideLinearFrames = false;
-toggleGraph.render = async options => {
+toggleGraph._panX = 17;
+toggleGraph._panY = 23;
+toggleGraph._zoom = 1.4;
+toggleGraph.render = async argument => {
   compactToggleRenderCount += 1;
-  compactToggleRenderOptions = options;
+  compactToggleRenderArgument = argument;
 };
-let compactTogglePrevented = false;
-await VNGraphApp.DEFAULT_OPTIONS.actions.toggleLinearFrames.call(toggleGraph, {
-  preventDefault() { compactTogglePrevented = true; }
-}, null);
-assert.equal(compactTogglePrevented, true, "Compact graph action must prevent the button default");
-assert.equal(toggleGraph.hideLinearFrames, true, "Compact graph action must toggle the application state");
-assert.equal(compactToggleRenderCount, 1, "Compact graph action must rerender after changing mode");
-assert.deepEqual(compactToggleRenderOptions, { parts: ["main"] }, "Compact graph action must explicitly rerender the Handlebars main part");
-await VNGraphApp.DEFAULT_OPTIONS.actions.toggleLinearFrames.call(toggleGraph, {
-  preventDefault() {}
-}, null);
-assert.equal(toggleGraph.hideLinearFrames, false, "Compact graph action must toggle back off on the next click");
+toggleGraph._bindCompactToggle({
+  querySelector(selector) {
+    return selector === "[data-compact-toggle]" ? compactToggle : null;
+  }
+});
+assert.equal(typeof compactToggleChangeListener, "function", "Compact graph checkbox must bind through the rendered part");
+compactToggle.checked = true;
+compactToggleChangeListener({ currentTarget: compactToggle });
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(toggleGraph.hideLinearFrames, true, "Compact graph checkbox must read the native checked state");
+assert.equal(toggleGraph._panX, 0, "Compact graph toggle must reset horizontal pan");
+assert.equal(toggleGraph._panY, 0, "Compact graph toggle must reset vertical pan");
+assert.equal(toggleGraph._zoom, 1, "Compact graph toggle must reset zoom");
+assert.equal(compactToggleRenderCount, 1, "Compact graph checkbox must force a rerender after changing mode");
+assert.equal(compactToggleRenderArgument, true, "Compact graph checkbox must use the documented forced full render path");
+await toggleGraph._setCompactMode(false);
+assert.equal(toggleGraph.hideLinearFrames, false, "Compact graph mode must toggle back off");
+assert.equal(compactToggleRenderCount, 2, "Turning compact mode off must rerender again");
 
 const compactLinearScene = createScene();
 const compactLinearBranch = compactLinearScene.branches[0];

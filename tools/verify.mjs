@@ -94,9 +94,10 @@ if (!graphSource.includes("const isBranchPoint = links.length !== 1 || links.som
 const compactVisibilityBlock = graphSource.match(/_compactVisibleFrameIds\(scene, frames, outgoing\)\s*\{([\s\S]*?)\n\s*return visible;\n\s*\}/)?.[1] || "";
 if (/branchId/.test(compactVisibilityBlock)) errors.push("Compact visibility must not keep linear frames merely because a link crosses editor branches");
 if (!compactVisibilityBlock.includes("this._resolveVisibleTarget(link.targetId, visible, outgoing, frameMap)")) errors.push("Compact graph must promote only unresolved hidden cycle stops instead of rendering them as broken links");
-if (!graphTemplateSource.includes('data-action="toggleLinearFrames"') || graphTemplateSource.includes("data-compact-toggle")) errors.push("Compact graph control must use the proven ApplicationV2 button action path");
-if (!graphSource.includes("static async _onToggleLinearFrames(event, target)") || !graphSource.includes('await this.render({ parts: ["main"] })')) errors.push("Compact graph action must explicitly rerender the Handlebars main part");
-if (!graphSource.includes("toggleLinearFrames: VNGraphApp._onToggleLinearFrames")) errors.push("Compact graph toggle action must be registered in DEFAULT_OPTIONS");
+if (!graphTemplateSource.includes("data-compact-toggle") || graphTemplateSource.includes('data-action="toggleLinearFrames"')) errors.push("Compact graph control must be a native checkbox without ApplicationV2 action dispatch");
+if (!graphSource.includes("_attachPartListeners(partId, htmlElement, options)") || !graphSource.includes('if (partId !== "main") return;') || !graphSource.includes("this._bindCompactToggle(htmlElement)")) errors.push("Compact graph checkbox must bind in the Handlebars part-listener lifecycle");
+if (!graphSource.includes('toggle.addEventListener("change"') || !graphSource.includes("event.currentTarget?.checked === true") || !graphSource.includes("await this.render(true)")) errors.push("Compact graph checkbox must read native checked state and force a full rerender");
+if (graphSource.includes("toggleLinearFrames: VNGraphApp._onToggleLinearFrames")) errors.push("Compact graph checkbox must not depend on ApplicationV2 action dispatch");
 if (!graphSource.includes("this._compactPositions = new Map()") || !graphSource.includes("const stored = compact ? (this._compactPositions.get(frame.id) || null)") || !graphSource.includes("this._compactPositions.set(id, { x, y })")) errors.push("Compact graph must keep a separate session-local position map from the persistent full layout");
 if (!graphSource.includes("if (this.hideLinearFrames === true) {\n            this._compactPositions.clear();")) errors.push("Compact graph auto-layout/reset must clear only compact session positions");
 if (!graphSource.includes("Kosaraju with explicit stacks") || !graphSource.includes("componentById") || !graphSource.includes("componentEdges") || !graphSource.includes("_calculateAutoPositions")) errors.push("Graph auto-layout must use cycle-aware component ranking and branch lanes");
@@ -187,8 +188,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.8") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.8")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.9") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.9")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",

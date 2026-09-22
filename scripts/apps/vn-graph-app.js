@@ -520,6 +520,33 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._redrawEdgesLive();
     }
 
+    _attachPartListeners(partId, htmlElement, options) {
+        super._attachPartListeners(partId, htmlElement, options);
+        if (partId !== "main") return;
+        this._bindCompactToggle(htmlElement);
+    }
+
+    _bindCompactToggle(root) {
+        const toggle = root?.querySelector?.("[data-compact-toggle]");
+        if (!toggle || toggle.dataset.vnGraphToggleBound === "true") return;
+        toggle.dataset.vnGraphToggleBound = "true";
+        toggle.addEventListener("change", event => {
+            void this._setCompactMode(event.currentTarget?.checked === true).catch(error => {
+                console.error("FBL VN | Failed to switch compact graph mode", error);
+            });
+        });
+    }
+
+    async _setCompactMode(enabled) {
+        const next = enabled === true;
+        if (this.hideLinearFrames === next) return;
+        this.hideLinearFrames = next;
+        this._panX = 0;
+        this._panY = 0;
+        this._zoom = 1;
+        await this.render(true);
+    }
+
     _bindGraphInteraction() {
         if (!this.element) return;
         this._bindWindowGraphInteraction();
@@ -803,12 +830,6 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return "Реплика";
     }
 
-    static async _onToggleLinearFrames(event, target) {
-        event.preventDefault();
-        this.hideLinearFrames = this.hideLinearFrames !== true;
-        await this.render({ parts: ["main"] });
-    }
-
     async _saveAutoLayout() {
         if (!this.sceneId) return;
         if (this.hideLinearFrames === true) {
@@ -872,7 +893,6 @@ VNGraphApp.DEFAULT_OPTIONS = {
         height: 760
     },
     actions: {
-        toggleLinearFrames: VNGraphApp._onToggleLinearFrames,
         autoLayout: VNGraphApp._onAutoLayout,
         resetLayout: VNGraphApp._onResetLayout
     }
