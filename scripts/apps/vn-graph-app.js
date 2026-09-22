@@ -821,7 +821,7 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
     static async _onAutoLayout(event, target) {
         event.preventDefault();
         await this._saveAutoLayout();
-        this.render();
+        await this.render({ parts: ["main"] });
     }
 
     static async _onResetLayout(event, target) {
@@ -833,7 +833,7 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._panX = 0;
         this._panY = 0;
         this._zoom = 1;
-        this.render();
+        await this.render({ parts: ["main"] });
     }
 }
 
