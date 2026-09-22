@@ -134,20 +134,23 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             nodeInfo.set(frame.id, node);
         }
 
-        const nodeCountByLevel = new Map();
+        const occupiedYByLevel = new Map();
         for (const node of nodes) {
             const level = this._levelFromX(node.x);
-            nodeCountByLevel.set(level, (nodeCountByLevel.get(level) || 0) + 1);
+            if (!occupiedYByLevel.has(level)) occupiedYByLevel.set(level, []);
+            occupiedYByLevel.get(level).push(node.y);
         }
         const virtualByKey = new Map();
         const getVirtualNode = (kind, sourceNode, link, linkIndex) => {
             const key = `${kind}:${sourceNode.id}:${linkIndex}:${link.targetId || ""}`;
             if (virtualByKey.has(key)) return virtualByKey.get(key);
             const level = this._levelFromX(sourceNode.x) + 1;
-            const existingAtLevel = nodeCountByLevel.get(level) || 0;
-            nodeCountByLevel.set(level, existingAtLevel + 1);
+            const occupied = occupiedYByLevel.get(level) || [];
+            let y = Math.max(PAD_Y, sourceNode.y + linkIndex * ROW_H);
+            while (occupied.some(existingY => Math.abs(existingY - y) < NODE_H + 24)) y += ROW_H;
+            occupied.push(y);
+            occupiedYByLevel.set(level, occupied);
             const x = PAD_X + level * COL_W;
-            const y = PAD_Y + existingAtLevel * ROW_H;
             const id = `${kind}-${sourceNode.id}-${linkIndex}`;
             const node = {
                 id,
@@ -439,9 +442,10 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         const branchIds = [];
         const seenBranches = new Set();
+        const usedBranches = new Set(frames.map(frame => frame.branchId || ""));
         for (const branch of Array.isArray(scene?.branches) ? scene.branches : []) {
             const branchId = branch.id || "";
-            if (seenBranches.has(branchId)) continue;
+            if (!usedBranches.has(branchId) || seenBranches.has(branchId)) continue;
             seenBranches.add(branchId);
             branchIds.push(branchId);
         }
@@ -757,7 +761,8 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         if (!isReturn) {
             const gap = Math.max(1, targetLeft - sourceRight);
-            const laneOffset = (index - 0.5) * 12;
+            const offsetLimit = Math.max(0, Math.min(24, gap / 2 - 10));
+            const laneOffset = Math.max(-offsetLimit, Math.min(offsetLimit, (index - 0.5) * 8));
             const midX = Math.round(sourceRight + gap / 2 + laneOffset);
             const path = `M ${sourceRight} ${sourceY} H ${midX} V ${targetY} H ${targetLeft}`;
             return {
