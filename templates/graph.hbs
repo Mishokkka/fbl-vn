@@ -10,10 +10,10 @@
       <span class="legend choice">Выбор</span>
       <span class="legend"><i class="fa-solid fa-star"></i> старт</span>
       <span class="legend warning"><i class="fa-solid fa-circle-exclamation"></i> нет входящих связей</span>
-      <label class="legend graph-toggle" title="Скрыть линейные кадры между началом, финалом и кадрами выбора">
-        <input type="checkbox" data-compact-toggle {{#if compactGraph}}checked{{/if}} />
+      <button type="button" class="legend graph-toggle {{#if compactGraph}}is-active{{/if}}" data-action="toggleLinearFrames" aria-pressed="{{#if compactGraph}}true{{else}}false{{/if}}" title="Скрыть линейные кадры между началом, финалом, развилками и кадрами выбора">
+        <i class="{{#if compactGraph}}fa-solid fa-square-check{{else}}fa-regular fa-square{{/if}}" aria-hidden="true"></i>
         <span>Убрать варианты между выборами</span>
-      </label>
+      </button>
       <button type="button" class="legend graph-button" data-action="autoLayout" title="Пересчитать позиции узлов" aria-label="Пересчитать позиции узлов"><i class="fa-solid fa-wand-magic-sparkles"></i> Автораскладка</button>
       <button type="button" class="legend graph-button" data-action="resetLayout" title="Очистить сохраненные позиции узлов" aria-label="Очистить сохраненные позиции узлов"><i class="fa-solid fa-rotate-left"></i> Сбросить позиции</button>
       <span class="legend graph-help">Колесо: масштаб, СКМ: перемещение поля, ЛКМ: перетащить кадр</span>
