@@ -210,13 +210,51 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _compactVisibleFrameIds(scene, frames, outgoing) {
         const visible = new Set();
+        const frameMap = new Map(frames.map(frame => [frame.id, frame]));
         const startId = scene && scene.startFrame ? scene.startFrame : (frames[0] ? frames[0].id : "");
+
         for (const frame of frames) {
             const links = outgoing.get(frame.id) || [];
             const isTerminal = links.some(link => !link.targetId || link.kind === "terminal");
-            if (frame.id === startId || frame.type === FRAME_TYPES.CHOICE || frame.isFinal === true || isTerminal) visible.add(frame.id);
+            const isBranchPoint = links.length !== 1 || links.some(link => link.kind === "condition");
+            if (frame.id === startId || frame.type === FRAME_TYPES.CHOICE || frame.isFinal === true || isTerminal || isBranchPoint) {
+                visible.add(frame.id);
+            }
+
+            // A compact graph may collapse linear frames, but it must not collapse the point
+            // where control crosses from one editor branch into another. Keeping both sides of
+            // that hand-off visible makes cross-branch links deterministic and prevents the
+            // destination from being mistaken for a missing frame.
+            for (const link of links) {
+                if (!link.targetId) continue;
+                const target = frameMap.get(link.targetId);
+                if (!target) continue;
+                if ((frame.branchId || "") !== (target.branchId || "")) {
+                    visible.add(frame.id);
+                    visible.add(target.id);
+                }
+            }
         }
+
         if (!visible.size && frames[0]) visible.add(frames[0].id);
+
+        // Defensive closure: _resolveVisibleTarget intentionally stops at hidden branch points
+        // and cycles. Such a frame is valid, not broken, so promote it to a visible anchor.
+        // Iterate until every visible source resolves only to another visible frame, a real
+        // missing id, or a terminal.
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const sourceId of [...visible]) {
+                for (const link of outgoing.get(sourceId) || []) {
+                    const resolved = this._resolveVisibleTarget(link.targetId, visible, outgoing, frameMap);
+                    if (!resolved.targetId || !frameMap.has(resolved.targetId) || visible.has(resolved.targetId)) continue;
+                    visible.add(resolved.targetId);
+                    changed = true;
+                }
+            }
+        }
+
         return visible;
     }
 
