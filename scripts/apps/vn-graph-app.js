@@ -502,6 +502,7 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             labelStyle: `left:${view.lx}px;top:${view.ly}px;`,
             isChoice: link.kind === "choice",
             isConditional: link.kind === "condition",
+            isReturn: view.isReturn === true,
             isBroken: target.isBroken,
             isTerminal: target.isTerminal
         };
@@ -510,9 +511,21 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
     async _onRender(context, options) {
         await super._onRender(context, options);
         this._applyGraphTransform();
+        this._bindGraphControls();
         this._bindGraphInteraction();
         this._cacheGraphDom();
         this._redrawEdgesLive();
+    }
+
+    _bindGraphControls() {
+        const toggle = this.element?.querySelector?.("[data-compact-toggle]");
+        if (!toggle || toggle.dataset.vnGraphToggleBound === "true") return;
+        toggle.dataset.vnGraphToggleBound = "true";
+        toggle.addEventListener("change", event => {
+            const input = event.currentTarget;
+            this.hideLinearFrames = input?.checked === true;
+            this.render();
+        });
     }
 
     _bindGraphInteraction() {
@@ -732,11 +745,34 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _pathFromPoints(source, target, index) {
         const sourceY = source.y + Math.min(source.h - 18, 34 + index * 18);
         const targetY = target.y + target.h / 2;
-        const sourceX = source.x + source.w;
-        const targetX = target.x;
-        const dx = Math.max(70, Math.abs(targetX - sourceX) * 0.45);
-        const path = `M ${sourceX} ${sourceY} C ${sourceX + dx} ${sourceY}, ${targetX - dx} ${targetY}, ${targetX} ${targetY}`;
-        return { path, lx: Math.round((sourceX + targetX) / 2 - 60), ly: Math.round((sourceY + targetY) / 2 - 11) };
+        const sourceRight = source.x + source.w;
+        const targetLeft = target.x;
+        const targetRight = target.x + target.w;
+        const isReturn = targetLeft <= sourceRight + 18;
+
+        if (!isReturn) {
+            const gap = Math.max(1, targetLeft - sourceRight);
+            const laneOffset = (index - 0.5) * 12;
+            const midX = Math.round(sourceRight + gap / 2 + laneOffset);
+            const path = `M ${sourceRight} ${sourceY} H ${midX} V ${targetY} H ${targetLeft}`;
+            return {
+                path,
+                lx: Math.round(midX - 60),
+                ly: Math.round((sourceY + targetY) / 2 - 11),
+                isReturn: false
+            };
+        }
+
+        // Back-edges and same-column edges use a dedicated lane to the right of both nodes.
+        // This keeps branch returns out of the node bodies instead of producing giant cubic loops.
+        const routeX = Math.round(Math.max(sourceRight, targetRight) + RETURN_EDGE_GAP + index * 16);
+        const path = `M ${sourceRight} ${sourceY} H ${routeX} V ${targetY} H ${targetRight}`;
+        return {
+            path,
+            lx: Math.round(routeX - 132),
+            ly: Math.round((sourceY + targetY) / 2 - 11),
+            isReturn: true
+        };
     }
 
     async _saveNodePosition(id, x, y) {
@@ -768,12 +804,6 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return "Реплика";
     }
 
-    static async _onToggleLinearFrames(event, target) {
-        event.stopPropagation();
-        this.hideLinearFrames = target && target.checked === true;
-        this.render();
-    }
-
     async _saveAutoLayout() {
         if (!this.sceneId) return;
         const scene = VNSceneStore.getScene(this.sceneId);
@@ -787,6 +817,9 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         scene.graphPositions = positions;
         await VNSceneStore.upsertScene(scene);
+        this._panX = 0;
+        this._panY = 0;
+        this._zoom = 1;
     }
 
     static async _onAutoLayout(event, target) {
@@ -819,7 +852,6 @@ VNGraphApp.DEFAULT_OPTIONS = {
         height: 760
     },
     actions: {
-        toggleLinearFrames: VNGraphApp._onToggleLinearFrames,
         autoLayout: VNGraphApp._onAutoLayout,
         resetLayout: VNGraphApp._onResetLayout
     }
