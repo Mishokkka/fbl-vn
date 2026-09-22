@@ -917,6 +917,33 @@ compactToggleListener({ currentTarget: compactToggle });
 assert.equal(toggleGraph.hideLinearFrames, true, "Compact graph toggle must read the checkbox state from the change event");
 assert.equal(compactToggleRenderCount, 1, "Compact graph toggle must rerender after changing mode");
 
+const compactLinearScene = createScene();
+const compactLinearBranch = compactLinearScene.branches[0];
+compactLinearBranch.id = "compact-linear";
+const compactLinearStart = compactLinearScene.frames[0];
+compactLinearStart.id = "compact-linear-start";
+compactLinearStart.branchId = compactLinearBranch.id;
+compactLinearStart.isFinal = false;
+compactLinearStart.next = "";
+const compactLinearMiddle = createFrame("dialogue");
+compactLinearMiddle.id = "compact-linear-middle";
+compactLinearMiddle.branchId = compactLinearBranch.id;
+compactLinearMiddle.isFinal = false;
+compactLinearMiddle.next = "";
+const compactLinearEnd = createFrame("dialogue");
+compactLinearEnd.id = "compact-linear-end";
+compactLinearEnd.branchId = compactLinearBranch.id;
+compactLinearEnd.isFinal = true;
+compactLinearScene.frames = [compactLinearStart, compactLinearMiddle, compactLinearEnd];
+compactLinearScene.startFrame = compactLinearStart.id;
+graph.hideLinearFrames = true;
+const compactLinearGraph = graph._buildGraph(compactLinearScene);
+assert.equal(compactLinearGraph.visibleFrameCount, 2, "Compact mode must actually remove a purely linear intermediate frame");
+assert.equal(compactLinearGraph.nodes.some(node => node.id === compactLinearMiddle.id), false, "Compact mode must not render the hidden linear frame");
+assert.equal(compactLinearGraph.edges.some(edge => edge.sourceId === compactLinearStart.id && edge.targetId === compactLinearEnd.id && !edge.isBroken), true, "Compact mode must bridge across hidden linear frames");
+
+graph.hideLinearFrames = false;
+
 const layoutFrames = [
   { id: "layout-a0", branchId: "layout-a" },
   { id: "layout-a1", branchId: "layout-a" },
