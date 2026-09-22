@@ -930,11 +930,20 @@ compactLinearEnd.branchId = compactLinearBranch.id;
 compactLinearEnd.isFinal = true;
 compactLinearScene.frames = [compactLinearStart, compactLinearMiddle, compactLinearEnd];
 compactLinearScene.startFrame = compactLinearStart.id;
+compactLinearScene.graphPositions = {
+  [compactLinearStart.id]: { x: 28, y: 28 },
+  [compactLinearMiddle.id]: { x: 15000, y: 28 },
+  [compactLinearEnd.id]: { x: 30000, y: 28 }
+};
+graph._compactPositions = new Map();
 graph.hideLinearFrames = true;
 const compactLinearGraph = graph._buildGraph(compactLinearScene);
 assert.equal(compactLinearGraph.visibleFrameCount, 2, "Compact mode must actually remove a purely linear intermediate frame");
 assert.equal(compactLinearGraph.nodes.some(node => node.id === compactLinearMiddle.id), false, "Compact mode must not render the hidden linear frame");
 assert.equal(compactLinearGraph.edges.some(edge => edge.sourceId === compactLinearStart.id && edge.targetId === compactLinearEnd.id && !edge.isBroken), true, "Compact mode must bridge across hidden linear frames");
+const compactLinearEndNode = compactLinearGraph.nodes.find(node => node.id === compactLinearEnd.id);
+assert.ok(compactLinearEndNode.x < 2000, "Compact mode must ignore sparse full-graph coordinates and use its own dense layout");
+assert.ok(compactLinearGraph.canvasWidth < 5000, "Compact graph canvas must not inherit the full graph's tens-of-thousands-pixel span");
 
 graph.hideLinearFrames = false;
 
