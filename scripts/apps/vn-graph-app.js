@@ -531,7 +531,9 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!toggle || toggle.dataset.vnGraphToggleBound === "true") return;
         toggle.dataset.vnGraphToggleBound = "true";
         toggle.addEventListener("change", event => {
-            void this._setCompactMode(event.currentTarget?.checked === true);
+            void this._setCompactMode(event.currentTarget?.checked === true).catch(error => {
+                console.error("FBL VN | Failed to switch compact graph mode", error);
+            });
         });
     }
 
