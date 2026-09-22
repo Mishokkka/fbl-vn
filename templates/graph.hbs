@@ -11,7 +11,7 @@
       <span class="legend"><i class="fa-solid fa-star"></i> старт</span>
       <span class="legend warning"><i class="fa-solid fa-circle-exclamation"></i> нет входящих связей</span>
       <label class="legend graph-toggle" title="Скрыть линейные кадры между началом, финалом и кадрами выбора">
-        <input type="checkbox" data-action="toggleLinearFrames" {{#if compactGraph}}checked{{/if}} />
+        <input type="checkbox" data-compact-toggle {{#if compactGraph}}checked{{/if}} />
         <span>Убрать варианты между выборами</span>
       </label>
       <button type="button" class="legend graph-button" data-action="autoLayout" title="Пересчитать позиции узлов" aria-label="Пересчитать позиции узлов"><i class="fa-solid fa-wand-magic-sparkles"></i> Автораскладка</button>
@@ -33,12 +33,12 @@
               </marker>
             </defs>
             {{#each edges}}
-              <path class="graph-edge {{#if isChoice}}is-choice{{/if}} {{#if isConditional}}is-conditional{{/if}} {{#if isBroken}}is-broken{{/if}} {{#if isTerminal}}is-terminal{{/if}}" d="{{path}}" data-edge-id="{{edgeId}}" data-source-id="{{sourceId}}" data-target-id="{{targetId}}" data-source-index="{{sourceIndex}}"></path>
+              <path class="graph-edge {{#if isChoice}}is-choice{{/if}} {{#if isConditional}}is-conditional{{/if}} {{#if isReturn}}is-return{{/if}} {{#if isBroken}}is-broken{{/if}} {{#if isTerminal}}is-terminal{{/if}}" d="{{path}}" data-edge-id="{{edgeId}}" data-source-id="{{sourceId}}" data-target-id="{{targetId}}" data-source-index="{{sourceIndex}}"></path>
             {{/each}}
           </svg>
 
           {{#each edges}}
-            <div class="graph-edge-label {{#if isChoice}}is-choice{{/if}} {{#if isConditional}}is-conditional{{/if}} {{#if isBroken}}is-broken{{/if}} {{#if isTerminal}}is-terminal{{/if}}" style="{{labelStyle}}" title="{{label}}" data-edge-id="{{edgeId}}">{{label}}</div>
+            <div class="graph-edge-label {{#if isChoice}}is-choice{{/if}} {{#if isConditional}}is-conditional{{/if}} {{#if isReturn}}is-return{{/if}} {{#if isBroken}}is-broken{{/if}} {{#if isTerminal}}is-terminal{{/if}}" style="{{labelStyle}}" title="{{label}}" data-edge-id="{{edgeId}}">{{label}}</div>
           {{/each}}
 
           {{#each nodes}}
