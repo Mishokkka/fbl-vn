@@ -1014,14 +1014,16 @@ assert.ok(returnFanGraph.canvasWidth >= widestReturnX + 150, "Canvas must reserv
 const compactConditional = createScene();
 const compactBranch = compactConditional.branches[0];
 compactBranch.id = "compact-main";
+const compactConditionBranch = { id: "compact-condition", name: "Condition", sort: 1000 };
+compactConditional.branches.push(compactConditionBranch);
 const compactStart = compactConditional.frames[0];
 compactStart.id = "compact-start";
 compactStart.branchId = compactBranch.id;
 compactStart.isFinal = false;
-compactStart.next = "";
+compactStart.next = "compact-gate";
 const compactGate = createFrame("dialogue");
 compactGate.id = "compact-gate";
-compactGate.branchId = compactBranch.id;
+compactGate.branchId = compactConditionBranch.id;
 compactGate.isFinal = false;
 compactGate.nextRouting = {
   enabled: true,
