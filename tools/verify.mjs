@@ -91,9 +91,9 @@ if (!editorSource.includes("frameEffectCounterOptions") || !editorSource.include
 if (!playerSource.includes("this._applyFrameEffect(frame);") || !playerSource.includes("applyFrameCounterEffect")) errors.push("Player must apply a frame counter effect on frame entry");
 if (!counterManagerSource.includes("frameEffects") || !counterManagerSource.includes("frame.effectCounterId === counterId")) errors.push("Counter manager must count and clear frame counter effects");
 if (!graphSource.includes("const isBranchPoint = links.length !== 1 || links.some(link => link.kind === \"condition\")")) errors.push("Compact graph must keep non-linear counter-routing frames visible");
-const crossBranchPromotionBlock = graphSource.match(/if\s*\(\(frame\.branchId\s*\|\|\s*""\)\s*!==\s*\(target\.branchId\s*\|\|\s*""\)\)\s*\{([^}]*)\}/)?.[1] || "";
-if (!/visible\.add\(frame\.id\);/.test(crossBranchPromotionBlock) || !/visible\.add\(target\.id\);/.test(crossBranchPromotionBlock)) errors.push("Compact graph must preserve both source and target of the same cross-branch hand-off");
-if (!graphSource.includes("Defensive closure") || !graphSource.includes("this._resolveVisibleTarget(link.targetId, visible, outgoing, frameMap)")) errors.push("Compact graph must promote valid hidden resolver stops instead of rendering them as broken links");
+const compactVisibilityBlock = graphSource.match(/_compactVisibleFrameIds\(scene, frames, outgoing\)\s*\{([\s\S]*?)\n\s*return visible;\n\s*\}/)?.[1] || "";
+if (/branchId/.test(compactVisibilityBlock)) errors.push("Compact visibility must not keep linear frames merely because a link crosses editor branches");
+if (!compactVisibilityBlock.includes("this._resolveVisibleTarget(link.targetId, visible, outgoing, frameMap)")) errors.push("Compact graph must promote only unresolved hidden cycle stops instead of rendering them as broken links");
 if (!graphTemplateSource.includes("data-compact-toggle") || graphTemplateSource.includes('data-action="toggleLinearFrames"')) errors.push("Compact graph checkbox must use a direct change listener instead of ApplicationV2 action dispatch");
 if (!graphSource.includes('_bindGraphControls()') || !graphSource.includes('toggle.addEventListener("change"') || !graphSource.includes("input?.checked === true")) errors.push("Compact graph toggle must read the checkbox state from a change event");
 if (!graphSource.includes("Kosaraju with explicit stacks") || !graphSource.includes("componentById") || !graphSource.includes("componentEdges") || !graphSource.includes("_calculateAutoPositions")) errors.push("Graph auto-layout must use cycle-aware component ranking and branch lanes");
@@ -184,8 +184,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.6") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.6")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.7") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.7")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
