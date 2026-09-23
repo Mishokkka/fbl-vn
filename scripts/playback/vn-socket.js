@@ -61,6 +61,11 @@ export class VNSocket {
                 if (!game.user?.isGM) return;
                 this.handlers.vote?.(data, senderId);
                 break;
+            case "leave":
+                if (!game.user?.isGM) return;
+                if (!this._removeSessionParticipant(data?.sceneId || "", senderId)) return;
+                this.handlers.leave?.(data, senderId);
+                break;
             default:
                 console.warn(`${MODULE_ID} | Unknown socket payload`, payload);
         }
@@ -101,9 +106,28 @@ export class VNSocket {
 
     static _participantIdsForScene(sceneId) {
         const participants = this.activeParticipants.get(sceneId);
-        if (participants && participants.size) return [...participants];
+        if (participants) return [...participants];
         const targetIds = this._targetIdsForScene(sceneId);
         return targetIds.length ? [game.user.id, ...targetIds] : [game.user.id];
+    }
+
+    static _participantIdsForLaunch(targetIds, mode) {
+        const players = [...new Set(Array.isArray(targetIds) ? targetIds : [])];
+        return mode === PLAYER_MODES.VOTE ? players : [game.user.id, ...players];
+    }
+
+    static _removeSessionParticipant(sceneId, userId) {
+        if (!sceneId || !userId) return false;
+        const session = this.activeSessions.get(sceneId);
+        if (!session || session.leaderId !== game.user?.id || !session.targetIds.includes(userId)) return false;
+
+        session.targetIds = session.targetIds.filter(id => id !== userId);
+        session.participantIds = session.participantIds.filter(id => id !== userId);
+        this.activeTargets.get(sceneId)?.delete(userId);
+        this.activeParticipants.get(sceneId)?.delete(userId);
+        this.ready.get(sceneId)?.delete(userId);
+        this.readyTargets.get(sceneId)?.delete(userId);
+        return true;
     }
 
     static _withSceneTargets(sceneId, data = {}) {
@@ -163,7 +187,7 @@ export class VNSocket {
                 this.close(existingSceneId);
             }
             const targetIds = this.getTargetUserIds();
-            const participantIds = [game.user.id, ...targetIds];
+            const participantIds = this._participantIdsForLaunch(targetIds, mode);
             this.activeTargets.set(scene.id, new Set(targetIds));
             this.activeParticipants.set(scene.id, new Set(participantIds));
             this.activeLeaders.set(scene.id, game.user.id);
@@ -225,6 +249,13 @@ export class VNSocket {
             return;
         }
         this.emit("vote", data);
+    }
+
+    static leave(sceneId, leaderId = null) {
+        if (!sceneId) return false;
+        const data = { sceneId };
+        if (leaderId) data.targetIds = [leaderId];
+        return this.emit("leave", data);
     }
 
     static broadcastVoteState(sceneId, state = {}) {
