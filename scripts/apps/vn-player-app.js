@@ -399,9 +399,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const seen = new Set();
         const maxStates = Math.max(200, (this.scene?.frames?.length || 0) * 40);
         let processed = 0;
+        let cursor = 0;
 
-        while (queue.length && processed < maxStates) {
-            const state = queue.shift();
+        while (cursor < queue.length && processed < maxStates) {
+            const state = queue[cursor++];
             processed += 1;
             const key = this._previewCounterKey(state.frameId, state.counterState);
             if (seen.has(key)) continue;
@@ -421,8 +422,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 for (const choice of choices) {
                     if (!isChoiceAvailable(choice, enteredCounters)) continue;
                     const nextCounters = applyChoiceCounterEffect(choice, enteredCounters);
-                    const nextId = choice.next && this._frameById.has(choice.next)
-                        ? choice.next
+                    const nextId = choice.next
+                        ? (this._frameById.has(choice.next) ? choice.next : "")
                         : this._previewNextId(frame, nextCounters);
                     if (!nextId || !this._frameById.has(nextId)) continue;
                     const steps = state.steps.concat([{ frameId: frame.id, choiceId: choice.id || "" }]);
