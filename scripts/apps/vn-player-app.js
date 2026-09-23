@@ -41,8 +41,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.leaderId = options.leaderId !== undefined ? options.leaderId : null;
         this.networked = options.networked === true;
         this.framePreview = options.framePreview === true;
-        this.participantIds = uniqueIds(options.participantIds && options.participantIds.length ? options.participantIds : [game.user.id]);
-        if (this.mode === PLAYER_MODES.VOTE && !this.participantIds.includes(game.user.id) && game.user?.isGM) this.participantIds.push(game.user.id);
+        const suppliedParticipantIds = Array.isArray(options.participantIds) ? options.participantIds : null;
+        this.participantIds = uniqueIds(suppliedParticipantIds ?? [game.user.id]);
         this.loading = true;
         this.started = false;
         this._starting = false;
@@ -64,7 +64,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (event.repeat || this._isKeyboardControlTarget(event.target)) return;
             if (event.key === "Escape" && this._canCloseLocally()) {
                 event.preventDefault();
-                void this.finish();
+                void this.requestClose();
                 return;
             }
             if ((event.key === " " || event.key === "Enter") && this.started) {
@@ -141,8 +141,21 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return Boolean(target?.closest?.("button, input, select, textarea, a, [contenteditable='true'], [role='button'], .fbl-vn-volume-panel, .fbl-vn-volume-widget"));
     }
 
-    _activeParticipantIds() {
+    _isGmVoteOverride() {
+        return Boolean(this.mode === PLAYER_MODES.VOTE && this._isLeader() && game.user?.isGM);
+    }
+
+    _voteParticipantIds() {
         return this.participantIds.filter(id => {
+            if (id === game.user?.id) return game.user?.isGM !== true;
+            const user = game.users?.get?.(id);
+            return user ? user.isGM !== true : true;
+        });
+    }
+
+    _activeParticipantIds() {
+        const ids = this.mode === PLAYER_MODES.VOTE ? this._voteParticipantIds() : this.participantIds;
+        return ids.filter(id => {
             if (id === game.user?.id) return game.user?.active !== false;
             const user = game.users?.get?.(id);
             return Boolean(user?.active);
@@ -269,6 +282,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static handleUserConnection(user, connected) {
         for (const app of VNPlayerApp.active.values()) app._onParticipantConnectionChange(user, connected);
+    }
+
+    static handleParticipantLeave(sceneId, userId) {
+        const app = VNPlayerApp.active.get(sceneId);
+        if (!app) return;
+        return app._onParticipantLeave(userId);
     }
 
     async preload(options = {}) {
@@ -625,7 +644,15 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     _canCloseLocally() {
-        return this._isLeader() || this.mode === PLAYER_MODES.INDIVIDUAL;
+        return this._isLeader() || this.mode === PLAYER_MODES.INDIVIDUAL || this.mode === PLAYER_MODES.VOTE;
+    }
+
+    async requestClose() {
+        if (this.mode === PLAYER_MODES.VOTE && this.networked && !this._isLeader()) {
+            VNSocket.leave(this.scene.id, this.leaderId);
+            return this.close({ force: true });
+        }
+        return this.finish();
     }
 
     async _prepareContext(options) {
@@ -635,16 +662,17 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const currentBlock = getTextBlock(frame, this.currentTextIndex);
         const isVoteMode = this.mode === PLAYER_MODES.VOTE;
         const activeParticipants = this._activeParticipantIds();
-        const isParticipant = !isVoteMode || activeParticipants.includes(game.user.id);
+        const isVoteOverride = isVoteMode && this._isGmVoteOverride();
+        const isParticipant = !isVoteMode || activeParticipants.includes(game.user.id) || isVoteOverride;
         const canAdvance = this.started && isParticipant && (this.mode !== PLAYER_MODES.GM || this._isLeader());
         const portraitPosition = ["left", "center", "right"].includes(this.visualState.portraitPosition) ? this.visualState.portraitPosition : "left";
         const transition = frame && ["none", "fade", "dark"].includes(frame.transition) ? frame.transition : "none";
         const isChoice = Boolean(frame && frame.type === "choice");
         const isFinal = Boolean(frame && frame.isFinal === true);
         const isLastTextBlock = this.currentTextIndex >= Math.max(0, blocks.length - 1);
-        const localVote = this._getLocalVoteForCurrentStep();
+        const localVote = isVoteOverride ? null : this._getLocalVoteForCurrentStep();
         const voteState = this._getVoteStateForCurrentStep();
-        const voteTotal = activeParticipants.length || 1;
+        const voteTotal = activeParticipants.length;
         const choices = frame && Array.isArray(frame.choices) ? frame.choices : [];
         const choiceCounts = voteState && voteState.choices ? voteState.choices : {};
         const currentVolumeLevels = this._volumeLevels();
@@ -704,6 +732,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             showChoices: isChoice && isLastTextBlock && !isFinal,
             isGmMode: this.mode === PLAYER_MODES.GM,
             isVoteMode,
+            isVoteOverride,
             isLeader: this._isLeader(),
             canClose: this._canCloseLocally(),
             portraitClass: `portrait-${portraitPosition}`,
@@ -1161,6 +1190,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!frame) return;
         const blocks = getFrameTextBlocks(frame);
         if (frame.type === "choice" && this.currentTextIndex >= blocks.length - 1) return;
+        if (this._isGmVoteOverride()) return this._resolveGmVoteOverride({ action: "continue" });
         await this._submitVote({ action: "continue" });
     }
 
@@ -1173,11 +1203,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const choices = Array.isArray(frame.choices) ? frame.choices : [];
         const choice = choices.find(item => item.id === choiceId);
         if (!choice || !isChoiceAvailable(choice, this.counterState)) return;
+        if (this._isGmVoteOverride()) return this._resolveGmVoteOverride({ action: "choice", choiceId });
         await this._submitVote({ action: "choice", choiceId });
     }
 
     _canSubmitVote() {
-        return Boolean(this.mode === PLAYER_MODES.VOTE && this._activeParticipantIds().includes(game.user.id));
+        return Boolean(this.mode === PLAYER_MODES.VOTE && (this._isGmVoteOverride() || this._activeParticipantIds().includes(game.user.id)));
     }
 
     async _submitVote({ action, choiceId = "" }) {
@@ -1205,7 +1236,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             action: "",
             voters: [],
             choices: {},
-            total: this.participantIds ? this.participantIds.length : 0
+            total: this._activeParticipantIds().length
         };
     }
 
@@ -1229,10 +1260,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frame = this._getFrame(this.currentFrameId);
         if (!frame) return;
         const activeParticipants = this._activeParticipantIds();
+        const isVoteOverride = this._isGmVoteOverride();
         const isParticipant = activeParticipants.includes(game.user.id);
-        const localVote = this._getLocalVoteForCurrentStep();
+        const canAct = isParticipant || isVoteOverride;
+        const localVote = isVoteOverride ? null : this._getLocalVoteForCurrentStep();
         const voteState = this._getVoteStateForCurrentStep();
-        const total = Number(voteState.total || activeParticipants.length || 1);
+        const total = Number.isFinite(Number(voteState.total)) ? Number(voteState.total) : activeParticipants.length;
 
         for (const button of this.element.querySelectorAll(".fbl-vn-player-choice-list button[data-choice-id]")) {
             const choiceId = button.dataset.choiceId || "";
@@ -1241,16 +1274,16 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const selected = Boolean(localVote && localVote.action === "choice" && localVote.choiceId === choiceId);
             button.classList.toggle("is-selected", selected);
             button.classList.toggle("is-unavailable", !available);
-            button.disabled = !isParticipant || Boolean(localVote) || !available;
+            button.disabled = !canAct || (!isVoteOverride && Boolean(localVote)) || !available;
             const count = button.querySelector(".fbl-vn-vote-count");
             if (count) count.textContent = `${Number(voteState.choices?.[choiceId] || 0)} / ${total}`;
         }
 
         const nextButton = this.element.querySelector(".fbl-vn-next[data-action='next']");
         if (nextButton) {
-            const voted = Boolean(localVote);
+            const voted = !isVoteOverride && Boolean(localVote);
             nextButton.classList.toggle("is-voted", voted);
-            nextButton.disabled = !isParticipant || voted;
+            nextButton.disabled = !canAct || voted;
             const actionLabel = nextButton.querySelector("[data-vote-action-label]");
             if (actionLabel) actionLabel.textContent = voted ? "Ждём остальных" : "Продолжить";
             const count = nextButton.querySelector(".fbl-vn-vote-count");
@@ -1295,7 +1328,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _buildVoteStateFromLeaderVotes() {
         const choices = {};
         let action = "";
-        for (const vote of this._leaderVotes.values()) {
+        const activeParticipants = new Set(this._activeParticipantIds());
+        const voters = [];
+        for (const [userId, vote] of this._leaderVotes.entries()) {
+            if (!activeParticipants.has(userId)) continue;
+            voters.push(userId);
             action = vote.action || action;
             if (vote.action === "choice" && vote.choiceId) choices[vote.choiceId] = Number(choices[vote.choiceId] || 0) + 1;
         }
@@ -1304,9 +1341,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             frameId: this.currentFrameId,
             textIndex: this.currentTextIndex,
             action,
-            voters: [...this._leaderVotes.keys()],
+            voters,
             choices,
-            total: this._activeParticipantIds().length
+            total: activeParticipants.size
         };
     }
 
@@ -1329,18 +1366,56 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             action: payload.action || "",
             voters,
             choices,
-            total: Number(payload.total || this._activeParticipantIds().length || 0)
+            total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : this._activeParticipantIds().length
         };
         this._syncVoteDom();
     }
 
-    _onParticipantConnectionChange(user, _connected) {
+    _onParticipantConnectionChange(user, connected) {
         if (!this._isLeader() || this.mode !== PLAYER_MODES.VOTE || !user || !this.participantIds.includes(user.id)) return;
+        if (connected !== true) this._leaderVotes.delete(user.id);
         this._publishVoteState();
         const activeParticipants = this._activeParticipantIds();
         if (activeParticipants.length && activeParticipants.every(id => this._leaderVotes.has(id))) {
             void this._resolveLeaderVotes();
         }
+    }
+
+    _onParticipantLeave(userId) {
+        if (!this._isLeader() || this.mode !== PLAYER_MODES.VOTE || !userId || !this.participantIds.includes(userId)) return;
+        this.participantIds = this.participantIds.filter(id => id !== userId);
+        this._leaderVotes.delete(userId);
+        this._publishVoteState();
+        const activeParticipants = this._activeParticipantIds();
+        if (activeParticipants.length && activeParticipants.every(id => this._leaderVotes.has(id))) {
+            void this._resolveLeaderVotes();
+        }
+    }
+
+    async _resolveGmVoteOverride({ action, choiceId = "" }) {
+        if (!this._isGmVoteOverride() || this._resolvingVote) return;
+        const frame = this._getFrame(this.currentFrameId);
+        if (!frame || !this._isVoteActionValid(frame, action, choiceId)) return;
+        this._resolvingVote = true;
+        this._leaderVotes.clear();
+        this._publishVoteState();
+
+        if (action === "choice") {
+            const choices = Array.isArray(frame.choices) ? frame.choices : [];
+            const choice = choices.find(item => item.id === choiceId);
+            if (!choice) {
+                this._resolvingVote = false;
+                return;
+            }
+            this._applyChoiceEffect(choice);
+            if (frame.isFinal === true) return this.finish();
+            const nextId = choice.next || this._getNextFrameId(frame);
+            if (!nextId) return this.finish();
+            await this.goToFrame(nextId, { choiceId: choice.id });
+            return;
+        }
+
+        await this._advanceAfterContinueVote(frame);
     }
 
     async _resolveLeaderVotes() {
@@ -1450,7 +1525,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static _onCloseCutscene(event, target) {
         event.preventDefault();
-        void this.finish();
+        void this.requestClose();
     }
 
     static _onToggleVolumePanel(event, target) {
