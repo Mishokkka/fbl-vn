@@ -270,8 +270,9 @@ export class VNGraphApp extends HandlebarsApplicationMixin(ApplicationV2) {
             seen.add(currentId);
             const record = frameMap.get(currentId);
             if (!record) return { targetId: currentId };
+            const frame = record.frame || record;
             const links = rawOutgoing.get(currentId) || [];
-            if (record.frame.type === FRAME_TYPES.CHOICE || links.length !== 1) return { targetId: currentId };
+            if (frame.type === FRAME_TYPES.CHOICE || links.length !== 1) return { targetId: currentId };
             const nextId = links[0] ? links[0].targetId || "" : "";
             if (!nextId) return { targetId: "" };
             currentId = nextId;
