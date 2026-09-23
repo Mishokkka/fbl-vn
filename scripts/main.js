@@ -60,6 +60,7 @@ function registerSocketOnce() {
         }),
         close: payload => VNPlayerApp.closeScene(payload.sceneId),
         vote: (payload, senderId) => VNPlayerApp.recordVote(payload, senderId),
+        leave: (payload, senderId) => VNPlayerApp.handleParticipantLeave(payload.sceneId, senderId),
         voteState: payload => VNPlayerApp.updateVoteState(payload),
         userConnected: (user, connected) => VNPlayerApp.handleUserConnection(user, connected),
         getSyncState: sceneId => VNPlayerApp.getSyncState(sceneId),
