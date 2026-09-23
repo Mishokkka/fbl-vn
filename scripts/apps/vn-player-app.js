@@ -2,7 +2,7 @@ import { applyChoiceCounterEffect, applyFrameCounterEffect, getInitialCounterSta
 import { VNPreloadController, VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
-import { MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
+import { AUDIO_ACTIONS, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { notifyWarn } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } from "../utils/rich-text.js";
 
@@ -40,6 +40,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.mode = options.mode !== undefined ? options.mode : PLAYER_MODES.INDIVIDUAL;
         this.leaderId = options.leaderId !== undefined ? options.leaderId : null;
         this.networked = options.networked === true;
+        this.framePreview = options.framePreview === true;
         this.participantIds = uniqueIds(options.participantIds && options.participantIds.length ? options.participantIds : [game.user.id]);
         if (this.mode === PLAYER_MODES.VOTE && !this.participantIds.includes(game.user.id) && game.user?.isGM) this.participantIds.push(game.user.id);
         this.loading = true;
@@ -191,6 +192,24 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 notifyWarn("VN: предзагрузка катсцены завершилась ошибкой. Подробности записаны в консоль.");
             });
         }
+        return app;
+    }
+
+    static async previewFrame(scene, frameId) {
+        if (!scene || !frameId) return null;
+        for (const app of [...VNPlayerApp.active.values()]) {
+            await app.close({ force: true });
+        }
+        const app = new VNPlayerApp({
+            scene,
+            mode: PLAYER_MODES.INDIVIDUAL,
+            leaderId: game.user.id,
+            networked: false,
+            framePreview: true
+        });
+        await app.render(true);
+        await app.preload({ frameId });
+        await app.startFramePreview(frameId);
         return app;
     }
 
@@ -350,6 +369,144 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             value.value = Number(progress.done || 0);
         }
         if (label) label.textContent = `${Number(progress.done || 0)} / ${Number(progress.total || 0)}`;
+    }
+
+    _previewCounterKey(frameId, counterState) {
+        const entries = Object.entries(counterState && typeof counterState === "object" ? counterState : {})
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([id, value]) => [id, Number(value || 0)]);
+        return `${frameId || ""}|${JSON.stringify(entries)}`;
+    }
+
+    _previewNextId(frame, counterState) {
+        const routing = resolveFrameNextRouting(frame, counterState);
+        if (routing.enabled) {
+            if (routing.frameId && this._frameById.has(routing.frameId)) return routing.frameId;
+            return this._nextSequentialById.get(frame.id) || "";
+        }
+        if (frame.next && this._frameById.has(frame.next)) return frame.next;
+        return this._nextSequentialById.get(frame.id) || "";
+    }
+
+    _findPreviewPath(targetFrameId) {
+        const target = this._getFrame(targetFrameId);
+        const start = this._getFrame();
+        if (!target || !start) return null;
+        const initial = getInitialCounterState(this.scene);
+        if (start.id === target.id) return { steps: [], counterState: initial };
+
+        const queue = [{ frameId: start.id, counterState: initial, steps: [] }];
+        const seen = new Set();
+        const maxStates = Math.max(200, (this.scene?.frames?.length || 0) * 40);
+        let processed = 0;
+
+        while (queue.length && processed < maxStates) {
+            const state = queue.shift();
+            processed += 1;
+            const key = this._previewCounterKey(state.frameId, state.counterState);
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            const frame = this._getFrame(state.frameId);
+            if (!frame) continue;
+            if (frame.id === target.id) {
+                return { steps: state.steps, counterState: state.counterState };
+            }
+
+            let enteredCounters = applyFrameCounterEffect(frame, state.counterState);
+            if (frame.isFinal === true) continue;
+
+            if (frame.type === "choice") {
+                const choices = Array.isArray(frame.choices) ? frame.choices : [];
+                for (const choice of choices) {
+                    if (!isChoiceAvailable(choice, enteredCounters)) continue;
+                    const nextCounters = applyChoiceCounterEffect(choice, enteredCounters);
+                    const nextId = choice.next && this._frameById.has(choice.next)
+                        ? choice.next
+                        : this._previewNextId(frame, nextCounters);
+                    if (!nextId || !this._frameById.has(nextId)) continue;
+                    const steps = state.steps.concat([{ frameId: frame.id, choiceId: choice.id || "" }]);
+                    if (nextId === target.id) return { steps, counterState: nextCounters };
+                    queue.push({ frameId: nextId, counterState: nextCounters, steps });
+                }
+                continue;
+            }
+
+            const nextId = this._previewNextId(frame, enteredCounters);
+            if (!nextId || !this._frameById.has(nextId)) continue;
+            const steps = state.steps.concat([{ frameId: frame.id, choiceId: "" }]);
+            if (nextId === target.id) return { steps, counterState: enteredCounters };
+            queue.push({ frameId: nextId, counterState: enteredCounters, steps });
+        }
+        return null;
+    }
+
+    _applyPreviewCueState(bank, cues, kind) {
+        for (const cue of Array.isArray(cues) ? cues : []) {
+            const channel = String(cue.channel || "").trim();
+            if (cue.action === AUDIO_ACTIONS.STOP_ALL) {
+                bank.clear();
+                continue;
+            }
+            if (!channel) continue;
+            if (cue.action === AUDIO_ACTIONS.STOP) {
+                bank.delete(channel);
+                continue;
+            }
+            if (cue.action !== AUDIO_ACTIONS.PLAY || !cue.src) continue;
+            if (kind === "sfx" && cue.loop !== true) {
+                bank.delete(channel);
+                continue;
+            }
+            bank.set(channel, {
+                channel,
+                src: cue.src,
+                loop: cue.loop === true
+            });
+        }
+    }
+
+    async _warmFramePreview(previewPath) {
+        this.visualState = createVisualState();
+        const music = new Map();
+        const sfx = new Map();
+
+        for (const step of previewPath?.steps || []) {
+            const frame = this._getFrame(step.frameId);
+            if (!frame) continue;
+            this._applyVisualState(frame);
+            this._applyPreviewCueState(music, frame.musicCues, "music");
+            this._applyPreviewCueState(sfx, frame.sfxCues, "sfx");
+        }
+
+        this.counterState = previewPath?.counterState && typeof previewPath.counterState === "object"
+            ? Object.assign({}, previewPath.counterState)
+            : getInitialCounterState(this.scene);
+
+        for (const cue of music.values()) {
+            await this.audio.playChannel("music", cue.channel, cue.src, cue.loop);
+        }
+        for (const cue of sfx.values()) {
+            await this.audio.playChannel("sfx", cue.channel, cue.src, true);
+        }
+    }
+
+    async startFramePreview(frameId) {
+        if (this.loading || this._disposed) return;
+        const frame = this._getFrame(frameId);
+        if (!frame) return;
+        this.started = true;
+        this.audio.pauseExternalAudio();
+        const previewPath = this._findPreviewPath(frame.id);
+        if (previewPath) {
+            await this._warmFramePreview(previewPath);
+        }
+        else {
+            this.counterState = getInitialCounterState(this.scene);
+            this.visualState = createVisualState();
+            console.warn(`${MODULE_ID} | Could not reconstruct a reachable preview path to frame ${frame.id}. Previewing the frame without inherited state.`);
+        }
+        await this._goToFrameNow(frame.id, { force: true });
     }
 
     async start() {
@@ -920,6 +1077,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 await this._goToTextBlock(this.currentTextIndex + 1);
                 return;
             }
+            if (this.framePreview) return await this.finish();
             if (frame.type === "choice") return;
             if (frame.isFinal === true) return await this.finish();
             const nextId = this._getNextFrameId(frame);
@@ -953,6 +1111,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
             if (this.mode === PLAYER_MODES.VOTE) return await this._submitChoiceVote(choiceId);
             if (this.mode === PLAYER_MODES.GM && !this._isLeader()) return;
+            if (this.framePreview) return await this.finish();
             const choices = Array.isArray(frame.choices) ? frame.choices : [];
             const choice = choices.find(c => c.id === choiceId);
             if (!choice || !isChoiceAvailable(choice, this.counterState)) return;
