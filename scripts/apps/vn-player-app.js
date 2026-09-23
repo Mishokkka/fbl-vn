@@ -1078,8 +1078,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 await this._goToTextBlock(this.currentTextIndex + 1);
                 return;
             }
-            if (this.framePreview) return await this.finish();
             if (frame.type === "choice") return;
+            if (this.framePreview) return await this.finish();
             if (frame.isFinal === true) return await this.finish();
             const nextId = this._getNextFrameId(frame);
             if (!nextId) return await this.finish();
