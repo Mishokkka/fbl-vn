@@ -195,7 +195,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return app;
     }
 
-    static async previewFrame(scene, frameId) {
+    static async previewFrame(scene, frameId, options = {}) {
         if (!scene || !frameId) return null;
         for (const app of [...VNPlayerApp.active.values()]) {
             await app.close({ force: true });
@@ -209,7 +209,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         });
         await app.render(true);
         await app.preload({ frameId });
-        await app.startFramePreview(frameId);
+        await app.startFramePreview(frameId, { branchId: options.branchId || "" });
         return app;
     }
 
@@ -388,6 +388,27 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return this._nextSequentialById.get(frame.id) || "";
     }
 
+    _findBranchPreviewPath(targetFrameId, branchId = "") {
+        const target = this._getFrame(targetFrameId);
+        if (!target) return null;
+        const currentBranchId = branchId || target.branchId || "";
+        if ((target.branchId || "") !== currentBranchId) return null;
+
+        const branchFrames = (Array.isArray(this.scene?.frames) ? this.scene.frames : [])
+            .filter(frame => (frame.branchId || "") === currentBranchId);
+        const targetIndex = branchFrames.findIndex(frame => frame.id === target.id);
+        if (targetIndex < 0) return null;
+
+        let counterState = getInitialCounterState(this.scene);
+        const steps = [];
+        for (let index = 0; index < targetIndex; index += 1) {
+            const frame = branchFrames[index];
+            counterState = applyFrameCounterEffect(frame, counterState);
+            steps.push({ frameId: frame.id, choiceId: "" });
+        }
+        return { steps, counterState, branchId: currentBranchId, source: "branch" };
+    }
+
     _findPreviewPath(targetFrameId) {
         const target = this._getFrame(targetFrameId);
         const start = this._getFrame();
@@ -492,20 +513,23 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
-    async startFramePreview(frameId) {
+    async startFramePreview(frameId, options = {}) {
         if (this.loading || this._disposed) return;
         const frame = this._getFrame(frameId);
         if (!frame) return;
         this.started = true;
         this.audio.pauseExternalAudio();
-        const previewPath = this._findPreviewPath(frame.id);
+
+        const requestedBranchId = options.branchId || frame.branchId || "";
+        const branchPreview = this._findBranchPreviewPath(frame.id, requestedBranchId);
+        const previewPath = branchPreview || this._findPreviewPath(frame.id);
         if (previewPath) {
             await this._warmFramePreview(previewPath);
         }
         else {
             this.counterState = getInitialCounterState(this.scene);
             this.visualState = createVisualState();
-            console.warn(`${MODULE_ID} | Could not reconstruct a reachable preview path to frame ${frame.id}. Previewing the frame without inherited state.`);
+            console.warn(`${MODULE_ID} | Could not reconstruct preview state for frame ${frame.id}. Previewing the frame without inherited state.`);
         }
         await this._goToFrameNow(frame.id, { force: true });
     }
