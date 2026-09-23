@@ -913,6 +913,27 @@ assert.equal(framePreviewPlayer.audio.music.get("score")?.path, "score-preview.o
 assert.equal(framePreviewPlayer.audio.sfx.get("rain")?.path, "rain-preview.ogg", "Selected-frame preview must restore inherited looping SFX channels");
 framePreviewPlayer.audio.destroy();
 
+let previewFrameCall = null;
+const savedPreviewFrame = VNPlayerApp.previewFrame;
+VNPlayerApp.previewFrame = async (...args) => {
+  previewFrameCall = args;
+};
+const previewEditor = Object.create(VNEditorApp.prototype);
+previewEditor.selectedFrameId = previewTarget.id;
+previewEditor.selectedBranchId = previewStart.branchId;
+previewEditor._commitFromForm = async () => previewScene;
+try {
+  await VNEditorApp._onPreviewFrame.call(previewEditor, { preventDefault() {} }, {});
+}
+finally {
+  VNPlayerApp.previewFrame = savedPreviewFrame;
+}
+assert.deepEqual(previewFrameCall, [
+  previewScene,
+  previewTarget.id,
+  { branchId: previewStart.branchId }
+], "Editor frame preview must pass the selected branch to VNPlayerApp.previewFrame");
+
 let choicePreviewFinishCount = 0;
 const choicePreviewFrame = createFrame("choice");
 choicePreviewFrame.id = "preview-choice";
