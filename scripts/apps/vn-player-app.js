@@ -1285,7 +1285,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             nextButton.classList.toggle("is-voted", voted);
             nextButton.disabled = !canAct || voted;
             const actionLabel = nextButton.querySelector("[data-vote-action-label]");
-            if (actionLabel) actionLabel.textContent = voted ? "Ждём остальных" : "Продолжить";
+            if (actionLabel) actionLabel.textContent = isVoteOverride ? "Продолжить (ГМ)" : (voted ? "Ждём остальных" : "Продолжить");
             const count = nextButton.querySelector(".fbl-vn-vote-count");
             if (count) count.textContent = `${voteState.voters.length} / ${total}`;
         }
