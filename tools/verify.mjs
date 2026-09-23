@@ -89,9 +89,10 @@ if (!schemaSource.includes("missing-frame-effect-counter")) errors.push("Scene v
 if (!editorFrameTemplateSource.includes('name="frame.effectCounterId"') || !editorFrameTemplateSource.includes('name="frame.effectOperation"') || !editorFrameTemplateSource.includes('name="frame.effectValue"')) errors.push("Frame editor must expose counter effect controls");
 if (!editorSource.includes("frameEffectCounterOptions") || !editorSource.includes("frameEffectOperationOptions")) errors.push("Frame editor context must expose counter effect options");
 if (!playerSource.includes("this._applyFrameEffect(frame);") || !playerSource.includes("applyFrameCounterEffect")) errors.push("Player must apply a frame counter effect on frame entry");
-if (!playerSource.includes("static async previewFrame(scene, frameId)") || !playerSource.includes("async startFramePreview(frameId)") || !playerSource.includes("_findPreviewPath(targetFrameId)") || !playerSource.includes("_warmFramePreview(previewPath)")) errors.push("Player must support selected-frame preview with reconstructed inherited state");
+if (!playerSource.includes("static async previewFrame(scene, frameId, options = {})") || !playerSource.includes("async startFramePreview(frameId, options = {})") || !playerSource.includes("_findBranchPreviewPath(targetFrameId, branchId = \"\")") || !playerSource.includes("_findPreviewPath(targetFrameId)") || !playerSource.includes("_warmFramePreview(previewPath)")) errors.push("Player must support selected-frame preview with current-branch inherited state and graph fallback");
 if (!playerSource.includes("AUDIO_ACTIONS") || !playerSource.includes('_applyPreviewCueState(music, frame.musicCues, "music")') || !playerSource.includes('_applyPreviewCueState(sfx, frame.sfxCues, "sfx")')) errors.push("Selected-frame preview must reconstruct inherited audio channel state");
-if (!editorSource.includes('["previewFrame", "Просмотреть выбранный кадр"') || !editorSource.includes("static async _onPreviewFrame(event, target)") || !editorSource.includes("VNPlayerApp.previewFrame(scene, frame.id)")) errors.push("Editor header must expose selected-frame preview through the real player");
+if (!playerSource.includes('.filter(frame => (frame.branchId || "") === currentBranchId)') || !playerSource.includes('return { steps, counterState, branchId: currentBranchId, source: "branch" }')) errors.push("Selected-frame preview must reconstruct deterministic inherited state from preceding frames in the current editor branch");
+if (!editorSource.includes('["previewFrame", "Просмотреть выбранный кадр"') || !editorSource.includes("static async _onPreviewFrame(event, target)") || !editorSource.includes("const branchId = this.selectedBranchId || frame.branchId || \"\"") || !editorSource.includes("VNPlayerApp.previewFrame(scene, frame.id, { branchId })")) errors.push("Editor header must preview the selected frame in the current editor branch through the real player");
 if (!counterManagerSource.includes("frameEffects") || !counterManagerSource.includes("frame.effectCounterId === counterId")) errors.push("Counter manager must count and clear frame counter effects");
 if (!graphSource.includes("const isBranchPoint = links.length !== 1 || links.some(link => link.kind === \"condition\")")) errors.push("Compact graph must keep non-linear counter-routing frames visible");
 const compactVisibilityBlock = graphSource.match(/_compactVisibleFrameIds\(scene, frames, outgoing\)\s*\{([\s\S]*?)\n\s*return visible;\n\s*\}/)?.[1] || "";
@@ -192,8 +193,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.10") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.10")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.11") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.11")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",

@@ -882,7 +882,15 @@ previewTarget.branchId = previewStart.branchId;
 previewTarget.isFinal = true;
 previewTarget.background = "";
 previewTarget.portrait = "";
-previewScene.frames = [previewStart, previewGate, previewTarget];
+const previewForeignBranch = { id: "preview-foreign-branch", name: "Foreign preview branch", sort: 1000 };
+previewScene.branches.push(previewForeignBranch);
+const previewForeign = createFrame("dialogue");
+previewForeign.id = "preview-foreign";
+previewForeign.branchId = previewForeignBranch.id;
+previewForeign.isFinal = false;
+previewForeign.background = "wrong-branch-bg.webp";
+previewForeign.musicCues = [createAudioCue("music", { channel: "score", src: "wrong-branch-score.ogg", loop: true })];
+previewScene.frames = [previewStart, previewForeign, previewGate, previewTarget];
 previewScene.startFrame = previewStart.id;
 
 const framePreviewPlayer = Object.create(VNPlayerApp.prototype);
@@ -891,16 +899,40 @@ framePreviewPlayer._buildPlaybackIndex();
 framePreviewPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
 framePreviewPlayer.counterState = {};
 framePreviewPlayer.audio = new VNAudioController();
-const previewPath = framePreviewPlayer._findPreviewPath(previewTarget.id);
-assert.ok(previewPath, "Selected-frame preview must reconstruct a reachable path from scene start");
-assert.deepEqual(previewPath.steps.map(step => step.frameId), [previewStart.id, previewGate.id], "Preview path must include every inherited-state frame before the target");
-assert.equal(previewPath.counterState[previewCounter.id], 1, "Preview path must apply frame counter effects before evaluating routing");
-await framePreviewPlayer._warmFramePreview(previewPath);
-assert.equal(framePreviewPlayer.visualState.background, "preview-bg.webp", "Selected-frame preview must inherit the effective background from the reconstructed path");
+const branchPreviewPath = framePreviewPlayer._findBranchPreviewPath(previewTarget.id, previewStart.branchId);
+assert.ok(branchPreviewPath, "Selected-frame preview must reconstruct state from the current editor branch");
+assert.equal(branchPreviewPath.source, "branch", "Branch preview path must identify its deterministic editor-branch source");
+assert.deepEqual(branchPreviewPath.steps.map(step => step.frameId), [previewStart.id, previewGate.id], "Branch preview must include preceding frames from the current branch in editor order");
+assert.equal(branchPreviewPath.steps.some(step => step.frameId === previewForeign.id), false, "Branch preview must ignore frames from other editor branches");
+assert.equal(branchPreviewPath.counterState[previewCounter.id], 1, "Branch preview must apply deterministic frame counter effects from earlier frames in the branch");
+assert.equal(framePreviewPlayer._findBranchPreviewPath(previewTarget.id, previewForeignBranch.id), null, "Branch preview must reject a branch that does not contain the selected frame");
+await framePreviewPlayer._warmFramePreview(branchPreviewPath);
+assert.equal(framePreviewPlayer.visualState.background, "preview-bg.webp", "Selected-frame preview must inherit the effective background from previous frames in the current branch");
 assert.equal(framePreviewPlayer.visualState.portrait, "preview-portrait.webp", "Selected-frame preview must inherit the effective portrait from the reconstructed path");
-assert.equal(framePreviewPlayer.audio.music.get("score")?.path, "score-preview.ogg", "Selected-frame preview must restore inherited music channels");
+assert.equal(framePreviewPlayer.audio.music.get("score")?.path, "score-preview.ogg", "Selected-frame preview must restore inherited music from the current branch, not another branch");
 assert.equal(framePreviewPlayer.audio.sfx.get("rain")?.path, "rain-preview.ogg", "Selected-frame preview must restore inherited looping SFX channels");
 framePreviewPlayer.audio.destroy();
+
+let previewFrameCall = null;
+const savedPreviewFrame = VNPlayerApp.previewFrame;
+VNPlayerApp.previewFrame = async (...args) => {
+  previewFrameCall = args;
+};
+const previewEditor = Object.create(VNEditorApp.prototype);
+previewEditor.selectedFrameId = previewTarget.id;
+previewEditor.selectedBranchId = previewStart.branchId;
+previewEditor._commitFromForm = async () => previewScene;
+try {
+  await VNEditorApp._onPreviewFrame.call(previewEditor, { preventDefault() {} }, {});
+}
+finally {
+  VNPlayerApp.previewFrame = savedPreviewFrame;
+}
+assert.deepEqual(previewFrameCall, [
+  previewScene,
+  previewTarget.id,
+  { branchId: previewStart.branchId }
+], "Editor frame preview must pass the selected branch to VNPlayerApp.previewFrame");
 
 let choicePreviewFinishCount = 0;
 const choicePreviewFrame = createFrame("choice");
