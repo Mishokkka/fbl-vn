@@ -2596,7 +2596,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             notifyWarn("VN: выбери кадр для предпросмотра.");
             return;
         }
-        await VNPlayerApp.previewFrame(scene, frame.id);
+        const branchId = this.selectedBranchId || frame.branchId || "";
+        await VNPlayerApp.previewFrame(scene, frame.id, { branchId });
     }
 
     static async _onStartIndividual(event, target) {
