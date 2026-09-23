@@ -850,6 +850,80 @@ assert.equal(player._getNextFrameId(nested), "frame-root", "Matched routing must
 player.counterState = { [routeCounter.id]: 1 };
 assert.equal(player._getNextFrameId(nested), null, "An empty outcome on the last frame must fall back to sequential end");
 
+const previewScene = createScene("Preview state");
+const previewCounter = createSceneCounter("Preview counter", 0);
+previewScene.counters = [previewCounter];
+const previewStart = previewScene.frames[0];
+previewStart.id = "preview-start";
+previewStart.branchId = previewScene.branches[0].id;
+previewStart.isFinal = false;
+previewStart.background = "preview-bg.webp";
+previewStart.effectCounterId = previewCounter.id;
+previewStart.effectOperation = COUNTER_EFFECTS.ADD;
+previewStart.effectValue = 1;
+previewStart.musicCues = [createAudioCue("music", { channel: "score", src: "score-preview.ogg", loop: true })];
+const previewGate = createFrame("dialogue");
+previewGate.id = "preview-gate";
+previewGate.branchId = previewStart.branchId;
+previewGate.isFinal = false;
+previewGate.portrait = "preview-portrait.webp";
+previewGate.sfxCues = [createAudioCue("sfx", { channel: "rain", src: "rain-preview.ogg", loop: true })];
+previewGate.nextRouting = {
+  enabled: true,
+  counterId: previewCounter.id,
+  operator: "gte",
+  value: 1,
+  trueFrameId: "preview-target",
+  falseFrameId: ""
+};
+const previewTarget = createFrame("dialogue");
+previewTarget.id = "preview-target";
+previewTarget.branchId = previewStart.branchId;
+previewTarget.isFinal = true;
+previewTarget.background = "";
+previewTarget.portrait = "";
+previewScene.frames = [previewStart, previewGate, previewTarget];
+previewScene.startFrame = previewStart.id;
+
+const framePreviewPlayer = Object.create(VNPlayerApp.prototype);
+framePreviewPlayer.scene = previewScene;
+framePreviewPlayer._buildPlaybackIndex();
+framePreviewPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+framePreviewPlayer.counterState = {};
+framePreviewPlayer.audio = new VNAudioController();
+const previewPath = framePreviewPlayer._findPreviewPath(previewTarget.id);
+assert.ok(previewPath, "Selected-frame preview must reconstruct a reachable path from scene start");
+assert.deepEqual(previewPath.steps.map(step => step.frameId), [previewStart.id, previewGate.id], "Preview path must include every inherited-state frame before the target");
+assert.equal(previewPath.counterState[previewCounter.id], 1, "Preview path must apply frame counter effects before evaluating routing");
+await framePreviewPlayer._warmFramePreview(previewPath);
+assert.equal(framePreviewPlayer.visualState.background, "preview-bg.webp", "Selected-frame preview must inherit the effective background from the reconstructed path");
+assert.equal(framePreviewPlayer.visualState.portrait, "preview-portrait.webp", "Selected-frame preview must inherit the effective portrait from the reconstructed path");
+assert.equal(framePreviewPlayer.audio.music.get("score")?.path, "score-preview.ogg", "Selected-frame preview must restore inherited music channels");
+assert.equal(framePreviewPlayer.audio.sfx.get("rain")?.path, "rain-preview.ogg", "Selected-frame preview must restore inherited looping SFX channels");
+framePreviewPlayer.audio.destroy();
+
+let choicePreviewFinishCount = 0;
+const choicePreviewFrame = createFrame("choice");
+choicePreviewFrame.id = "preview-choice";
+choicePreviewFrame.textBlocks = [createTextBlock("Выбери")];
+choicePreviewFrame.choices = [{ id: "preview-choice-option", text: "Вариант", next: "" }];
+const choicePreviewPlayer = Object.create(VNPlayerApp.prototype);
+choicePreviewPlayer.started = true;
+choicePreviewPlayer._interactionBusy = false;
+choicePreviewPlayer._typingComplete = true;
+choicePreviewPlayer.mode = PLAYER_MODES.INDIVIDUAL;
+choicePreviewPlayer.framePreview = true;
+choicePreviewPlayer.currentFrameId = choicePreviewFrame.id;
+choicePreviewPlayer.currentTextIndex = 0;
+choicePreviewPlayer.counterState = {};
+choicePreviewPlayer._getFrame = () => choicePreviewFrame;
+choicePreviewPlayer.finish = async () => { choicePreviewFinishCount += 1; };
+choicePreviewPlayer._isLeader = () => false;
+await choicePreviewPlayer.next();
+assert.equal(choicePreviewFinishCount, 0, "Choice-frame preview must stay open when advance input fires after the text");
+await choicePreviewPlayer.choose("preview-choice-option");
+assert.equal(choicePreviewFinishCount, 1, "Choosing an option in frame preview must close the preview after the author can test the choice");
+
 const closePolicyPlayer = Object.create(VNPlayerApp.prototype);
 const savedCurrentUser = game.user;
 const closePolicyUser = { id: "player-close", isGM: false };
@@ -884,6 +958,26 @@ assert.equal(focusHidden, false, "Focus view must be reversible");
 
 const graph = Object.create(VNGraphApp.prototype);
 graph.hideLinearFrames = false;
+const resolverStart = { id: "resolver-start", type: "dialogue" };
+const resolverHidden = { id: "resolver-hidden", type: "dialogue" };
+const resolverEnd = { id: "resolver-end", type: "dialogue" };
+const resolverFrameMap = new Map([
+  [resolverStart.id, resolverStart],
+  [resolverHidden.id, resolverHidden],
+  [resolverEnd.id, resolverEnd]
+]);
+const resolverOutgoing = new Map([
+  [resolverStart.id, [{ targetId: resolverHidden.id, kind: "next" }]],
+  [resolverHidden.id, [{ targetId: resolverEnd.id, kind: "next" }]],
+  [resolverEnd.id, []]
+]);
+const resolverVisible = new Set([resolverStart.id, resolverEnd.id]);
+assert.equal(
+  graph._resolveVisibleTarget(resolverHidden.id, resolverVisible, resolverOutgoing, resolverFrameMap).targetId,
+  resolverEnd.id,
+  "Compact resolver must accept raw frame records from _compactVisibleFrameIds without dereferencing record.frame"
+);
+
 const graphData = graph._buildGraph(scene);
 assert.equal(graphData.visibleFrameCount, 2);
 assert.ok(graphData.edges.length >= 2);

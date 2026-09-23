@@ -1086,6 +1086,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             ["save", "Сохранить", "fa-solid fa-floppy-disk"],
             ["counters", "Счётчики", "fa-solid fa-gauge-high"],
             ["preview", "Предпросмотр", "fa-solid fa-eye"],
+            ["previewFrame", "Просмотреть выбранный кадр", "fa-solid fa-photo-film"],
             ["startIndividual", "Игрокам", "fa-solid fa-users"],
             ["startGm", "ГМ ведёт", "fa-solid fa-person-chalkboard"],
             ["startVote", "Голосование", "fa-solid fa-check-to-slot"],
@@ -1150,6 +1151,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (action === "save") return VNEditorApp._onSave.call(this, event, target);
         if (action === "counters") return VNEditorApp._onOpenCounterManager.call(this, event, target);
         if (action === "preview") return VNEditorApp._onPreview.call(this, event, target);
+        if (action === "previewFrame") return VNEditorApp._onPreviewFrame.call(this, event, target);
         if (action === "startIndividual") return VNEditorApp._onStartIndividual.call(this, event, target);
         if (action === "startGm") return VNEditorApp._onStartGm.call(this, event, target);
         if (action === "startVote") return VNEditorApp._onStartVote.call(this, event, target);
@@ -2584,6 +2586,19 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await app.start();
     }
 
+    static async _onPreviewFrame(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm();
+        if (!scene) return;
+        const frameId = this.selectedFrameId || "";
+        const frame = (scene.frames || []).find(item => item.id === frameId);
+        if (!frame) {
+            notifyWarn("VN: выбери кадр для предпросмотра.");
+            return;
+        }
+        await VNPlayerApp.previewFrame(scene, frame.id);
+    }
+
     static async _onStartIndividual(event, target) {
         event.preventDefault();
         if (!game.user.isGM) return;
@@ -2675,6 +2690,7 @@ VNEditorApp.DEFAULT_OPTIONS = {
         openGraph: queuedEditorAction(VNEditorApp._onOpenGraph),
         save: queuedEditorAction(VNEditorApp._onSave),
         preview: queuedEditorAction(VNEditorApp._onPreview),
+        previewFrame: queuedEditorAction(VNEditorApp._onPreviewFrame),
         startIndividual: queuedEditorAction(VNEditorApp._onStartIndividual),
         startGm: queuedEditorAction(VNEditorApp._onStartGm),
         startVote: queuedEditorAction(VNEditorApp._onStartVote)
