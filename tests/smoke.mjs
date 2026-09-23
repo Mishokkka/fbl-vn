@@ -902,6 +902,28 @@ assert.equal(framePreviewPlayer.audio.music.get("score")?.path, "score-preview.o
 assert.equal(framePreviewPlayer.audio.sfx.get("rain")?.path, "rain-preview.ogg", "Selected-frame preview must restore inherited looping SFX channels");
 framePreviewPlayer.audio.destroy();
 
+let choicePreviewFinishCount = 0;
+const choicePreviewFrame = createFrame("choice");
+choicePreviewFrame.id = "preview-choice";
+choicePreviewFrame.textBlocks = [createTextBlock("Выбери")];
+choicePreviewFrame.choices = [{ id: "preview-choice-option", text: "Вариант", next: "" }];
+const choicePreviewPlayer = Object.create(VNPlayerApp.prototype);
+choicePreviewPlayer.started = true;
+choicePreviewPlayer._interactionBusy = false;
+choicePreviewPlayer._typingComplete = true;
+choicePreviewPlayer.mode = PLAYER_MODES.INDIVIDUAL;
+choicePreviewPlayer.framePreview = true;
+choicePreviewPlayer.currentFrameId = choicePreviewFrame.id;
+choicePreviewPlayer.currentTextIndex = 0;
+choicePreviewPlayer.counterState = {};
+choicePreviewPlayer._getFrame = () => choicePreviewFrame;
+choicePreviewPlayer.finish = async () => { choicePreviewFinishCount += 1; };
+choicePreviewPlayer._isLeader = () => false;
+await choicePreviewPlayer.next();
+assert.equal(choicePreviewFinishCount, 0, "Choice-frame preview must stay open when advance input fires after the text");
+await choicePreviewPlayer.choose("preview-choice-option");
+assert.equal(choicePreviewFinishCount, 1, "Choosing an option in frame preview must close the preview after the author can test the choice");
+
 const closePolicyPlayer = Object.create(VNPlayerApp.prototype);
 const savedCurrentUser = game.user;
 const closePolicyUser = { id: "player-close", isGM: false };
