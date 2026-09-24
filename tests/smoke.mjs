@@ -825,12 +825,12 @@ assert.equal(isChoiceAvailable(compoundChoice, { [routeCounter.id]: 0, [secondRo
 const routeIssues = validateScene(scene);
 assert.equal(routeIssues.some(issue => issue.code === "frame-routing-missing-frame"), false);
 const routeChoice = { effectCounterId: routeCounter.id, effectOperation: "add", effectValue: 2 };
-const routedCounterState = applyChoiceCounterEffect(routeChoice, { [routeCounter.id]: 1 });
-assert.equal(resolveFrameNextRouting(nested, routedCounterState).frameId, "frame-root", "Choice effects must be usable by conditional next routing");
+const routedCounterState = applyChoiceCounterEffect(routeChoice, { [routeCounter.id]: 1, [secondRouteCounter.id]: 1 });
+assert.equal(resolveFrameNextRouting(nested, routedCounterState).frameId, "frame-root", "Choice effects must be usable by compound conditional next routing");
 const frameEffect = { effectCounterId: routeCounter.id, effectOperation: COUNTER_EFFECTS.ADD, effectValue: 2 };
-const frameEffectState = applyFrameCounterEffect(frameEffect, { [routeCounter.id]: 1 });
+const frameEffectState = applyFrameCounterEffect(frameEffect, { [routeCounter.id]: 1, [secondRouteCounter.id]: 1 });
 assert.equal(frameEffectState[routeCounter.id], 3, "Any frame must be able to change a counter when entered");
-assert.equal(resolveFrameNextRouting(nested, frameEffectState).frameId, "frame-root", "Frame effects must be visible to conditional routing after the frame is entered");
+assert.equal(resolveFrameNextRouting(nested, frameEffectState).frameId, "frame-root", "Frame effects must be visible to compound conditional routing after the frame is entered");
 const counterUsageManager = Object.create(VNCounterManagerApp.prototype);
 const frameEffectUsage = counterUsageManager._buildCounterUsage({
   counters: [routeCounter],
@@ -1080,12 +1080,12 @@ assert.equal(visualStatePlayer.visualState.portraitPosition, "right", "Portrait 
 
 const player = Object.create(VNPlayerApp.prototype);
 player.scene = scene;
-player.counterState = { [routeCounter.id]: 3 };
+player.counterState = { [routeCounter.id]: 3, [secondRouteCounter.id]: 1 };
 player._buildPlaybackIndex();
 assert.equal(player._getFrame("frame-root").id, "frame-root");
 assert.equal(player._getNextFrameId(scene.frames[0]), "frame-nested");
 assert.equal(player._getNextFrameId(nested), "frame-root", "Matched routing must select the configured frame");
-player.counterState = { [routeCounter.id]: 1 };
+player.counterState = { [routeCounter.id]: 1, [secondRouteCounter.id]: 1 };
 assert.equal(player._getNextFrameId(nested), null, "An empty outcome on the last frame must fall back to sequential end");
 
 const previewScene = createScene("Preview state");
