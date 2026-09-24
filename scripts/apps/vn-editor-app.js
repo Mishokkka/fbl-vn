@@ -50,6 +50,10 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._lastValidationSnapshot = null;
         this._lastFrameTargetSceneId = null;
         this._lastFrameTargetEntries = null;
+        this.scenesCollapsed = options.scenesCollapsed === true;
+        this.secondaryBranchId = options.secondaryBranchId || null;
+        this._activeFrameTargetInput = null;
+        this._frameLinkResizeObserver = null;
     }
 
     _enqueueEditorAction(operation) {
@@ -107,6 +111,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             ? selectedScene.frames.find(frame => frame.id === this.selectedFrameId) || selectedScene.frames[0] || null
             : null;
         this._syncSelectedBranch(selectedScene, selectedFrame);
+        this._syncSecondaryBranch(selectedScene);
         if (selectedScene && selectedFrame && selectedFrame.branchId !== this.selectedBranchId) {
             const branchFrame = (selectedScene.frames || []).find(frame => frame.branchId === this.selectedBranchId);
             if (branchFrame) {
@@ -172,6 +177,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         if (partId === "scenes") {
             return {
+                scenesCollapsed: this.scenesCollapsed === true,
                 scenes: state.scenes.map(item => ({
                     id: item.id,
                     title: item.title,
@@ -183,15 +189,30 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (partId === "frames") {
             const renderIndex = this._renderIndexForState(state);
             const frameViews = this._frameViewsForState(state);
-            const frameTreeRows = this._buildFrameTreeRows(scene, frameViews);
+            const frameTreeRows = this._buildFrameTreeRows(scene, frameViews, state.activeBranchId);
+            const secondaryBranch = this.secondaryBranchId && scene?.branches?.find(branch => branch.id === this.secondaryBranchId && branch.id !== state.activeBranchId) || null;
+            const secondaryFrameViews = secondaryBranch
+                ? this._buildFrameViews(scene, renderIndex.issuesByFrame, secondaryBranch.id)
+                : [];
+            const secondaryFrameTreeRows = secondaryBranch
+                ? this._buildFrameTreeRows(scene, secondaryFrameViews, secondaryBranch.id)
+                : [];
             const selectedFolderId = frame && frame.branchId === state.activeBranchId ? frame.folderId || "" : "";
             const activeFolderId = this.selectedFolderId || selectedFolderId || "";
             const activeFolder = renderIndex.folderById.get(activeFolderId) || null;
             return {
                 frameTreeRows,
                 hasFrameTreeRows: frameTreeRows.length > 0,
+                secondaryFrameTreeRows,
+                hasSecondaryFrameTreeRows: secondaryFrameTreeRows.length > 0,
+                showSecondBranch: Boolean(secondaryBranch),
+                canShowSecondBranch: Boolean(scene && Array.isArray(scene.branches) && scene.branches.length > 1),
+                scenesCollapsed: this.scenesCollapsed === true,
                 branchOptions: this._branchOptions(scene, state.activeBranchId),
+                secondaryBranchOptions: this._branchOptions(scene, secondaryBranch?.id || "")
+                    .filter(option => option.value !== state.activeBranchId),
                 activeBranch: state.activeBranch,
+                secondaryBranch,
                 canDeleteBranch: Boolean(scene && Array.isArray(scene.branches) && scene.branches.length > 1),
                 hasSelectedFolder: Boolean(activeFolder)
             };
@@ -371,6 +392,21 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }));
     }
 
+    _syncSecondaryBranch(scene) {
+        const branches = scene && Array.isArray(scene.branches) ? scene.branches : [];
+        if (!this.secondaryBranchId) return;
+        if (!branches.some(branch => branch.id === this.secondaryBranchId) || this.secondaryBranchId === this.selectedBranchId) {
+            this.secondaryBranchId = null;
+        }
+    }
+
+    _activateBranchForSelection(branchId) {
+        if (!branchId || branchId === this.selectedBranchId) return;
+        const previousBranchId = this.selectedBranchId;
+        if (this.secondaryBranchId === branchId) this.secondaryBranchId = previousBranchId || null;
+        this.selectedBranchId = branchId;
+    }
+
     _syncSelectedFolder(scene, selectedFrame) {
         const branchId = this.selectedBranchId || "";
         const folders = scene && Array.isArray(scene.frameFolders) ? scene.frameFolders.filter(folder => !branchId || folder.branchId === branchId) : [];
@@ -378,9 +414,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!this.selectedFolderId && selectedFrame && selectedFrame.branchId === branchId && selectedFrame.folderId) this.selectedFolderId = selectedFrame.folderId;
     }
 
-    _buildFrameTreeRows(scene, frameViews) {
+    _buildFrameTreeRows(scene, frameViews, branchId = "") {
         if (!scene) return [];
-        const branchId = this.selectedBranchId || (frameViews[0] ? frameViews[0].branchId || "" : "");
+        branchId = branchId || (frameViews[0] ? frameViews[0].branchId || "" : this.selectedBranchId || "");
         const folders = Array.isArray(scene.frameFolders) ? scene.frameFolders.filter(folder => !branchId || folder.branchId === branchId) : [];
         const folderMap = new Map(folders.map(folder => [folder.id, folder]));
         const childrenByParent = new Map();
