@@ -149,6 +149,11 @@ assert.equal(VNSocket.activeTargets.get(reconnectSceneId).has(player.id), false,
 assert.equal(VNSocket.activeParticipants.get(reconnectSceneId).has(player.id), false, "Manual leave must remove the player from the persistent vote roster");
 assert.equal(VNSocket.activeSessions.get(reconnectSceneId).targetIds.includes(player.id), false, "Manual leave must remove the player from reconnect eligibility for this session");
 
+assert.equal(VNSocket._removeSessionParticipant(reconnectSceneId, player2.id), true, "The leader must be able to remove the last explicit voter from a vote session");
+const emptyTargetPayload = VNSocket._withSceneTargets(reconnectSceneId, { sceneId: reconnectSceneId });
+assert.deepEqual(emptyTargetPayload.targetIds, [], "An active session with no remaining players must preserve an explicit empty target list");
+assert.equal(VNSocket._isTargeted(emptyTargetPayload), false, "An explicit empty target list must target nobody instead of degenerating into a broadcast");
+
 emitted.length = 0;
 VNSocket._onUserConnected(player, true);
 await new Promise(resolve => setTimeout(resolve, 0));
