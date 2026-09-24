@@ -1606,9 +1606,15 @@ let leaveResolveCalls = 0;
 votePlayer._resolveLeaderVotes = async () => { leaveResolveCalls += 1; };
 votePlayer._onParticipantLeave(playerUser2.id);
 await new Promise(resolve => setTimeout(resolve, 0));
-assert.equal(votePlayer.participantIds.includes(playerUser2.id), false, "Explicitly leaving the cutscene must remove the player from the vote roster permanently for this session");
+assert.equal(votePlayer.participantIds.includes(playerUser2.id), false, "Explicitly leaving the cutscene must remove the player from the active vote roster until an explicit return");
 assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "Leaving the cutscene must discard the player's vote");
 assert.equal(leaveResolveCalls, 1, "Leaving must unblock a quorum already satisfied by the remaining players");
+
+votePlayer._leaderVotes.set(playerUser2.id, { action: "continue", choiceId: "" });
+votePlayer._onParticipantRejoin(playerUser2.id);
+assert.equal(votePlayer.participantIds.includes(playerUser2.id), true, "Explicit rejoin must restore the player to the active vote roster");
+assert.equal(votePlayer._participantConnectionState.get(playerUser2.id), true, "Explicit rejoin must mark the returning player active immediately");
+assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "Explicit rejoin must not restore or retain a stale vote");
 
 let voteRenders = 0;
 votePlayer.render = async () => { voteRenders += 1; return votePlayer; };
@@ -1628,8 +1634,14 @@ assert.equal(votePlayer._participantConnectionState.has(playerUser2.id), false, 
 assert.equal(voteRenders, 0, "Vote-state synchronization must patch the DOM without requesting a full player render");
 
 const savedSocketLeave = VNSocket.leave;
+const savedSocketRejoin = VNSocket.rejoin;
+const savedVoteModeUser = game.user;
+game.user = playerUser;
+VNPlayerApp.rejoinOffers.clear();
 let localLeaveCall = null;
+let localRejoinCall = null;
 VNSocket.leave = (sceneId, leaderId) => { localLeaveCall = { sceneId, leaderId }; return true; };
+VNSocket.rejoin = (sceneId, leaderId) => { localRejoinCall = { sceneId, leaderId }; return true; };
 const leavingPlayer = Object.create(VNPlayerApp.prototype);
 leavingPlayer.scene = scene;
 leavingPlayer.mode = PLAYER_MODES.VOTE;
@@ -1641,7 +1653,14 @@ leavingPlayer.close = async () => { localCloseCalls += 1; };
 await leavingPlayer.requestClose();
 assert.deepEqual(localLeaveCall, { sceneId: scene.id, leaderId: gm1.id }, "Closing vote mode locally must notify the GM leader that this player left");
 assert.equal(localCloseCalls, 1, "A vote participant must be able to close only their local cutscene");
+assert.equal(VNPlayerApp.rejoinOffers.get(scene.id)?.leaderId, gm1.id, "Local leave must create a return offer while the GM session may still be active");
+assert.equal(VNPlayerApp.requestRejoin(scene.id), true, "The persistent return control must be able to request rejoin");
+assert.deepEqual(localRejoinCall, { sceneId: scene.id, leaderId: gm1.id }, "Return request must target the original session leader");
+VNPlayerApp.clearRejoinOffer(scene.id);
+assert.equal(VNPlayerApp.rejoinOffers.has(scene.id), false, "Closing the GM session or reopening the cutscene must clear the return offer");
 VNSocket.leave = savedSocketLeave;
+VNSocket.rejoin = savedSocketRejoin;
+game.user = savedVoteModeUser;
 
 const reconnectVotePlayer = Object.create(VNPlayerApp.prototype);
 reconnectVotePlayer.mode = PLAYER_MODES.VOTE;
