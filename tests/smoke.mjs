@@ -1508,7 +1508,7 @@ votePlayer._leaderVotes.set(playerUser.id, { action: "continue", choiceId: "" })
 let builtVoteState = votePlayer._buildVoteStateFromLeaderVotes();
 assert.deepEqual(builtVoteState.voters, [playerUser.id], "GM input must never appear in published voter ids");
 assert.equal(builtVoteState.total, 2, "Vote totals must count active players only, excluding the GM");
-assert.deepEqual(builtVoteState.participantIds, [gm1.id, playerUser.id, playerUser2.id], "Published vote state must carry the current session roster so clients can forget explicit leavers");
+assert.deepEqual(builtVoteState.participantIds, [playerUser.id, playerUser2.id], "Published vote state must carry a player-only roster so clients forget both explicit leavers and legacy GM membership");
 assert.equal(builtVoteState.choices && Object.keys(builtVoteState.choices).length, 0);
 
 let gmOverrideContinueCount = 0;
