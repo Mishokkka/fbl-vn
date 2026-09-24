@@ -278,7 +278,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             currentFrameId: app.currentFrameId,
             currentTextIndex: app.currentTextIndex,
             counterState: Object.assign({}, app.counterState),
-            visualState: Object.assign({}, app.visualState)
+            visualState: Object.assign({}, app.visualState),
+            voteState: app.mode === PLAYER_MODES.VOTE ? app._buildVoteStateFromLeaderVotes() : null
         };
     }
 
@@ -601,6 +602,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await this.audio.applyFrame(frame);
             await this._playCurrentVoice(frame);
             await this.render();
+            if (this.mode === PLAYER_MODES.VOTE && state.voteState) this._applyVoteState(state.voteState);
             this._warmUpcomingAssets(frame);
             await this._flushPendingRemoteFrames();
         }
