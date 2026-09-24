@@ -78,9 +78,9 @@ const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
 const { VNPreloadController, VNPreloader } = await import("../scripts/playback/vn-preloader.js");
-const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createCounterCondition, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, isChoiceAvailable, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { AUDIO_ACTIONS, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
+const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
 
@@ -297,7 +297,7 @@ assert.equal(criticalResults[0].ok, true, "Critical frame assets must receive on
 assert.equal(criticalAttempts, 2, "Critical frame preload must retry a transient failure exactly once");
 VNPreloader.preloadPath = savedPreloadPath;
 
-await VNSceneStore.setData({ schemaVersion: 11, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const stored = VNSceneStore.getScene(scene.id);
 stored.title = "Mutated clone";
@@ -315,7 +315,7 @@ await Promise.all([
 const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
-await VNSceneStore.setData({ schemaVersion: 11, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const editor = Object.create(VNEditorApp.prototype);
 editor._pendingRenderParts = new Set();
@@ -336,6 +336,13 @@ const rows = editor._buildFrameTreeRows(scene, views);
 assert.equal(rows.filter(row => row.isFolder).length, 2);
 assert.equal(rows.filter(row => row.isFrame).length, 2);
 assert.equal(rows.find(row => row.id === "frame-nested").depth, 2);
+
+scene.frameFolders.find(folder => folder.id === "folder-a").collapsed = true;
+const collapsedRows = editor._buildFrameTreeRows(scene, views);
+assert.equal(collapsedRows.some(row => row.id === "folder-a"), true, "Collapsed parent folder itself must remain visible");
+assert.equal(collapsedRows.some(row => row.id === "folder-b"), false, "Nested folders must stay hidden under a collapsed parent instead of being recovered at root level");
+assert.equal(collapsedRows.some(row => row.id === "frame-nested"), false, "Frames inside nested folders under a collapsed parent must remain hidden");
+scene.frameFolders.find(folder => folder.id === "folder-a").collapsed = false;
 
 const editorState = editor._prepareEditorState();
 const scenesContext = editor._buildPartContext("scenes", editorState);
@@ -771,18 +778,50 @@ else largeRows = editor._buildFrameTreeRows(largeScene, largeViews);
 assert.equal(largeRows.length, 3000);
 
 const routeCounter = createSceneCounter("Route", 0);
-scene.counters.push(routeCounter);
+const secondRouteCounter = createSceneCounter("Route B", 0);
+scene.counters.push(routeCounter, secondRouteCounter);
 nested.isFinal = false;
 nested.nextRouting = {
   enabled: true,
-  counterId: routeCounter.id,
-  operator: "gte",
-  value: 2,
+  conditionLogic: COUNTER_CONDITION_LOGIC.ALL,
+  conditions: [
+    createCounterCondition({ counterId: routeCounter.id, operator: "gte", value: 2 }),
+    createCounterCondition({ counterId: secondRouteCounter.id, operator: "eq", value: 1 })
+  ],
   trueFrameId: "frame-root",
   falseFrameId: ""
 };
-assert.deepEqual(resolveFrameNextRouting(nested, { [routeCounter.id]: 3 }), { enabled: true, matched: true, frameId: "frame-root" });
-assert.deepEqual(resolveFrameNextRouting(nested, { [routeCounter.id]: 1 }), { enabled: true, matched: false, frameId: "" });
+assert.deepEqual(
+  resolveFrameNextRouting(nested, { [routeCounter.id]: 3, [secondRouteCounter.id]: 1 }),
+  { enabled: true, matched: true, frameId: "frame-root" },
+  "AND routing must require every counter condition"
+);
+assert.deepEqual(
+  resolveFrameNextRouting(nested, { [routeCounter.id]: 3, [secondRouteCounter.id]: 0 }),
+  { enabled: true, matched: false, frameId: "" },
+  "AND routing must fail when one condition is false"
+);
+nested.nextRouting.conditionLogic = COUNTER_CONDITION_LOGIC.ANY;
+assert.deepEqual(
+  resolveFrameNextRouting(nested, { [routeCounter.id]: 3, [secondRouteCounter.id]: 0 }),
+  { enabled: true, matched: true, frameId: "frame-root" },
+  "OR routing must pass when at least one condition is true"
+);
+nested.nextRouting.conditionLogic = COUNTER_CONDITION_LOGIC.ALL;
+
+const compoundChoice = {
+  id: "compound-choice",
+  text: "Compound",
+  conditionLogic: COUNTER_CONDITION_LOGIC.ALL,
+  conditions: [
+    createCounterCondition({ counterId: routeCounter.id, operator: "gte", value: 2 }),
+    createCounterCondition({ counterId: secondRouteCounter.id, operator: "eq", value: 1 })
+  ]
+};
+assert.equal(isChoiceAvailable(compoundChoice, { [routeCounter.id]: 3, [secondRouteCounter.id]: 1 }), true, "Choice AND conditions must all pass");
+assert.equal(isChoiceAvailable(compoundChoice, { [routeCounter.id]: 3, [secondRouteCounter.id]: 0 }), false, "Choice AND conditions must hide the option when one condition fails");
+compoundChoice.conditionLogic = COUNTER_CONDITION_LOGIC.ANY;
+assert.equal(isChoiceAvailable(compoundChoice, { [routeCounter.id]: 0, [secondRouteCounter.id]: 1 }), true, "Choice OR conditions must allow the option when one condition passes");
 const routeIssues = validateScene(scene);
 assert.equal(routeIssues.some(issue => issue.code === "frame-routing-missing-frame"), false);
 const routeChoice = { effectCounterId: routeCounter.id, effectOperation: "add", effectValue: 2 };
@@ -800,7 +839,7 @@ const frameEffectUsage = counterUsageManager._buildCounterUsage({
     effectOperation: COUNTER_EFFECTS.ADD,
     effectValue: 2,
     choices: [],
-    nextRouting: { enabled: false, counterId: "" }
+    nextRouting: { enabled: false, conditionLogic: COUNTER_CONDITION_LOGIC.ALL, conditions: [] }
   }]
 }).get(routeCounter.id);
 assert.equal(frameEffectUsage.frameEffects, 1, "Counter manager usage must count effects attached directly to frames");
@@ -830,7 +869,7 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 11);
+assert.equal(migrated.schemaVersion, 12);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
@@ -882,11 +921,39 @@ const migratedFrameRoute = migrateData({ schemaVersion: 5, version: 3, scenes: [
 assert.equal(migratedFrameRoute.nextRouting.enabled, true, "Already frame-addressed legacy routing should survive migration");
 assert.equal(migratedFrameRoute.nextRouting.trueFrameId, "legacy-frame-target");
 assert.equal(migratedFrameRoute.isFinal, false, "Valid migrated frame routing must be allowed to continue playback");
+assert.equal(migratedFrameRoute.nextRouting.conditions.length, 1, "Legacy single-counter routing must migrate into one compound condition");
+assert.equal(migratedFrameRoute.nextRouting.conditionLogic, COUNTER_CONDITION_LOGIC.ALL);
+assert.equal("counterId" in migratedFrameRoute.nextRouting, false, "Schema v12 must remove legacy routing counter fields");
+
+const legacyChoiceMigrationScene = createScene();
+legacyChoiceMigrationScene.frames[0].type = "choice";
+legacyChoiceMigrationScene.frames[0].choices = [{
+  id: "legacy-choice-condition",
+  text: "Legacy",
+  next: "",
+  conditionCounterId: "legacy-choice-counter",
+  conditionOperator: "gte",
+  conditionValue: 2,
+  effectCounterId: "",
+  effectOperation: "",
+  effectValue: 0
+}];
+const migratedChoiceCondition = migrateData({
+  schemaVersion: 11,
+  version: 3,
+  scenes: [legacyChoiceMigrationScene],
+  assets: [],
+  characters: []
+}).scenes[0].frames[0].choices[0];
+assert.equal(migratedChoiceCondition.conditions.length, 1, "Legacy choice condition must migrate into one compound condition");
+assert.equal(migratedChoiceCondition.conditions[0].counterId, "legacy-choice-counter");
+assert.equal(migratedChoiceCondition.conditionLogic, COUNTER_CONDITION_LOGIC.ALL);
+assert.equal("conditionCounterId" in migratedChoiceCondition, false, "Schema v12 must remove legacy choice condition fields");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 11, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 12, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
-for (const invalidSchemaVersion of [-1, 7.5, 12]) {
+for (const invalidSchemaVersion of [-1, 7.5, 13]) {
   assert.throws(
     () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
     /unsupported schemaVersion/,
@@ -894,7 +961,7 @@ for (const invalidSchemaVersion of [-1, 7.5, 12]) {
   );
 }
 assert.throws(
-  () => VNSceneStore._sanitizeData({ schemaVersion: 12, version: 3, scenes: [], assets: [], characters: [] }),
+  () => VNSceneStore._sanitizeData({ schemaVersion: 13, version: 3, scenes: [], assets: [], characters: [] }),
   /unsupported schemaVersion/,
   "The scene store must not silently downgrade future-schema data to an empty current-schema save"
 );
