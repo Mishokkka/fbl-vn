@@ -2049,6 +2049,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.selectedSceneId = scene.id;
         this.selectedFrameId = scene.startFrame;
         this.selectedBranchId = scene.branches && scene.branches[0] ? scene.branches[0].id : null;
+        this.secondaryBranchId = null;
         this.selectedFolderId = null;
         this._renderEditorParts();
     }
@@ -2061,6 +2062,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.selectedSceneId = scene.id;
         this.selectedFrameId = scene.startFrame;
         this.selectedBranchId = scene.branches && scene.branches[0] ? scene.branches[0].id : null;
+        this.secondaryBranchId = null;
         this.selectedFolderId = null;
         this._renderEditorParts();
     }
@@ -2109,6 +2111,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.selectedFrameId = copy.startFrame;
         const frame = copy.frames && copy.frames.find(item => item.id === copy.startFrame);
         this.selectedBranchId = frame ? frame.branchId || (copy.branches && copy.branches[0] ? copy.branches[0].id : null) : (copy.branches && copy.branches[0] ? copy.branches[0].id : null);
+        this.secondaryBranchId = null;
         this.selectedFolderId = null;
         this._renderEditorParts();
     }
@@ -2122,6 +2125,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const next = VNSceneStore.scenes[0] || null;
         this.selectedSceneId = next ? next.id : null;
         this.selectedFrameId = next ? next.startFrame : null;
+        this.secondaryBranchId = null;
         this._renderEditorParts();
     }
 
@@ -2155,6 +2159,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.selectedSceneId = firstImported && firstImported.id ? firstImported.id : (VNSceneStore.scenes[0] ? VNSceneStore.scenes[0].id : null);
             const scene = VNSceneStore.getScene(this.selectedSceneId);
             this.selectedFrameId = scene ? scene.startFrame : null;
+            this.secondaryBranchId = null;
             notify("VN: импорт завершён.");
         }
         catch (error) {
@@ -2528,6 +2533,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.selectedFrameId = first ? first.id : ((scene.frames || [])[0]?.id || null);
         }
         this.selectedFolderId = null;
+        this._syncSecondaryBranch(scene);
         this._rebuildFrameArrayByTree(scene);
         await VNSceneStore.upsertScene(scene);
         this._renderEditorParts(["resources", "frames", "sceneHead", "framePanel"]);
