@@ -271,6 +271,15 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         VNPlayerApp._renderRejoinControl();
     }
 
+    static handleRejoinOffer(payload) {
+        const sceneId = payload?.sceneId || "";
+        if (!sceneId) return;
+        VNPlayerApp.offerRejoin(
+            { id: sceneId, title: String(payload.sceneTitle || "") },
+            payload.leaderId || null
+        );
+    }
+
     static clearRejoinOffer(sceneId) {
         if (sceneId) VNPlayerApp.rejoinOffers.delete(sceneId);
         else VNPlayerApp.rejoinOffers.clear();
