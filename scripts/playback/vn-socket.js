@@ -42,12 +42,13 @@ export class VNSocket {
             case "start":
             case "advance":
             case "close":
-            case "voteState": {
+            case "voteState":
+            case "rejoinOffer": {
                 if (!this._isTrustedGmCommand(type, data, senderId)) {
                     console.warn(`${MODULE_ID} | Ignored untrusted socket command: ${type}`, payload);
                     return;
                 }
-                if (type === "open" && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
+                if ((type === "open" || type === "rejoinOffer") && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
                 this._dispatchTrustedCommand(type, data, senderId);
                 if (type === "close" && data.sceneId) this.activeLeaders.delete(data.sceneId);
                 break;
@@ -60,6 +61,15 @@ export class VNSocket {
             case "vote":
                 if (!game.user?.isGM) return;
                 this.handlers.vote?.(data, senderId);
+                break;
+            case "leave":
+                if (!game.user?.isGM) return;
+                if (!this._removeSessionParticipant(data?.sceneId || "", senderId)) return;
+                this.handlers.leave?.(data, senderId);
+                break;
+            case "rejoin":
+                if (!game.user?.isGM) return;
+                void this._handleRejoinRequest(data, senderId);
                 break;
             default:
                 console.warn(`${MODULE_ID} | Unknown socket payload`, payload);
@@ -80,7 +90,7 @@ export class VNSocket {
         const sceneId = data?.sceneId || data?.scene?.id || "";
         if (!sceneId) return false;
         const currentLeaderId = this.activeLeaders.get(sceneId);
-        if (type === "open") {
+        if (type === "open" || type === "rejoinOffer") {
             if (!currentLeaderId || currentLeaderId === senderId) return true;
             const currentLeader = game.users?.get?.(currentLeaderId);
             return currentLeader?.active !== true;
@@ -89,28 +99,93 @@ export class VNSocket {
     }
 
     static _isTargeted(data) {
-        const targetIds = Array.isArray(data?.targetIds) ? data.targetIds : [];
-        if (!targetIds.length) return true;
-        return targetIds.includes(game.user.id);
+        if (!data || !Object.prototype.hasOwnProperty.call(data, "targetIds")) return true;
+        if (!Array.isArray(data.targetIds)) return false;
+        return data.targetIds.includes(game.user.id);
     }
 
     static _targetIdsForScene(sceneId) {
         const targets = this.activeTargets.get(sceneId);
-        return targets && targets.size ? [...targets] : [];
+        return targets ? [...targets] : [];
     }
 
     static _participantIdsForScene(sceneId) {
         const participants = this.activeParticipants.get(sceneId);
-        if (participants && participants.size) return [...participants];
+        if (participants) return [...participants];
         const targetIds = this._targetIdsForScene(sceneId);
         return targetIds.length ? [game.user.id, ...targetIds] : [game.user.id];
     }
 
+    static _participantIdsForLaunch(targetIds, mode) {
+        const players = [...new Set(Array.isArray(targetIds) ? targetIds : [])];
+        return mode === PLAYER_MODES.VOTE ? players : [game.user.id, ...players];
+    }
+
+    static _eligibleTargetIdsForScene(sceneId) {
+        const session = this.activeSessions.get(sceneId);
+        if (session && Array.isArray(session.eligibleTargetIds)) return [...session.eligibleTargetIds];
+        return this._targetIdsForScene(sceneId);
+    }
+
+    static _removeSessionParticipant(sceneId, userId) {
+        if (!sceneId || !userId) return false;
+        const session = this.activeSessions.get(sceneId);
+        if (!session || session.mode !== PLAYER_MODES.VOTE || session.leaderId !== game.user?.id || !session.targetIds.includes(userId)) return false;
+
+        session.targetIds = session.targetIds.filter(id => id !== userId);
+        session.participantIds = session.participantIds.filter(id => id !== userId);
+        this.activeTargets.get(sceneId)?.delete(userId);
+        this.activeParticipants.get(sceneId)?.delete(userId);
+        this.ready.get(sceneId)?.delete(userId);
+        this.readyTargets.get(sceneId)?.delete(userId);
+        return true;
+    }
+
+    static _restoreSessionParticipant(sceneId, userId) {
+        if (!sceneId || !userId) return null;
+        const session = this.activeSessions.get(sceneId);
+        const user = game.users?.get?.(userId);
+        if (!session || session.mode !== PLAYER_MODES.VOTE || session.leaderId !== game.user?.id || user?.isGM) return null;
+        if (!Array.isArray(session.eligibleTargetIds) || !session.eligibleTargetIds.includes(userId)) return null;
+
+        if (!session.targetIds.includes(userId)) session.targetIds.push(userId);
+        if (!session.participantIds.includes(userId)) session.participantIds.push(userId);
+        if (!this.activeTargets.has(sceneId)) this.activeTargets.set(sceneId, new Set());
+        if (!this.activeParticipants.has(sceneId)) this.activeParticipants.set(sceneId, new Set());
+        this.activeTargets.get(sceneId).add(userId);
+        this.activeParticipants.get(sceneId).add(userId);
+        this.ready.get(sceneId)?.delete(userId);
+        this.readyTargets.get(sceneId)?.add(userId);
+        return session;
+    }
+
+    static async _handleRejoinRequest(data, senderId) {
+        const sceneId = data?.sceneId || "";
+        const session = this._restoreSessionParticipant(sceneId, senderId);
+        if (!session) {
+            this.emit("close", { sceneId, leaderId: game.user?.id || null, targetIds: [senderId] });
+            return;
+        }
+
+        await Promise.resolve(this.handlers.rejoin?.({ sceneId }, senderId));
+        const resumeState = this.handlers.getSyncState?.(sceneId) || null;
+        this.emit("open", {
+            scene: session.scene,
+            sceneId,
+            mode: session.mode,
+            leaderId: session.leaderId,
+            targetIds: [senderId],
+            participantIds: [...session.participantIds],
+            resumeState: session.started ? resumeState : null
+        });
+    }
+
     static _withSceneTargets(sceneId, data = {}) {
+        const hasTargetSet = this.activeTargets.has(sceneId);
         const targetIds = this._targetIdsForScene(sceneId);
         const leaderId = this.activeLeaders.get(sceneId) || game.user?.id || null;
         const payload = Object.assign({}, data, { leaderId });
-        return targetIds.length ? Object.assign(payload, { targetIds }) : payload;
+        return hasTargetSet ? Object.assign(payload, { targetIds }) : payload;
     }
 
     static signalReady(sceneId, leaderId = null) {
@@ -143,6 +218,14 @@ export class VNSocket {
             .map(user => user.id);
     }
 
+    /**
+     * Launch a synchronized cutscene and wait only for the session's current
+     * active targets, so players who leave during preload cannot hold startup.
+     *
+     * @param {object} scene Scene payload to open.
+     * @param {{mode?: string|null}} options Launch options.
+     * @returns {Promise<void>}
+     */
     static async openForPlayers(scene, { mode = null } = {}) {
         if (!game.user.isGM) {
             ui.notifications?.warn("VN: запуск катсцен доступен только ГМу.");
@@ -163,11 +246,19 @@ export class VNSocket {
                 this.close(existingSceneId);
             }
             const targetIds = this.getTargetUserIds();
-            const participantIds = [game.user.id, ...targetIds];
+            const participantIds = this._participantIdsForLaunch(targetIds, mode);
             this.activeTargets.set(scene.id, new Set(targetIds));
             this.activeParticipants.set(scene.id, new Set(participantIds));
             this.activeLeaders.set(scene.id, game.user.id);
-            this.activeSessions.set(scene.id, { scene, mode, leaderId: game.user.id, targetIds: [...targetIds], participantIds: [...participantIds], started: false });
+            this.activeSessions.set(scene.id, {
+                scene,
+                mode,
+                leaderId: game.user.id,
+                targetIds: [...targetIds],
+                participantIds: [...participantIds],
+                eligibleTargetIds: [...targetIds],
+                started: false
+            });
             this.clearReady(scene.id, targetIds);
             this.emit("open", {
                 scene,
@@ -182,17 +273,23 @@ export class VNSocket {
             const configuredWait = Number(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_WAIT_MS) ?? 10000);
             const maxWait = Number.isFinite(configuredWait) ? Math.max(0, configuredWait) : 10000;
             const started = Date.now();
-            while (targetIds.length && Date.now() - started < maxWait) {
+            while (Date.now() - started < maxWait) {
+                const currentSession = this.activeSessions.get(scene.id);
+                if (!currentSession) return;
+                const currentTargets = Array.isArray(currentSession.targetIds) ? currentSession.targetIds : [];
+                if (!currentTargets.length) break;
                 const ready = this.ready.get(scene.id) ?? new Set();
-                const connectedTargets = targetIds.filter(id => game.users?.get?.(id)?.active);
+                const connectedTargets = currentTargets.filter(id => game.users?.get?.(id)?.active);
                 if (connectedTargets.every(id => ready.has(id))) break;
                 await wait(250);
             }
             if (localPreload) await localPreload;
-            const readyCount = this.getReadyCount(scene.id);
-            ui.notifications?.info(`VN: предзагрузка завершена у ${readyCount}/${targetIds.length} клиентов. Запускаю катсцену.`);
             const session = this.activeSessions.get(scene.id);
             if (!session) return;
+            const currentTargets = Array.isArray(session.targetIds) ? session.targetIds : [];
+            const ready = this.ready.get(scene.id) ?? new Set();
+            const readyCount = currentTargets.filter(id => ready.has(id)).length;
+            ui.notifications?.info(`VN: предзагрузка завершена у ${readyCount}/${currentTargets.length} клиентов. Запускаю катсцену.`);
             session.started = true;
             this.emit("start", this._withSceneTargets(scene.id, { sceneId: scene.id }));
             await Promise.resolve(this.handlers.start?.({ sceneId: scene.id, leaderId: game.user.id }, game.user.id));
@@ -227,6 +324,20 @@ export class VNSocket {
         this.emit("vote", data);
     }
 
+    static leave(sceneId, leaderId = null) {
+        if (!sceneId) return false;
+        const data = { sceneId };
+        if (leaderId) data.targetIds = [leaderId];
+        return this.emit("leave", data);
+    }
+
+    static rejoin(sceneId, leaderId = null) {
+        if (!sceneId) return false;
+        const data = { sceneId };
+        if (leaderId) data.targetIds = [leaderId];
+        return this.emit("rejoin", data);
+    }
+
     static broadcastVoteState(sceneId, state = {}) {
         const data = this._withSceneTargets(sceneId, Object.assign({ sceneId }, state));
         this.emit("voteState", data);
@@ -236,8 +347,9 @@ export class VNSocket {
     }
 
     static close(sceneId) {
-        const data = this._withSceneTargets(sceneId, { sceneId });
-        this.emit("close", data);
+        const leaderId = this.activeLeaders.get(sceneId) || game.user?.id || null;
+        const targetIds = this._eligibleTargetIdsForScene(sceneId);
+        this.emit("close", { sceneId, leaderId, targetIds });
         Promise.resolve(this.handlers.close?.({ sceneId, leaderId: game.user.id }, game.user.id)).catch(error => {
             console.error(`${MODULE_ID} | Local close handler failed.`, error);
         });
@@ -255,7 +367,20 @@ export class VNSocket {
         });
         if (!connected || !game.user?.isGM || !user || user.isGM) return;
         for (const [sceneId, session] of this.activeSessions.entries()) {
-            if (session.leaderId !== game.user.id || !session.targetIds.includes(user.id)) continue;
+            if (session.leaderId !== game.user.id) continue;
+            const eligibleTargetIds = Array.isArray(session.eligibleTargetIds) ? session.eligibleTargetIds : session.targetIds;
+            if (!eligibleTargetIds.includes(user.id)) continue;
+
+            if (!session.targetIds.includes(user.id)) {
+                this.emit("rejoinOffer", {
+                    sceneId,
+                    sceneTitle: String(session.scene?.title || ""),
+                    leaderId: session.leaderId,
+                    targetIds: [user.id]
+                });
+                continue;
+            }
+
             const resumeState = this.handlers.getSyncState?.(sceneId) || null;
             this.emit("open", {
                 scene: session.scene,

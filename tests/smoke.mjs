@@ -963,6 +963,8 @@ game.user = closePolicyUser;
 closePolicyPlayer.leaderId = "gm-close";
 closePolicyPlayer.mode = PLAYER_MODES.INDIVIDUAL;
 assert.equal(closePolicyPlayer._canCloseLocally(), true, "A non-leader player must be able to exit a shared INDIVIDUAL cutscene locally");
+closePolicyPlayer.mode = PLAYER_MODES.VOTE;
+assert.equal(closePolicyPlayer._canCloseLocally(), true, "A non-leader voter must be able to leave the vote cutscene locally without closing it for everyone");
 closePolicyPlayer.mode = PLAYER_MODES.GM;
 assert.equal(closePolicyPlayer._canCloseLocally(), false, "A non-leader player must not gain the synchronized GM close authority");
 closePolicyPlayer.leaderId = closePolicyUser.id;
@@ -1308,7 +1310,8 @@ assert.equal(interleavedIssues.some(issue => issue.code === "terminal-frame" && 
 const gm1 = { id: "gm-1", isGM: true, active: true };
 const gm2 = { id: "gm-2", isGM: true, active: true };
 const playerUser = { id: "player-1", isGM: false, active: true };
-const users = [gm1, gm2, playerUser];
+const playerUser2 = { id: "player-2", isGM: false, active: true };
+const users = [gm1, gm2, playerUser, playerUser2];
 users.get = id => users.find(user => user.id === id);
 users.activeGM = gm1;
 game.users = users;
@@ -1478,22 +1481,214 @@ const votePlayer = Object.create(VNPlayerApp.prototype);
 votePlayer.scene = scene;
 votePlayer.mode = PLAYER_MODES.VOTE;
 votePlayer.leaderId = gm1.id;
-votePlayer.participantIds = [gm1.id];
+votePlayer.participantIds = [gm1.id, playerUser.id, playerUser2.id];
 votePlayer.currentFrameId = "frame-root";
 votePlayer.currentTextIndex = 0;
 votePlayer.started = true;
+votePlayer.networked = true;
 votePlayer.counterState = {};
 votePlayer._localVote = null;
 votePlayer._voteState = null;
+votePlayer._leaderVoteStep = "";
+votePlayer._leaderVotes = new Map();
+votePlayer._participantConnectionState = new Map();
+votePlayer._resolvingVote = false;
 votePlayer.element = {
   querySelectorAll() { return []; },
   querySelector() { return null; }
 };
 votePlayer._buildPlaybackIndex();
+assert.deepEqual(votePlayer._voteParticipantIds(), [playerUser.id, playerUser2.id], "Vote mode must exclude GM ids from the voter roster even if a legacy participant list contains them");
+assert.deepEqual(votePlayer._activeParticipantIds(), [playerUser.id, playerUser2.id], "Only active non-GM players may count toward vote quorum");
+assert.equal(votePlayer._isGmVoteOverride(), true, "The leader GM must be able to act as a vote override without becoming a voter");
+assert.equal(votePlayer._canSubmitVote(), true, "The leader GM must retain vote controls as an override");
+
+votePlayer._leaderVotes.set(gm1.id, { action: "continue", choiceId: "" });
+votePlayer._leaderVotes.set(playerUser.id, { action: "continue", choiceId: "" });
+let builtVoteState = votePlayer._buildVoteStateFromLeaderVotes();
+assert.deepEqual(builtVoteState.voters, [playerUser.id], "GM input must never appear in published voter ids");
+assert.equal(builtVoteState.total, 2, "Vote totals must count active players only, excluding the GM");
+assert.deepEqual(builtVoteState.participantIds, [playerUser.id, playerUser2.id], "Published vote state must carry a player-only roster so clients forget both explicit leavers and legacy GM membership");
+assert.equal(builtVoteState.choices && Object.keys(builtVoteState.choices).length, 0);
+
+let gmOverrideContinueCount = 0;
+const savedResolveGmOverride = votePlayer._resolveGmVoteOverride;
+votePlayer._resolveGmVoteOverride = async payload => {
+  gmOverrideContinueCount += 1;
+  assert.deepEqual(payload, { action: "continue" });
+};
+await votePlayer._submitContinueVote();
+assert.equal(gmOverrideContinueCount, 1, "GM pressing Continue in vote mode must bypass quorum immediately");
+votePlayer._resolveGmVoteOverride = savedResolveGmOverride;
+
+votePlayer.currentFrameId = "frame-root";
+votePlayer.currentTextIndex = 0;
+votePlayer._resolvingVote = false;
+votePlayer._leaderVotes = new Map([
+  [playerUser.id, { action: "continue", choiceId: "" }],
+  [playerUser2.id, { action: "continue", choiceId: "" }]
+]);
+let gmDirectContinue = 0;
+let gmOverridePublishes = 0;
+const savedAdvanceAfterContinueVote = votePlayer._advanceAfterContinueVote;
+const savedPublishVoteState = votePlayer._publishVoteState;
+votePlayer._advanceAfterContinueVote = async frame => {
+  gmDirectContinue += 1;
+  assert.equal(frame.id, "frame-root");
+};
+votePlayer._publishVoteState = () => { gmOverridePublishes += 1; };
+await votePlayer._resolveGmVoteOverride({ action: "continue" });
+assert.equal(gmDirectContinue, 1, "GM override resolver must advance immediately without waiting for player quorum");
+assert.equal(votePlayer._leaderVotes.size, 0, "GM override must discard unfinished player votes for the overridden step");
+assert.equal(gmOverridePublishes, 1, "GM override must publish the cleared vote state before advancing");
+votePlayer._advanceAfterContinueVote = savedAdvanceAfterContinueVote;
+votePlayer._publishVoteState = savedPublishVoteState;
+
+const voteChoiceFrame = createFrame("choice");
+voteChoiceFrame.id = "vote-choice-frame";
+voteChoiceFrame.branchId = scene.branches[0].id;
+voteChoiceFrame.isFinal = false;
+voteChoiceFrame.choices = [{ id: "vote-choice-a", text: "A", next: "frame-root" }];
+scene.frames.push(voteChoiceFrame);
+votePlayer._buildPlaybackIndex();
+votePlayer.currentFrameId = voteChoiceFrame.id;
+votePlayer.currentTextIndex = 0;
+let gmOverrideChoicePayload = null;
+votePlayer._resolveGmVoteOverride = async payload => { gmOverrideChoicePayload = payload; };
+await votePlayer._submitChoiceVote("vote-choice-a");
+assert.deepEqual(gmOverrideChoicePayload, { action: "choice", choiceId: "vote-choice-a" }, "GM choice input must bypass player voting and resolve that exact choice immediately");
+votePlayer._resolveGmVoteOverride = savedResolveGmOverride;
+
+votePlayer.currentFrameId = voteChoiceFrame.id;
+votePlayer.currentTextIndex = 0;
+votePlayer._resolvingVote = false;
+votePlayer._leaderVotes = new Map([[playerUser.id, { action: "choice", choiceId: "other" }]]);
+let appliedGmChoice = null;
+let gmChoiceTransition = null;
+votePlayer._publishVoteState = () => {};
+const savedApplyChoiceEffect = votePlayer._applyChoiceEffect;
+const savedGoToFrame = votePlayer.goToFrame;
+votePlayer._applyChoiceEffect = choice => { appliedGmChoice = choice.id; };
+votePlayer.goToFrame = async (frameId, options) => { gmChoiceTransition = { frameId, options }; };
+await votePlayer._resolveGmVoteOverride({ action: "choice", choiceId: "vote-choice-a" });
+assert.equal(appliedGmChoice, "vote-choice-a", "GM override must apply exactly the choice clicked by the GM, regardless of existing player votes");
+assert.deepEqual(gmChoiceTransition, { frameId: "frame-root", options: { choiceId: "vote-choice-a" } }, "GM choice override must transition immediately along the GM-selected choice");
+assert.equal(votePlayer._leaderVotes.size, 0, "GM choice override must discard unfinished player choice votes");
+votePlayer._applyChoiceEffect = savedApplyChoiceEffect;
+votePlayer.goToFrame = savedGoToFrame;
+votePlayer._publishVoteState = savedPublishVoteState;
+
+votePlayer.currentFrameId = "frame-root";
+votePlayer._leaderVotes = new Map([
+  [playerUser.id, { action: "continue", choiceId: "" }],
+  [playerUser2.id, { action: "continue", choiceId: "" }]
+]);
+let publishedVoteStates = 0;
+let disconnectResolveCalls = 0;
+votePlayer._publishVoteState = () => { publishedVoteStates += 1; };
+votePlayer._resolveLeaderVotes = async () => { disconnectResolveCalls += 1; };
+assert.equal(playerUser2.active, true, "Disconnect regression keeps the Foundry user object active to verify the hook flag is authoritative");
+votePlayer._onParticipantConnectionChange(playerUser2, false);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "Disconnecting a voter must discard that user's stale vote");
+assert.equal(votePlayer._participantConnectionState.get(playerUser2.id), false, "The explicit disconnect hook must remove the player from quorum even before Foundry's user.active flag settles");
+assert.equal(disconnectResolveCalls, 1, "If every remaining active player has voted, a disconnect must stop blocking the vote and resolve immediately");
+assert.equal(publishedVoteStates, 1, "Disconnecting a voter must republish the reduced quorum");
+votePlayer._onParticipantConnectionChange(playerUser2, true);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "A reconnected player must rejoin without recovering a stale pre-disconnect vote");
+assert.equal(votePlayer._participantConnectionState.get(playerUser2.id), true, "Reconnect hook state must restore the player to quorum even if Foundry's user.active flag is still stale");
+assert.equal(disconnectResolveCalls, 1, "Reconnect must add the player back to quorum instead of resolving with their old vote");
+
+votePlayer._leaderVotes.set(playerUser.id, { action: "continue", choiceId: "" });
+votePlayer._leaderVotes.set(playerUser2.id, { action: "continue", choiceId: "" });
+let leaveResolveCalls = 0;
+votePlayer._resolveLeaderVotes = async () => { leaveResolveCalls += 1; };
+votePlayer._onParticipantLeave(playerUser2.id);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(votePlayer.participantIds.includes(playerUser2.id), false, "Explicitly leaving the cutscene must remove the player from the active vote roster until an explicit return");
+assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "Leaving the cutscene must discard the player's vote");
+assert.equal(leaveResolveCalls, 1, "Leaving must unblock a quorum already satisfied by the remaining players");
+
+votePlayer._leaderVotes.set(playerUser2.id, { action: "continue", choiceId: "" });
+votePlayer._onParticipantRejoin(playerUser2.id);
+assert.equal(votePlayer.participantIds.includes(playerUser2.id), true, "Explicit rejoin must restore the player to the active vote roster");
+assert.equal(votePlayer._participantConnectionState.get(playerUser2.id), true, "Explicit rejoin must mark the returning player active immediately");
+assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "Explicit rejoin must not restore or retain a stale vote");
+
 let voteRenders = 0;
 votePlayer.render = async () => { voteRenders += 1; return votePlayer; };
-votePlayer._applyVoteState({ sceneId: scene.id, frameId: "frame-root", textIndex: 0, voters: [gm1.id], choices: {}, total: 1 });
+votePlayer.participantIds = [gm1.id, playerUser.id, playerUser2.id];
+votePlayer._participantConnectionState.set(playerUser2.id, false);
+votePlayer._applyVoteState({
+  sceneId: scene.id,
+  frameId: "frame-root",
+  textIndex: 0,
+  voters: [playerUser.id],
+  choices: {},
+  total: 1,
+  participantIds: [playerUser.id]
+});
+assert.deepEqual(votePlayer.participantIds, [playerUser.id], "Vote-state synchronization must replace stale local membership after another player explicitly leaves");
+assert.equal(votePlayer._participantConnectionState.has(playerUser2.id), false, "Removed participants must not linger in the local connection-state map");
 assert.equal(voteRenders, 0, "Vote-state synchronization must patch the DOM without requesting a full player render");
+
+const savedSocketLeave = VNSocket.leave;
+const savedSocketRejoin = VNSocket.rejoin;
+const savedVoteModeUser = game.user;
+game.user = playerUser;
+VNPlayerApp.rejoinOffers.clear();
+let localLeaveCall = null;
+let localRejoinCall = null;
+VNSocket.leave = (sceneId, leaderId) => { localLeaveCall = { sceneId, leaderId }; return true; };
+VNSocket.rejoin = (sceneId, leaderId) => { localRejoinCall = { sceneId, leaderId }; return true; };
+const leavingPlayer = Object.create(VNPlayerApp.prototype);
+leavingPlayer.scene = scene;
+leavingPlayer.mode = PLAYER_MODES.VOTE;
+leavingPlayer.networked = true;
+leavingPlayer.leaderId = gm1.id;
+leavingPlayer._isLeader = () => false;
+let localCloseCalls = 0;
+leavingPlayer.close = async () => { localCloseCalls += 1; };
+await leavingPlayer.requestClose();
+assert.deepEqual(localLeaveCall, { sceneId: scene.id, leaderId: gm1.id }, "Closing vote mode locally must notify the GM leader that this player left");
+assert.equal(localCloseCalls, 1, "A vote participant must be able to close only their local cutscene");
+assert.equal(VNPlayerApp.rejoinOffers.get(scene.id)?.leaderId, gm1.id, "Local leave must create a return offer while the GM session may still be active");
+assert.equal(VNPlayerApp.requestRejoin(scene.id), true, "The persistent return control must be able to request rejoin");
+assert.deepEqual(localRejoinCall, { sceneId: scene.id, leaderId: gm1.id }, "Return request must target the original session leader");
+VNPlayerApp.clearRejoinOffer(scene.id);
+assert.equal(VNPlayerApp.rejoinOffers.has(scene.id), false, "Closing the GM session or reopening the cutscene must clear the return offer");
+
+VNPlayerApp.handleRejoinOffer({ sceneId: "scene-restored-offer", sceneTitle: "Still Playing", leaderId: gm1.id });
+assert.deepEqual(
+  VNPlayerApp.rejoinOffers.get("scene-restored-offer"),
+  { sceneId: "scene-restored-offer", sceneTitle: "Still Playing", leaderId: gm1.id },
+  "A trusted GM rejoinOffer must rebuild the manual return state after the client reconnects"
+);
+VNPlayerApp.clearRejoinOffer("scene-restored-offer");
+VNSocket.leave = savedSocketLeave;
+VNSocket.rejoin = savedSocketRejoin;
+game.user = savedVoteModeUser;
+
+const reconnectVotePlayer = Object.create(VNPlayerApp.prototype);
+reconnectVotePlayer.mode = PLAYER_MODES.VOTE;
+reconnectVotePlayer.currentFrameId = "frame-root";
+reconnectVotePlayer.currentTextIndex = 0;
+reconnectVotePlayer.participantIds = [playerUser.id, playerUser2.id];
+reconnectVotePlayer._participantConnectionState = new Map();
+reconnectVotePlayer._leaderVotes = new Map([[playerUser.id, { action: "continue", choiceId: "" }]]);
+reconnectVotePlayer.counterState = { counter: 2 };
+reconnectVotePlayer.visualState = { background: "resume-bg.webp", portrait: "", portraitPosition: "left" };
+reconnectVotePlayer.scene = scene;
+reconnectVotePlayer.leaderId = gm1.id;
+reconnectVotePlayer.started = true;
+reconnectVotePlayer._isLeader = () => true;
+VNPlayerApp.active.set("scene-vote-reconnect-state", reconnectVotePlayer);
+const reconnectVoteState = VNPlayerApp.getSyncState("scene-vote-reconnect-state");
+assert.deepEqual(reconnectVoteState.voteState.voters, [playerUser.id], "Reconnect snapshot must include current votes from remaining players");
+assert.equal(reconnectVoteState.voteState.total, 2, "Reconnect snapshot must include the current player-only quorum");
+assert.deepEqual(reconnectVoteState.voteState.participantIds, [playerUser.id, playerUser2.id], "Reconnect snapshot must carry the current vote roster");
+VNPlayerApp.active.delete("scene-vote-reconnect-state");
 
 const savedFoundry = globalThis.foundry;
 const savedGame = globalThis.game;

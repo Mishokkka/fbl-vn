@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 const gm1 = { id: "gm-1", isGM: true, active: true };
 const gm2 = { id: "gm-2", isGM: true, active: true };
 const player = { id: "player-1", isGM: false, active: true };
-const users = [gm1, gm2, player];
+const player2 = { id: "player-2", isGM: false, active: true };
+const users = [gm1, gm2, player, player2];
 users.get = id => users.find(user => user.id === id);
 
 const socketListeners = new Map();
@@ -29,7 +30,7 @@ globalThis.Hooks = {
 };
 
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
-const { SOCKET_NAME } = await import("../scripts/utils/constants.js");
+const { PLAYER_MODES, SOCKET_NAME } = await import("../scripts/utils/constants.js");
 
 VNSocket.handlers = {};
 VNSocket.activeLeaders.clear();
@@ -52,6 +53,17 @@ assert.equal(typeof socketListeners.get(SOCKET_NAME), "function", "Socket listen
 
 VNSocket.registerHandlers(handlers);
 assert.equal(socketOnCalls, 1, "Repeated handler registration must not duplicate the socket listener");
+
+assert.deepEqual(
+  VNSocket._participantIdsForLaunch([player.id, player2.id], PLAYER_MODES.VOTE),
+  [player.id, player2.id],
+  "Vote sessions must exclude the GM from the participant roster"
+);
+assert.deepEqual(
+  VNSocket._participantIdsForLaunch([player.id], PLAYER_MODES.GM),
+  [gm1.id, player.id],
+  "Non-vote synchronized modes must retain the GM in their participant metadata"
+);
 
 assert.equal(VNSocket.emit("advance", { sceneId: "scene-auth" }), true);
 assert.equal(emitted.length, 1);
@@ -86,5 +98,140 @@ game.user = gm1;
 socketCallback(emitted[0].payload);
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(trustedAdvanceCalls, 1, "The sender must ignore its own broadcast payload");
+
+const reconnectSceneId = "scene-reconnect";
+const reconnectSession = {
+  scene: { id: reconnectSceneId, title: "Reconnect" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [player.id, player2.id],
+  participantIds: [player.id, player2.id],
+  eligibleTargetIds: [player.id, player2.id],
+  started: true
+};
+VNSocket.activeSessions.set(reconnectSceneId, reconnectSession);
+VNSocket.activeTargets.set(reconnectSceneId, new Set(reconnectSession.targetIds));
+VNSocket.activeParticipants.set(reconnectSceneId, new Set(reconnectSession.participantIds));
+VNSocket.activeLeaders.set(reconnectSceneId, gm1.id);
+
+const reconnectEvents = [];
+VNSocket.handlers = {
+  userConnected: (user, connected) => { reconnectEvents.push({ userId: user.id, connected }); },
+  getSyncState: sceneId => sceneId === reconnectSceneId
+    ? { currentFrameId: "frame-current", currentTextIndex: 2, counterState: { c: 1 }, visualState: { background: "bg.webp" } }
+    : null
+};
+emitted.length = 0;
+VNSocket._onUserConnected(player, false);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(emitted.length, 0, "A disconnect must not destroy the session or send a reopen immediately");
+assert.equal(VNSocket.activeSessions.get(reconnectSceneId)?.targetIds.includes(player.id), true, "Disconnected players must remain session targets so they can reconnect");
+
+VNSocket._onUserConnected(player, true);
+await new Promise(resolve => setTimeout(resolve, 0));
+const reopen = emitted.find(entry => entry.payload?.type === "open" && entry.payload?.data?.sceneId === reconnectSceneId);
+assert.ok(reopen, "Reconnect must reopen the active cutscene for the returning player");
+assert.deepEqual(reopen.payload.data.targetIds, [player.id], "Reconnect reopen must target only the returning player");
+assert.equal(reopen.payload.data.resumeState.currentFrameId, "frame-current", "Reconnect must resume at the GM's current synchronized frame");
+assert.deepEqual(reopen.payload.data.participantIds, [player.id, player2.id], "Reconnect must restore the current player-only vote roster");
+
+let leaveHandlerCall = null;
+VNSocket.handlers.leave = (data, senderId) => { leaveHandlerCall = { data, senderId }; };
+const leavePayload = {
+  type: "leave",
+  timestamp: Date.now(),
+  senderId: player.id,
+  data: { sceneId: reconnectSceneId, targetIds: [gm1.id] }
+};
+socketCallback(leavePayload);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(leaveHandlerCall?.senderId, player.id, "Leader must receive an explicit vote-session leave event");
+assert.equal(VNSocket.activeTargets.get(reconnectSceneId).has(player.id), false, "Manual leave must remove the player from future synchronized targets");
+assert.equal(VNSocket.activeParticipants.get(reconnectSceneId).has(player.id), false, "Manual leave must remove the player from the persistent vote roster");
+assert.equal(VNSocket.activeSessions.get(reconnectSceneId).targetIds.includes(player.id), false, "Manual leave must remove the player from active synchronized targets");
+assert.equal(VNSocket.activeSessions.get(reconnectSceneId).eligibleTargetIds.includes(player.id), true, "Manual leave must preserve eligibility for an explicit return while the GM session is still active");
+
+emitted.length = 0;
+VNSocket._onUserConnected(player, true);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(emitted.some(entry => entry.payload?.type === "open" && entry.payload?.data?.sceneId === reconnectSceneId), false, "A player who explicitly left must not be auto-reopened merely by reconnecting");
+const reconnectOffer = emitted.find(entry => entry.payload?.type === "rejoinOffer" && entry.payload?.data?.sceneId === reconnectSceneId);
+assert.ok(reconnectOffer, "Reconnect after an explicit leave must restore the manual return affordance instead of reopening the cutscene");
+assert.deepEqual(reconnectOffer.payload.data.targetIds, [player.id], "Rejoin offer must target only the departed eligible player");
+assert.equal(reconnectOffer.payload.data.sceneTitle, "Reconnect", "Rejoin offer must carry enough display context to rebuild the return button");
+
+let clientRejoinOffer = null;
+game.user = player;
+VNSocket.activeLeaders.delete(reconnectSceneId);
+VNSocket.handlers.rejoinOffer = data => { clientRejoinOffer = data; };
+socketCallback(reconnectOffer.payload);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(clientRejoinOffer?.sceneId, reconnectSceneId, "A fresh client must accept a trusted GM rejoin offer even after losing local session state");
+assert.equal(VNSocket.activeLeaders.get(reconnectSceneId), gm1.id, "Trusted rejoin offer must restore the active leader identity for subsequent rejoin/close commands");
+game.user = gm1;
+
+let rejoinHandlerCall = null;
+VNSocket.handlers.rejoin = (data, senderId) => { rejoinHandlerCall = { data, senderId }; };
+emitted.length = 0;
+socketCallback({
+  type: "rejoin",
+  timestamp: Date.now(),
+  senderId: player.id,
+  data: { sceneId: reconnectSceneId, targetIds: [gm1.id] }
+});
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(rejoinHandlerCall?.senderId, player.id, "Leader must receive the explicit rejoin request");
+assert.equal(VNSocket.activeTargets.get(reconnectSceneId).has(player.id), true, "Explicit rejoin must restore the player to synchronized targets");
+assert.equal(VNSocket.activeParticipants.get(reconnectSceneId).has(player.id), true, "Explicit rejoin must restore the player to the vote roster");
+const explicitReopen = emitted.find(entry => entry.payload?.type === "open" && entry.payload?.data?.sceneId === reconnectSceneId);
+assert.ok(explicitReopen, "Explicit rejoin must reopen the currently active cutscene");
+assert.deepEqual(explicitReopen.payload.data.targetIds, [player.id], "Explicit rejoin reopen must target only the returning player");
+assert.equal(explicitReopen.payload.data.resumeState.currentFrameId, "frame-current", "Explicit rejoin must resume at the GM's current synchronized frame");
+assert.deepEqual(
+  [...explicitReopen.payload.data.participantIds].sort(),
+  [player.id, player2.id].sort(),
+  "Explicit rejoin must receive the current vote roster"
+);
+
+assert.equal(VNSocket._removeSessionParticipant(reconnectSceneId, player.id), true, "A returned voter must be able to leave again");
+assert.equal(VNSocket._removeSessionParticipant(reconnectSceneId, player2.id), true, "The leader must be able to remove the last explicit voter from a vote session");
+const emptyTargetPayload = VNSocket._withSceneTargets(reconnectSceneId, { sceneId: reconnectSceneId });
+assert.deepEqual(emptyTargetPayload.targetIds, [], "An active session with no remaining players must preserve an explicit empty target list");
+assert.equal(VNSocket._isTargeted(emptyTargetPayload), false, "An explicit empty target list must target nobody instead of degenerating into a broadcast");
+
+VNSocket.activeLeaders.set("scene-local-leave", gm1.id);
+emitted.length = 0;
+assert.equal(VNSocket.leave("scene-local-leave", gm1.id), true, "Leaving a vote session must emit a leave message to the leader");
+assert.equal(VNSocket.activeLeaders.get("scene-local-leave"), gm1.id, "A locally departed player must retain leader trust while the session is still eligible for manual return");
+const emittedLeave = emitted.find(entry => entry.payload?.type === "leave");
+assert.deepEqual(emittedLeave?.payload?.data?.targetIds, [gm1.id], "Local leave must target only the current leader");
+emitted.length = 0;
+assert.equal(VNSocket.rejoin("scene-local-leave", gm1.id), true, "Manual return must emit a rejoin request");
+const emittedRejoin = emitted.find(entry => entry.payload?.type === "rejoin");
+assert.deepEqual(emittedRejoin?.payload?.data?.targetIds, [gm1.id], "Manual return must target only the current leader");
+
+VNSocket.activeTargets.set("scene-close-eligible", new Set());
+VNSocket.activeParticipants.set("scene-close-eligible", new Set());
+VNSocket.activeLeaders.set("scene-close-eligible", gm1.id);
+VNSocket.activeSessions.set("scene-close-eligible", {
+  scene: { id: "scene-close-eligible", title: "Close Eligible" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [],
+  participantIds: [],
+  eligibleTargetIds: [player.id],
+  started: true
+});
+VNSocket.handlers.close = () => {};
+emitted.length = 0;
+VNSocket.close("scene-close-eligible");
+const eligibleClose = emitted.find(entry => entry.payload?.type === "close");
+assert.deepEqual(eligibleClose?.payload?.data?.targetIds, [player.id], "GM close must also reach players who left locally so their return button disappears");
+
+VNSocket.activeSessions.delete(reconnectSceneId);
+VNSocket.activeTargets.delete(reconnectSceneId);
+VNSocket.activeParticipants.delete(reconnectSceneId);
+VNSocket.activeLeaders.delete(reconnectSceneId);
+VNSocket.activeLeaders.delete("scene-local-leave");
 
 console.log("Socket transport smoke tests passed.");
