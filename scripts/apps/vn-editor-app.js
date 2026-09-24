@@ -669,6 +669,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     async _onRender(context, options) {
         await super._onRender(context, options);
         this._injectHeaderActions();
+        this._syncEditorLayoutState();
     }
 
     _attachPartListeners(partId, htmlElement, options) {
@@ -682,6 +683,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this._enableFrameDrag(htmlElement);
             this._enableBranchControls(htmlElement);
             this._enableFrameTargetControls(htmlElement);
+            this._enableFrameListTargetPicking(htmlElement);
+            this._scheduleFrameLinkDraw(htmlElement);
             return;
         }
         if (partId === "sceneHead") {
@@ -1204,6 +1207,18 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 void this._enqueueEditorAction(() => VNEditorApp._onSelectBranch.call(this, event, select, branchId));
             });
         }
+        const secondarySelect = root.querySelector("[data-secondary-branch-select]");
+        if (secondarySelect) {
+            secondarySelect.addEventListener("change", event => {
+                const branchId = secondarySelect.value || "";
+                void this._enqueueEditorAction(async () => {
+                    await this._commitFromForm();
+                    this.secondaryBranchId = branchId || null;
+                    this._syncSecondaryBranch(this.selectedScene);
+                    this._renderEditorParts(["frames"]);
+                });
+            });
+        }
         if (!panel) return;
         for (const button of panel.querySelectorAll("button[data-branch-action]")) {
             button.addEventListener("click", event => {
@@ -1232,14 +1247,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const byLabel = new Map(entries.filter(entry => labelCounts.get(entry.label) === 1).map(entry => [entry.label, entry.id]));
         const bindSearch = (input) => {
             if (!input) return;
-            const resolveHidden = () => {
-                const row = input.closest("[data-choice-row]");
-                if (row) return row.querySelector("[data-choice-next]");
-                const field = input.dataset.targetField || "";
-                return field ? (root.querySelector(`[name='${field}']`) || this.element?.querySelector(`[name='${field}']`)) : null;
-            };
             const apply = () => {
-                const hidden = resolveHidden();
+                const hidden = this._resolveFrameTargetHidden(input, root);
                 if (!hidden) return;
                 const raw = String(input.value || "").trim();
                 if (!raw) {
@@ -1250,12 +1259,16 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 else if (byLabel.has(raw)) hidden.value = byLabel.get(raw);
             };
             const normalize = () => {
-                const hidden = resolveHidden();
+                const hidden = this._resolveFrameTargetHidden(input, root);
                 if (!hidden) return;
                 const id = hidden.value || "";
                 if (id && byId.has(id)) input.value = byId.get(id);
                 else if (!id && input.dataset.emptyLabel !== undefined) input.value = input.dataset.emptyLabel || "";
             };
+            input.addEventListener("focus", () => {
+                this._activeFrameTargetInput = input;
+                this._syncFrameTargetPickingState();
+            });
             input.addEventListener("change", apply);
             input.addEventListener("keydown", event => {
                 if (event.key === "Enter") {
@@ -1263,13 +1276,222 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     apply();
                     input.blur();
                 }
+                if (event.key === "Escape") {
+                    this._activeFrameTargetInput = null;
+                    this._syncFrameTargetPickingState();
+                }
             });
             input.addEventListener("blur", () => {
                 apply();
                 normalize();
+                globalThis.setTimeout?.(() => {
+                    if (this._activeFrameTargetInput === input && globalThis.document?.activeElement !== input) {
+                        this._activeFrameTargetInput = null;
+                        this._syncFrameTargetPickingState();
+                    }
+                }, 0);
             });
         };
         for (const input of root.querySelectorAll("[data-frame-target-search]")) bindSearch(input);
+    }
+
+    _resolveFrameTargetHidden(input, root = this.element) {
+        if (!input) return null;
+        const row = input.closest?.("[data-choice-row]") || null;
+        if (row) return row.querySelector?.("[data-choice-next]") || null;
+        const field = input.dataset?.targetField || "";
+        if (!field) return null;
+        return root?.querySelector?.(`[name='${field}']`) || this.element?.querySelector?.(`[name='${field}']`) || null;
+    }
+
+    _setFrameTargetFromList(input, frameId) {
+        if (!input || !frameId) return false;
+        const hidden = this._resolveFrameTargetHidden(input);
+        if (!hidden) return false;
+        const scene = this.selectedScene;
+        const entries = this._lastFrameTargetSceneId === scene?.id && Array.isArray(this._lastFrameTargetEntries)
+            ? this._lastFrameTargetEntries
+            : this._frameTargetEntries(scene);
+        const entry = entries.find(item => item.id === frameId);
+        if (!entry) return false;
+        hidden.value = frameId;
+        input.value = entry.label;
+        input.focus?.({ preventScroll: true });
+        return true;
+    }
+
+    _syncFrameTargetPickingState() {
+        const root = this._editorGridElement();
+        root?.classList?.toggle("is-frame-target-picking", Boolean(this._activeFrameTargetInput));
+    }
+
+    _enableFrameListTargetPicking(root = this.element) {
+        const list = root?.querySelector?.("[data-frame-list]");
+        if (!list) return;
+        list.addEventListener("pointerdown", event => {
+            const frameButton = event.target?.closest?.("[data-frame-id]");
+            const input = this._activeFrameTargetInput;
+            if (!frameButton || !input) return;
+            const frameId = frameButton.dataset.frameId || "";
+            if (!this._setFrameTargetFromList(input, frameId)) return;
+            this._targetPickSuppressFrameId = frameId;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+        }, true);
+        list.addEventListener("click", event => {
+            const frameButton = event.target?.closest?.("[data-frame-id]");
+            if (!frameButton || frameButton.dataset.frameId !== this._targetPickSuppressFrameId) return;
+            this._targetPickSuppressFrameId = null;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+        }, true);
+    }
+
+    _editorGridElement() {
+        const element = this.element;
+        if (!element) return null;
+        if (element.classList?.contains("fbl-vn-editor")) return element;
+        return element.querySelector?.(".window-content.fbl-vn-editor, .fbl-vn-editor") || null;
+    }
+
+    _syncEditorLayoutState() {
+        const root = this._editorGridElement();
+        if (!root) return;
+        root.classList.toggle("is-scenes-collapsed", this.scenesCollapsed === true);
+        root.classList.toggle("is-dual-branch", Boolean(this.secondaryBranchId));
+        this._syncFrameTargetPickingState();
+    }
+
+    _frameSequentialTarget(scene, frame) {
+        if (!scene || !frame) return "";
+        const branchFrames = (scene.frames || []).filter(item => (item.branchId || "") === (frame.branchId || ""));
+        const index = branchFrames.findIndex(item => item.id === frame.id);
+        return index >= 0 && index < branchFrames.length - 1 ? branchFrames[index + 1].id : "";
+    }
+
+    _frameOutgoingLinks(scene, frame) {
+        if (!scene || !frame || frame.isFinal === true) return [];
+        const sequential = this._frameSequentialTarget(scene, frame);
+        const links = [];
+        const push = (targetId, kind) => {
+            const id = targetId || sequential;
+            if (!id) return;
+            const key = `${id}:${kind}`;
+            if (links.some(link => link.key === key)) return;
+            links.push({ key, targetId: id, kind });
+        };
+        if (frame.nextRouting?.enabled === true) {
+            push(frame.nextRouting.trueFrameId || "", "conditional");
+            push(frame.nextRouting.falseFrameId || "", "conditional");
+            return links;
+        }
+        if (frame.type === FRAME_TYPES.CHOICE) {
+            for (const choice of Array.isArray(frame.choices) ? frame.choices : []) push(choice.next || "", "choice");
+            return links;
+        }
+        push(frame.next || "", frame.next ? "explicit" : "implicit");
+        return links;
+    }
+
+    _scheduleFrameLinkDraw(root) {
+        this._frameLinkResizeObserver?.disconnect?.();
+        this._frameLinkResizeObserver = null;
+        const list = root?.querySelector?.("[data-frame-list]");
+        if (!list) return;
+        const draw = () => this._drawFrameListLinks(root);
+        list.addEventListener("scroll", draw, { passive: true });
+        if (typeof globalThis.ResizeObserver === "function") {
+            this._frameLinkResizeObserver = new globalThis.ResizeObserver(draw);
+            this._frameLinkResizeObserver.observe(list);
+        }
+        const raf = globalThis.requestAnimationFrame;
+        if (typeof raf === "function") raf(draw);
+        else draw();
+    }
+
+    _drawFrameListLinks(root) {
+        const list = root?.querySelector?.("[data-frame-list]");
+        const svg = root?.querySelector?.("[data-frame-link-svg]");
+        const scene = this.selectedScene;
+        const doc = globalThis.document;
+        if (!list || !svg || !scene || !doc?.createElementNS) return;
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+        const width = Math.max(list.clientWidth || 0, list.scrollWidth || 0);
+        const height = Math.max(list.clientHeight || 0, list.scrollHeight || 0);
+        if (!(width > 0 && height > 0)) return;
+        svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+        svg.setAttribute("width", String(width));
+        svg.setAttribute("height", String(height));
+        svg.style.width = `${width}px`;
+        svg.style.height = `${height}px`;
+
+        const ns = "http://www.w3.org/2000/svg";
+        const defs = doc.createElementNS(ns, "defs");
+        const marker = doc.createElementNS(ns, "marker");
+        marker.setAttribute("id", "fbl-vn-frame-link-arrow");
+        marker.setAttribute("markerWidth", "6");
+        marker.setAttribute("markerHeight", "6");
+        marker.setAttribute("refX", "5");
+        marker.setAttribute("refY", "3");
+        marker.setAttribute("orient", "auto");
+        marker.setAttribute("markerUnits", "strokeWidth");
+        const arrow = doc.createElementNS(ns, "path");
+        arrow.setAttribute("d", "M 0 0 L 6 3 L 0 6 z");
+        marker.appendChild(arrow);
+        defs.appendChild(marker);
+        svg.appendChild(defs);
+
+        const listRect = list.getBoundingClientRect();
+        const frameNodes = new Map();
+        for (const node of list.querySelectorAll("[data-frame-id]")) {
+            const id = node.dataset.frameId || "";
+            if (id && !frameNodes.has(id)) frameNodes.set(id, node);
+        }
+
+        let edgeIndex = 0;
+        for (const frame of scene.frames || []) {
+            const sourceNode = frameNodes.get(frame.id);
+            if (!sourceNode) continue;
+            for (const link of this._frameOutgoingLinks(scene, frame)) {
+                const targetNode = frameNodes.get(link.targetId);
+                if (!targetNode || targetNode === sourceNode) continue;
+                const sourceRect = sourceNode.getBoundingClientRect();
+                const targetRect = targetNode.getBoundingClientRect();
+                const sourceColumn = sourceNode.closest?.("[data-branch-column]");
+                const targetColumn = targetNode.closest?.("[data-branch-column]");
+                const sameColumn = sourceColumn && targetColumn && sourceColumn === targetColumn;
+                const sxRight = sourceRect.right - listRect.left + list.scrollLeft - 2;
+                const sxLeft = sourceRect.left - listRect.left + list.scrollLeft + 2;
+                const txRight = targetRect.right - listRect.left + list.scrollLeft - 2;
+                const txLeft = targetRect.left - listRect.left + list.scrollLeft + 2;
+                const sy = sourceRect.top - listRect.top + list.scrollTop + sourceRect.height / 2;
+                const ty = targetRect.top - listRect.top + list.scrollTop + targetRect.height / 2;
+                let d = "";
+                if (sameColumn) {
+                    const columnRect = sourceColumn.getBoundingClientRect();
+                    const gutterRight = columnRect.right - listRect.left + list.scrollLeft - 5;
+                    const routeX = Math.max(sxRight + 7, gutterRight - 8 - (edgeIndex % 3) * 4);
+                    d = `M ${sxRight} ${sy} H ${routeX} V ${ty} H ${txRight}`;
+                }
+                else if (targetRect.left >= sourceRect.right) {
+                    const midX = (sxRight + txLeft) / 2;
+                    d = `M ${sxRight} ${sy} H ${midX} V ${ty} H ${txLeft}`;
+                }
+                else {
+                    const midX = (sxLeft + txRight) / 2;
+                    d = `M ${sxLeft} ${sy} H ${midX} V ${ty} H ${txRight}`;
+                }
+                const path = doc.createElementNS(ns, "path");
+                path.setAttribute("d", d);
+                path.setAttribute("marker-end", "url(#fbl-vn-frame-link-arrow)");
+                path.setAttribute("class", `fbl-vn-frame-link is-${link.kind}`);
+                svg.appendChild(path);
+                edgeIndex += 1;
+            }
+        }
     }
 
     _enableFrameDrag(root = this.element) {
