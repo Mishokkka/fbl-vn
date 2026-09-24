@@ -360,6 +360,16 @@
 }
 
 @media (max-width: 1000px) {
+  .fbl-vn-editor.is-dual-branch:not(.is-scenes-collapsed) {
+    grid-template-columns: 190px minmax(0, 1fr);
+    grid-template-rows: auto minmax(170px, 0.75fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "scenes scene"
+      "scenes frames"
+      "scenes panel"
+      "scenes bottom";
+  }
+
   .fbl-vn-editor.is-scenes-collapsed,
   .fbl-vn-editor.is-scenes-collapsed.is-dual-branch {
     --vn-frame-workspace-w: min(58vw, 640px);
@@ -374,5 +384,11 @@
 
   .fbl-vn-editor.is-scenes-collapsed .fbl-vn-scene-head {
     grid-area: scene;
+  }
+}
+
+@media (max-width: 720px) {
+  .fbl-vn-editor.is-dual-branch:not(.is-scenes-collapsed) {
+    grid-template-columns: 150px minmax(0, 1fr);
   }
 }
