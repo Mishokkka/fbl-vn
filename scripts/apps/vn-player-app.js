@@ -91,6 +91,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._voteState = this._emptyVoteState();
         this._leaderVoteStep = "";
         this._leaderVotes = new Map();
+        this._inactiveParticipantIds = new Set();
         this._resolvingVote = false;
         this._interactionBusy = false;
         this._finishing = false;
@@ -156,6 +157,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _activeParticipantIds() {
         const ids = this.mode === PLAYER_MODES.VOTE ? this._voteParticipantIds() : this.participantIds;
         return ids.filter(id => {
+            if (this._inactiveParticipantIds?.has(id)) return false;
             if (id === game.user?.id) return game.user?.active !== false;
             const user = game.users?.get?.(id);
             return Boolean(user?.active);
@@ -1373,7 +1375,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _onParticipantConnectionChange(user, connected) {
         if (!this._isLeader() || this.mode !== PLAYER_MODES.VOTE || !user || !this.participantIds.includes(user.id)) return;
-        if (connected !== true) this._leaderVotes.delete(user.id);
+        if (connected === true) this._inactiveParticipantIds.delete(user.id);
+        else {
+            this._inactiveParticipantIds.add(user.id);
+            this._leaderVotes.delete(user.id);
+        }
         this._publishVoteState();
         const activeParticipants = this._activeParticipantIds();
         if (activeParticipants.length && activeParticipants.every(id => this._leaderVotes.has(id))) {
@@ -1384,6 +1390,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _onParticipantLeave(userId) {
         if (!this._isLeader() || this.mode !== PLAYER_MODES.VOTE || !userId || !this.participantIds.includes(userId)) return;
         this.participantIds = this.participantIds.filter(id => id !== userId);
+        this._inactiveParticipantIds.delete(userId);
         this._leaderVotes.delete(userId);
         this._publishVoteState();
         const activeParticipants = this._activeParticipantIds();
