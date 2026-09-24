@@ -630,6 +630,32 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ], selected || COUNTER_OPERATORS.NONE);
     }
 
+    _counterConditionLogicOptions(selected = COUNTER_CONDITION_LOGIC.ALL) {
+        return this._options([
+            [COUNTER_CONDITION_LOGIC.ALL, "Все условия (И)"],
+            [COUNTER_CONDITION_LOGIC.ANY, "Хотя бы одно (ИЛИ)"]
+        ], selected === COUNTER_CONDITION_LOGIC.ANY ? COUNTER_CONDITION_LOGIC.ANY : COUNTER_CONDITION_LOGIC.ALL);
+    }
+
+    _buildCounterConditionViews(conditions, renderIndex) {
+        return (Array.isArray(conditions) ? conditions : []).map((condition, index) => ({
+            ...condition,
+            index: index + 1,
+            counterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, condition.counterId || "", false),
+            operatorOptions: this._counterConditionOptions(condition.operator || COUNTER_OPERATORS.GTE).filter(option => option.value)
+        }));
+    }
+
+    _readCounterConditions(root, rowSelector) {
+        if (!root) return [];
+        return [...root.querySelectorAll(rowSelector)].map(row => ({
+            id: row.dataset.conditionId || randomId("condition"),
+            counterId: this._readRowValue(row, "[data-counter-condition-counter]", ""),
+            operator: this._readRowValue(row, "[data-counter-condition-operator]", COUNTER_OPERATORS.GTE),
+            value: Number(this._readRowValue(row, "[data-counter-condition-value]", "0") || 0)
+        }));
+    }
+
     _counterEffectOptions(selected = "") {
         return this._options([
             [COUNTER_EFFECTS.NONE, "Не менять"],
@@ -647,8 +673,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 index: index + 1,
                 targetOptions: this._frameTargetsFromIndex(renderIndex, choice.next, true),
                 targetLabel: this._frameTargetDisplayFromIndex(renderIndex, choice.next || "", "Следующий кадр по списку"),
-                conditionCounterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, choice.conditionCounterId || "", true),
-                conditionOperatorOptions: this._counterConditionOptions(choice.conditionOperator || ""),
+                conditionLogicOptions: this._counterConditionLogicOptions(choice.conditionLogic),
+                conditionViews: this._buildCounterConditionViews(choice.conditions, renderIndex),
+                hasConditions: Array.isArray(choice.conditions) && choice.conditions.length > 0,
                 effectCounterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, choice.effectCounterId || "", true),
                 effectOperationOptions: this._counterEffectOptions(choice.effectOperation || ""),
                 issueCount: choiceIssues.length,
