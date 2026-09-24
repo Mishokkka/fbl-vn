@@ -132,6 +132,8 @@
 }
 
 .fbl-vn-frame-list {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
