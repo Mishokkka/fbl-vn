@@ -822,6 +822,24 @@ assert.equal(isChoiceAvailable(compoundChoice, { [routeCounter.id]: 3, [secondRo
 assert.equal(isChoiceAvailable(compoundChoice, { [routeCounter.id]: 3, [secondRouteCounter.id]: 0 }), false, "Choice AND conditions must hide the option when one condition fails");
 compoundChoice.conditionLogic = COUNTER_CONDITION_LOGIC.ANY;
 assert.equal(isChoiceAvailable(compoundChoice, { [routeCounter.id]: 0, [secondRouteCounter.id]: 1 }), true, "Choice OR conditions must allow the option when one condition passes");
+
+const unfinishedChoiceConditionScene = createScene("Unfinished choice condition");
+const unfinishedChoiceFrame = unfinishedChoiceConditionScene.frames[0];
+unfinishedChoiceFrame.type = "choice";
+unfinishedChoiceFrame.isFinal = false;
+unfinishedChoiceFrame.choices = [{
+  id: "unfinished-choice",
+  text: "Unfinished",
+  next: "",
+  conditionLogic: COUNTER_CONDITION_LOGIC.ALL,
+  conditions: [createCounterCondition()]
+}];
+const unfinishedChoiceIssues = validateScene(unfinishedChoiceConditionScene);
+assert.equal(
+  unfinishedChoiceIssues.some(issue => issue.code === "choice-condition-no-counter" && issue.severity === "error"),
+  true,
+  "An unfinished choice condition must block playback instead of leaving a disabled dead-end choice"
+);
 const routeIssues = validateScene(scene);
 assert.equal(routeIssues.some(issue => issue.code === "frame-routing-missing-frame"), false);
 const routeChoice = { effectCounterId: routeCounter.id, effectOperation: "add", effectValue: 2 };
