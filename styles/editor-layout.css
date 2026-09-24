@@ -269,6 +269,7 @@
 /* Collapsible scene rail + widened frame workspace */
 .fbl-vn-editor.is-scenes-collapsed {
   --vn-frame-workspace-w: 540px;
+
   grid-template-columns: var(--vn-frame-workspace-w) minmax(0, 1fr);
   grid-template-areas:
     "frames scene"
@@ -282,11 +283,13 @@
 
 .fbl-vn-editor.is-dual-branch {
   --vn-frame-workspace-w: 640px;
+
   grid-template-columns: 250px var(--vn-frame-workspace-w) minmax(0, 1fr);
 }
 
 .fbl-vn-editor.is-scenes-collapsed.is-dual-branch {
   --vn-frame-workspace-w: 720px;
+
   grid-template-columns: var(--vn-frame-workspace-w) minmax(0, 1fr);
 }
 
@@ -373,6 +376,7 @@
   .fbl-vn-editor.is-scenes-collapsed,
   .fbl-vn-editor.is-scenes-collapsed.is-dual-branch {
     --vn-frame-workspace-w: min(58vw, 640px);
+
     grid-template-columns: var(--vn-frame-workspace-w) minmax(0, 1fr);
     grid-template-rows: auto minmax(170px, 0.75fr) minmax(0, 1fr) auto;
     grid-template-areas:
