@@ -69,7 +69,7 @@
           {{#if canAdvance}}
             <button type="button" class="fbl-vn-next {{#if localHasVoted}}is-voted{{/if}}" data-action="next" {{#if localHasVoted}}disabled{{/if}}>
               {{#if isVoteMode}}
-                <span data-vote-action-label>{{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}</span>
+                <span data-vote-action-label>{{#if isVoteOverride}}Продолжить (ГМ){{else}}{{#if localHasVoted}}Ждём остальных{{else}}Продолжить{{/if}}{{/if}}</span>
                 <span class="fbl-vn-vote-count">{{voteCount}} / {{voteTotal}}</span>
               {{else}}
                 Продолжить
