@@ -843,6 +843,34 @@ const frameEffectUsage = counterUsageManager._buildCounterUsage({
   }]
 }).get(routeCounter.id);
 assert.equal(frameEffectUsage.frameEffects, 1, "Counter manager usage must count effects attached directly to frames");
+const compoundUsage = counterUsageManager._buildCounterUsage({
+  counters: [routeCounter, secondRouteCounter],
+  frames: [{
+    effectCounterId: "",
+    effectOperation: COUNTER_EFFECTS.NONE,
+    effectValue: 0,
+    choices: [{
+      conditions: [
+        createCounterCondition({ counterId: routeCounter.id, operator: "gte", value: 1 }),
+        createCounterCondition({ counterId: secondRouteCounter.id, operator: "eq", value: 1 })
+      ],
+      effectCounterId: "",
+      effectOperation: COUNTER_EFFECTS.NONE,
+      effectValue: 0
+    }],
+    nextRouting: {
+      enabled: true,
+      conditions: [
+        createCounterCondition({ counterId: routeCounter.id, operator: "gte", value: 1 }),
+        createCounterCondition({ counterId: secondRouteCounter.id, operator: "eq", value: 1 })
+      ]
+    }
+  }]
+});
+assert.equal(compoundUsage.get(routeCounter.id).choiceConditions, 1, "Counter manager must count each choice condition row");
+assert.equal(compoundUsage.get(routeCounter.id).nextRoutings, 1, "Counter manager must count each routing condition row");
+assert.equal(compoundUsage.get(secondRouteCounter.id).choiceConditions, 1);
+assert.equal(compoundUsage.get(secondRouteCounter.id).nextRoutings, 1);
 assert.equal(getFrameReferences(scene, "frame-root").some(ref => ref.type === "counter-true" && ref.frameId === "frame-nested"), true, "Conditional outcomes must be reported as frame references");
 
 const legacyScene = createScene();
