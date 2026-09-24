@@ -2784,6 +2784,29 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._renderEditorParts(["frames", "framePanel"]);
     }
 
+    static async _onAddNextRoutingCondition(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        frame.nextRouting ||= {};
+        frame.nextRouting.conditions = Array.isArray(frame.nextRouting.conditions) ? frame.nextRouting.conditions : [];
+        frame.nextRouting.conditions.push(createCounterCondition());
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onDeleteNextRoutingCondition(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame?.nextRouting) return;
+        const conditionId = target.dataset.conditionId || "";
+        frame.nextRouting.conditions = (frame.nextRouting.conditions || []).filter(condition => condition.id !== conditionId);
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
     static async _onAddChoice(event, target) {
         event.preventDefault();
         const scene = await this._commitFromForm({ persist: false });
@@ -2802,6 +2825,32 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
         if (!frame) return;
         frame.choices = (frame.choices || []).filter(choice => choice.id !== target.dataset.choiceId);
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onAddChoiceCondition(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
+        if (!frame || !Array.isArray(frame.choices)) return;
+        const choice = frame.choices.find(item => item.id === target.dataset.choiceId);
+        if (!choice) return;
+        choice.conditions = Array.isArray(choice.conditions) ? choice.conditions : [];
+        choice.conditions.push(createCounterCondition());
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onDeleteChoiceCondition(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
+        if (!frame || !Array.isArray(frame.choices)) return;
+        const choice = frame.choices.find(item => item.id === target.dataset.choiceId);
+        if (!choice) return;
+        const conditionId = target.dataset.conditionId || "";
+        choice.conditions = (choice.conditions || []).filter(condition => condition.id !== conditionId);
         await VNSceneStore.upsertScene(scene);
         this._renderEditorParts(["frames", "framePanel"]);
     }
@@ -3050,8 +3099,12 @@ VNEditorApp.DEFAULT_OPTIONS = {
         deleteAudioCue: queuedEditorAction(VNEditorApp._onDeleteAudioCue),
         duplicateAudioCue: queuedEditorAction(VNEditorApp._onDuplicateAudioCue),
         moveAudioCue: queuedEditorAction(VNEditorApp._onMoveAudioCue),
+        addNextRoutingCondition: queuedEditorAction(VNEditorApp._onAddNextRoutingCondition),
+        deleteNextRoutingCondition: queuedEditorAction(VNEditorApp._onDeleteNextRoutingCondition),
         addChoice: queuedEditorAction(VNEditorApp._onAddChoice),
         deleteChoice: queuedEditorAction(VNEditorApp._onDeleteChoice),
+        addChoiceCondition: queuedEditorAction(VNEditorApp._onAddChoiceCondition),
+        deleteChoiceCondition: queuedEditorAction(VNEditorApp._onDeleteChoiceCondition),
         duplicateChoice: queuedEditorAction(VNEditorApp._onDuplicateChoice),
         moveChoice: queuedEditorAction(VNEditorApp._onMoveChoice),
         clearFrameTarget: queuedEditorAction(VNEditorApp._onClearFrameTarget),
