@@ -1658,6 +1658,14 @@ assert.equal(VNPlayerApp.requestRejoin(scene.id), true, "The persistent return c
 assert.deepEqual(localRejoinCall, { sceneId: scene.id, leaderId: gm1.id }, "Return request must target the original session leader");
 VNPlayerApp.clearRejoinOffer(scene.id);
 assert.equal(VNPlayerApp.rejoinOffers.has(scene.id), false, "Closing the GM session or reopening the cutscene must clear the return offer");
+
+VNPlayerApp.handleRejoinOffer({ sceneId: "scene-restored-offer", sceneTitle: "Still Playing", leaderId: gm1.id });
+assert.deepEqual(
+  VNPlayerApp.rejoinOffers.get("scene-restored-offer"),
+  { sceneId: "scene-restored-offer", sceneTitle: "Still Playing", leaderId: gm1.id },
+  "A trusted GM rejoinOffer must rebuild the manual return state after the client reconnects"
+);
+VNPlayerApp.clearRejoinOffer("scene-restored-offer");
 VNSocket.leave = savedSocketLeave;
 VNSocket.rejoin = savedSocketRejoin;
 game.user = savedVoteModeUser;
