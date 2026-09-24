@@ -2071,6 +2071,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.selectedFrameId = scene.startFrame || (scene.frames && scene.frames[0] ? scene.frames[0].id : null);
         const frame = scene.frames && scene.frames.find(item => item.id === this.selectedFrameId);
         this.selectedBranchId = frame ? frame.branchId || (scene.branches && scene.branches[0] ? scene.branches[0].id : null) : (scene.branches && scene.branches[0] ? scene.branches[0].id : null);
+        this.secondaryBranchId = null;
         this.selectedFolderId = null;
         this._renderEditorParts();
     }
@@ -2164,6 +2165,31 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
 
+    static _onToggleScenesColumn(event, target) {
+        event.preventDefault();
+        this.scenesCollapsed = this.scenesCollapsed !== true;
+        this._syncEditorLayoutState();
+        this._renderEditorParts(["scenes", "frames"]);
+    }
+
+    static async _onToggleSecondBranch(event, target) {
+        event.preventDefault();
+        await this._commitFromForm();
+        const scene = this.selectedScene;
+        const branches = scene && Array.isArray(scene.branches) ? scene.branches : [];
+        if (this.secondaryBranchId) {
+            this.secondaryBranchId = null;
+        }
+        else {
+            const secondary = branches.find(branch => branch.id !== this.selectedBranchId) || null;
+            if (!secondary) return;
+            this.secondaryBranchId = secondary.id;
+            this.scenesCollapsed = true;
+        }
+        this._syncEditorLayoutState();
+        this._renderEditorParts(["scenes", "frames"]);
+    }
+
     static async _onAddFrame(event, target) {
         event.preventDefault();
         const scene = await this._commitFromForm({ persist: false });
@@ -2171,13 +2197,25 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const type = target.dataset.type || FRAME_TYPES.DIALOGUE;
         const frame = createFrame(type);
         const current = scene.frames.find(item => item.id === this.selectedFrameId);
-        frame.branchId = this.selectedBranchId || (current ? current.branchId || "" : "") || (scene.branches && scene.branches[0] ? scene.branches[0].id : "");
-        frame.folderId = this.selectedFolderId || (current && current.branchId === frame.branchId ? current.folderId || "" : "");
-        frame.sort = this._treeSiblings(scene, frame.folderId || "", frame.branchId || "").length * 1000;
+        const requestedBranchId = target.dataset.branchId || "";
+        frame.branchId = requestedBranchId || this.selectedBranchId || (current ? current.branchId || "" : "") || (scene.branches && scene.branches[0] ? scene.branches[0].id : "");
+        frame.folderId = current && current.branchId === frame.branchId
+            ? current.folderId || ""
+            : (this.selectedFolderId || "");
+        const siblings = this._treeSiblings(scene, frame.folderId || "", frame.branchId || "");
+        let insertIndex = siblings.length;
+        if (current && current.branchId === frame.branchId && (current.folderId || "") === (frame.folderId || "")) {
+            const currentIndex = siblings.findIndex(item => item.type === "frame" && item.id === current.id);
+            if (currentIndex >= 0) insertIndex = currentIndex + 1;
+        }
+        frame.sort = siblings.length * 1000;
         scene.frames.push(frame);
+        this._normalizeTreeOrder(scene, frame.folderId || "", { type: "frame", id: frame.id }, insertIndex, frame.branchId || "");
+        this._rebuildFrameArrayByTree(scene);
         await VNSceneStore.upsertScene(scene);
-        this.selectedBranchId = frame.branchId;
+        this._activateBranchForSelection(frame.branchId);
         this.selectedFrameId = frame.id;
+        this.selectedFolderId = frame.folderId || null;
         this._renderEditorParts(["resources", "scenes", "frames", "sceneHead", "framePanel"]);
     }
 
@@ -2187,7 +2225,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.selectedFrameId = target.dataset.frameId;
         const scene = this.selectedScene;
         const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
-        this.selectedBranchId = frame && frame.branchId ? frame.branchId : this.selectedBranchId;
+        if (frame?.branchId) this._activateBranchForSelection(frame.branchId);
         this.selectedFolderId = frame && frame.folderId ? frame.folderId : null;
         this._renderEditorParts(["frames", "framePanel"]);
     }
@@ -2316,7 +2354,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const branchId = requestedBranchId !== null ? requestedBranchId : (target.dataset.branchId || target.value || "");
         const branch = (scene.branches || []).find(item => item.id === branchId);
         if (!branch) return;
-        this.selectedBranchId = branch.id;
+        this._activateBranchForSelection(branch.id);
         this.selectedFolderId = null;
         const firstFrame = (scene.frames || []).find(frame => frame.branchId === branch.id);
         this.selectedFrameId = firstFrame ? firstFrame.id : null;
@@ -2909,6 +2947,8 @@ VNEditorApp.DEFAULT_OPTIONS = {
         exportScene: queuedEditorAction(VNEditorApp._onExportScene),
         exportAll: queuedEditorAction(VNEditorApp._onExportAll),
         importJson: queuedEditorAction(VNEditorApp._onImportJson),
+        toggleScenesColumn: VNEditorApp._onToggleScenesColumn,
+        toggleSecondBranch: queuedEditorAction(VNEditorApp._onToggleSecondBranch),
         addFrame: queuedEditorAction(VNEditorApp._onAddFrame),
         selectFrame: queuedEditorAction(VNEditorApp._onSelectFrame),
         selectFolder: queuedEditorAction(VNEditorApp._onSelectFolder),
