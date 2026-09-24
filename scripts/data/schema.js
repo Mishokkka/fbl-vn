@@ -996,7 +996,7 @@ export function validateScene(scene) {
                 const condition = cleanChoice.conditions[conditionIndex];
                 const fieldBase = `choice.conditions.${condition.id || conditionIndex}`;
                 if (!condition.counterId) {
-                    issues.push(issue(ISSUE_SEVERITY.WARNING, "choice-condition-no-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» в условии ${conditionIndex + 1} не выбран счётчик.`, { frameId: frame.id, choiceId: choice.id, field: `${fieldBase}.counterId` }));
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "choice-condition-no-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» в условии ${conditionIndex + 1} не выбран счётчик.`, { frameId: frame.id, choiceId: choice.id, field: `${fieldBase}.counterId` }));
                 }
                 else if (!counterIds.has(condition.counterId)) {
                     issues.push(issue(ISSUE_SEVERITY.WARNING, "missing-choice-condition-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» условие ${conditionIndex + 1} ссылается на несуществующий счётчик.`, { frameId: frame.id, choiceId: choice.id, field: `${fieldBase}.counterId` }));
