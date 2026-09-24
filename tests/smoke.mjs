@@ -963,6 +963,8 @@ game.user = closePolicyUser;
 closePolicyPlayer.leaderId = "gm-close";
 closePolicyPlayer.mode = PLAYER_MODES.INDIVIDUAL;
 assert.equal(closePolicyPlayer._canCloseLocally(), true, "A non-leader player must be able to exit a shared INDIVIDUAL cutscene locally");
+closePolicyPlayer.mode = PLAYER_MODES.VOTE;
+assert.equal(closePolicyPlayer._canCloseLocally(), true, "A non-leader voter must be able to leave the vote cutscene locally without closing it for everyone");
 closePolicyPlayer.mode = PLAYER_MODES.GM;
 assert.equal(closePolicyPlayer._canCloseLocally(), false, "A non-leader player must not gain the synchronized GM close authority");
 closePolicyPlayer.leaderId = closePolicyUser.id;
