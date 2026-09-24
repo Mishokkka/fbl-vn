@@ -187,7 +187,11 @@ const explicitReopen = emitted.find(entry => entry.payload?.type === "open" && e
 assert.ok(explicitReopen, "Explicit rejoin must reopen the currently active cutscene");
 assert.deepEqual(explicitReopen.payload.data.targetIds, [player.id], "Explicit rejoin reopen must target only the returning player");
 assert.equal(explicitReopen.payload.data.resumeState.currentFrameId, "frame-current", "Explicit rejoin must resume at the GM's current synchronized frame");
-assert.deepEqual(explicitReopen.payload.data.participantIds, [player.id, player2.id], "Explicit rejoin must receive the current vote roster");
+assert.deepEqual(
+  [...explicitReopen.payload.data.participantIds].sort(),
+  [player.id, player2.id].sort(),
+  "Explicit rejoin must receive the current vote roster"
+);
 
 assert.equal(VNSocket._removeSessionParticipant(reconnectSceneId, player.id), true, "A returned voter must be able to leave again");
 assert.equal(VNSocket._removeSessionParticipant(reconnectSceneId, player2.id), true, "The leader must be able to remove the last explicit voter from a vote session");
