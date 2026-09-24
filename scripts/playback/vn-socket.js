@@ -256,7 +256,9 @@ export class VNSocket {
         if (!sceneId) return false;
         const data = { sceneId };
         if (leaderId) data.targetIds = [leaderId];
-        return this.emit("leave", data);
+        const sent = this.emit("leave", data);
+        this.activeLeaders.delete(sceneId);
+        return sent;
     }
 
     static broadcastVoteState(sceneId, state = {}) {
