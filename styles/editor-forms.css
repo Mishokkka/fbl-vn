@@ -335,6 +335,68 @@
   background: linear-gradient(180deg, rgba(182, 138, 74, 0.09), rgba(0, 0, 0, 0.14));
 }
 
+.fbl-vn-condition-group {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.fbl-vn-condition-group-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(170px, 240px) auto;
+  align-items: end;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.fbl-vn-condition-group-header > button {
+  width: auto;
+  min-width: 92px;
+  padding-inline: 9px;
+}
+
+.fbl-vn-condition-list,
+.choice-condition-list {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.fbl-vn-counter-condition-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(170px, 1fr) minmax(150px, 0.85fr) 104px 30px;
+  gap: 6px;
+  align-items: end;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: var(--vn-radius-sm);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.fbl-vn-counter-condition-row .condition-index {
+  align-self: center;
+  color: var(--vn-muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.fbl-vn-counter-condition-row .condition-delete {
+  width: 30px;
+  min-width: 30px;
+  height: var(--vn-control-h);
+  min-height: var(--vn-control-h);
+  padding: 0;
+}
+
+.fbl-vn-condition-empty {
+  margin: 0;
+  padding: 5px 7px;
+  color: var(--vn-muted);
+  font-size: 11px;
+}
+
 .fbl-vn-editor .fbl-vn-route-condition-row {
   min-width: 0;
   display: grid;
@@ -388,6 +450,10 @@
     grid-template-columns: 1fr 1fr;
   }
 
+  .fbl-vn-counter-condition-row {
+    grid-template-columns: 24px minmax(0, 1fr) minmax(120px, 0.8fr) 90px 30px;
+  }
+
   .fbl-vn-editor .fbl-vn-route-value,
   .fbl-vn-frame-counter-effect-fields .form-group:last-child {
     grid-column: 1 / -1;
@@ -405,6 +471,23 @@
   .fbl-vn-editor .fbl-vn-route-condition-row,
   .fbl-vn-frame-counter-effect-fields {
     grid-template-columns: 1fr;
+  }
+
+  .fbl-vn-condition-group-header {
+    grid-template-columns: 1fr;
+  }
+
+  .fbl-vn-counter-condition-row {
+    grid-template-columns: 24px minmax(0, 1fr) 30px;
+  }
+
+  .fbl-vn-counter-condition-row > :is(.choice-condition-op, .choice-condition-value, .form-group:nth-of-type(2), .form-group:nth-of-type(3)) {
+    grid-column: 2;
+  }
+
+  .fbl-vn-counter-condition-row .condition-delete {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .fbl-vn-editor .fbl-vn-route-value,
