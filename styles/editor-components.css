@@ -936,11 +936,6 @@ button.fbl-vn-validation-item.warning i {
 
 
 /* Dual branch frame list and compact transition connectors */
-.fbl-vn-frame-list {
-  position: relative;
-  isolation: isolate;
-}
-
 .fbl-vn-frame-columns {
   position: relative;
   z-index: 1;
