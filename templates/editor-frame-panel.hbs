@@ -432,28 +432,51 @@
                 </div>
 
                 <div class="fbl-vn-frame-next-routing" data-next-routing-fields {{#unless nextRoutingEnabled}}hidden{{/unless}}>
-                  <div class="fbl-vn-route-condition-row">
-                    <div class="form-group slim">
-                      <label>Счётчик</label>
-                      <select name="frame.nextRouting.counterId">
-                        {{#each nextRoutingCounterOptions}}
-                          <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                  <section class="fbl-vn-condition-group fbl-vn-route-conditions">
+                    <header class="fbl-vn-condition-group-header">
+                      <label class="form-group slim">
+                        <span>Логика условий</span>
+                        <select name="frame.nextRouting.conditionLogic">
+                          {{#each nextRoutingLogicOptions}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </label>
+                      <button type="button" data-action="addNextRoutingCondition"><i class="fa-solid fa-plus"></i> Условие</button>
+                    </header>
+                    {{#if hasNextRoutingConditions}}
+                      <div class="fbl-vn-condition-list">
+                        {{#each nextRoutingConditions}}
+                          <div class="fbl-vn-counter-condition-row" data-next-routing-condition-row data-condition-id="{{id}}">
+                            <span class="condition-index">{{index}})</span>
+                            <div class="form-group slim">
+                              <label>Счётчик</label>
+                              <select data-counter-condition-counter>
+                                {{#each counterOptions}}
+                                  <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                                {{/each}}
+                              </select>
+                            </div>
+                            <div class="form-group slim">
+                              <label>Сравнение</label>
+                              <select data-counter-condition-operator>
+                                {{#each operatorOptions}}
+                                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                                {{/each}}
+                              </select>
+                            </div>
+                            <div class="form-group slim">
+                              <label>Значение</label>
+                              <input type="number" step="1" data-counter-condition-value value="{{value}}" />
+                            </div>
+                            <button type="button" class="condition-delete" data-action="deleteNextRoutingCondition" data-condition-id="{{id}}" title="Удалить условие" aria-label="Удалить условие"><i class="fa-solid fa-xmark"></i></button>
+                          </div>
                         {{/each}}
-                      </select>
-                    </div>
-                    <div class="form-group slim">
-                      <label>Сравнение</label>
-                      <select name="frame.nextRouting.operator">
-                        {{#each nextRoutingOperatorOptions}}
-                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                        {{/each}}
-                      </select>
-                    </div>
-                    <div class="form-group slim fbl-vn-route-value">
-                      <label>Значение</label>
-                      <input type="number" step="1" name="frame.nextRouting.value" value="{{nextRouting.value}}" />
-                    </div>
-                  </div>
+                      </div>
+                    {{else}}
+                      <p class="fbl-vn-condition-empty">Добавьте хотя бы одно условие для проверки.</p>
+                    {{/if}}
+                  </section>
 
                   <div class="fbl-vn-route-outcome-row">
                     <label><i class="fa-solid fa-check"></i> Если да</label>
@@ -514,27 +537,50 @@
                       </div>
                       <div class="choice-logic-line">
                         <div class="choice-logic-block choice-condition-block">
-                          <span class="choice-logic-title">Доступность</span>
-                          <div class="form-group choice-condition-counter">
-                            <label>Счётчик</label>
-                            <select data-choice-condition-counter class="{{#if hasWarning}}is-warning{{/if}}">
-                              {{#each conditionCounterOptions}}
-                                <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                          <div class="choice-condition-head">
+                            <span class="choice-logic-title">Доступность</span>
+                            <label class="choice-condition-logic">
+                              <span>Логика</span>
+                              <select data-choice-condition-logic>
+                                {{#each conditionLogicOptions}}
+                                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                                {{/each}}
+                              </select>
+                            </label>
+                            <button type="button" data-action="addChoiceCondition" data-choice-id="{{id}}" title="Добавить условие"><i class="fa-solid fa-plus"></i></button>
+                          </div>
+                          {{#if hasConditions}}
+                            <div class="choice-condition-list">
+                              {{#each conditionViews}}
+                                <div class="fbl-vn-counter-condition-row is-choice-condition" data-choice-condition-row data-condition-id="{{id}}">
+                                  <span class="condition-index">{{index}})</span>
+                                  <div class="form-group choice-condition-counter">
+                                    <label>Счётчик</label>
+                                    <select data-counter-condition-counter>
+                                      {{#each counterOptions}}
+                                        <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if invalid}}class="is-invalid-option"{{/if}}>{{label}}</option>
+                                      {{/each}}
+                                    </select>
+                                  </div>
+                                  <div class="form-group choice-condition-op">
+                                    <label>Сравнение</label>
+                                    <select data-counter-condition-operator>
+                                      {{#each operatorOptions}}
+                                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                                      {{/each}}
+                                    </select>
+                                  </div>
+                                  <div class="form-group choice-condition-value">
+                                    <label>Значение</label>
+                                    <input type="number" step="1" data-counter-condition-value value="{{value}}" />
+                                  </div>
+                                  <button type="button" class="condition-delete" data-action="deleteChoiceCondition" data-choice-id="{{../id}}" data-condition-id="{{id}}" title="Удалить условие" aria-label="Удалить условие"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
                               {{/each}}
-                            </select>
-                          </div>
-                          <div class="form-group choice-condition-op">
-                            <label>Сравнение</label>
-                            <select data-choice-condition-operator>
-                              {{#each conditionOperatorOptions}}
-                                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                              {{/each}}
-                            </select>
-                          </div>
-                          <div class="form-group choice-condition-value">
-                            <label>Значение</label>
-                            <input type="number" step="1" data-choice-condition-value value="{{conditionValue}}" />
-                          </div>
+                            </div>
+                          {{else}}
+                            <p class="fbl-vn-condition-empty">Без условий: вариант доступен всегда.</p>
+                          {{/if}}
                         </div>
                         <div class="choice-logic-block choice-effect-block">
                           <span class="choice-logic-title">Изменение счётчика</span>
