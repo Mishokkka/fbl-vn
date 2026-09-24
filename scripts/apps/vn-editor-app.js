@@ -642,7 +642,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return (Array.isArray(conditions) ? conditions : []).map((condition, index) => ({
             ...condition,
             index: index + 1,
-            counterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, condition.counterId || "", false),
+            counterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, condition.counterId || "", true),
             operatorOptions: this._counterConditionOptions(condition.operator || COUNTER_OPERATORS.GTE).filter(option => option.value)
         }));
     }
