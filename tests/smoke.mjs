@@ -1601,6 +1601,26 @@ assert.deepEqual(localLeaveCall, { sceneId: scene.id, leaderId: gm1.id }, "Closi
 assert.equal(localCloseCalls, 1, "A vote participant must be able to close only their local cutscene");
 VNSocket.leave = savedSocketLeave;
 
+const reconnectVotePlayer = Object.create(VNPlayerApp.prototype);
+reconnectVotePlayer.mode = PLAYER_MODES.VOTE;
+reconnectVotePlayer.currentFrameId = "frame-root";
+reconnectVotePlayer.currentTextIndex = 0;
+reconnectVotePlayer.participantIds = [playerUser.id, playerUser2.id];
+reconnectVotePlayer._inactiveParticipantIds = new Set();
+reconnectVotePlayer._leaderVotes = new Map([[playerUser.id, { action: "continue", choiceId: "" }]]);
+reconnectVotePlayer.counterState = { counter: 2 };
+reconnectVotePlayer.visualState = { background: "resume-bg.webp", portrait: "", portraitPosition: "left" };
+reconnectVotePlayer.scene = scene;
+reconnectVotePlayer.leaderId = gm1.id;
+reconnectVotePlayer.started = true;
+reconnectVotePlayer._isLeader = () => true;
+VNPlayerApp.active.set("scene-vote-reconnect-state", reconnectVotePlayer);
+const reconnectVoteState = VNPlayerApp.getSyncState("scene-vote-reconnect-state");
+assert.deepEqual(reconnectVoteState.voteState.voters, [playerUser.id], "Reconnect snapshot must include current votes from remaining players");
+assert.equal(reconnectVoteState.voteState.total, 2, "Reconnect snapshot must include the current player-only quorum");
+assert.deepEqual(reconnectVoteState.voteState.participantIds, [playerUser.id, playerUser2.id], "Reconnect snapshot must carry the current vote roster");
+VNPlayerApp.active.delete("scene-vote-reconnect-state");
+
 const savedFoundry = globalThis.foundry;
 const savedGame = globalThis.game;
 const savedUi = globalThis.ui;
