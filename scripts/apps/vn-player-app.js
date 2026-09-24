@@ -1348,7 +1348,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             voters,
             choices,
             total: activeParticipants.size,
-            participantIds: [...this.participantIds]
+            participantIds: this._voteParticipantIds()
         };
     }
 
