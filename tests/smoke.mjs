@@ -448,6 +448,23 @@ dualEditor._activateBranchForSelection(dualSecondary.id);
 assert.equal(dualEditor.selectedBranchId, dualSecondary.id, "Selecting a frame in the second column must make that branch active");
 assert.equal(dualEditor.secondaryBranchId, dualPrimaryId, "The previously active branch must remain visible as the second column");
 
+// Moving a frame into the visible secondary branch must keep both columns open and swap their roles.
+dualEditor.selectedBranchId = dualPrimaryId;
+dualEditor.secondaryBranchId = dualSecondary.id;
+dualEditor.selectedFrameId = dualPrimaryFrame.id;
+dualEditor._renderEditorParts = () => {};
+const savedDualUpsert = VNSceneStore.upsertScene;
+VNSceneStore.upsertScene = async value => value;
+try {
+  await dualEditor._moveTreeItem("frame", dualPrimaryFrame.id, "frame", dualSecondaryFrame.id, "after", dualScene);
+}
+finally {
+  VNSceneStore.upsertScene = savedDualUpsert;
+}
+assert.equal(dualEditor.selectedBranchId, dualSecondary.id, "Moving the selected frame into the secondary branch must make that branch active");
+assert.equal(dualEditor.secondaryBranchId, dualPrimaryId, "Moving across the two visible branches must preserve the previous primary as the secondary column");
+assert.equal(dualPrimaryFrame.branchId, dualSecondary.id, "Cross-branch frame drag must still persist the destination branch");
+
 // Inline transition indicators must follow the same per-branch sequential fallback as playback.
 const linkScene = createScene();
 const linkBranchA = linkScene.branches[0].id;
@@ -474,6 +491,11 @@ linkChoice.choices = [{ id: "link-choice-option", text: "Go", next: linkB1.id }]
 linkScene.frames = [linkA1, linkB1, linkA2, linkChoice];
 assert.equal(editor._frameSequentialTarget(linkScene, linkA1), linkA2.id, "Implicit frame links must advance to the next frame in the same branch even when scene.frames is interleaved");
 assert.deepEqual(editor._frameOutgoingLinks(linkScene, linkA1), [{ key: `${linkA2.id}:implicit`, targetId: linkA2.id, kind: "implicit" }]);
+assert.deepEqual(
+  editor._frameOutgoingLinks(linkScene, linkA1, new Map([[linkA1.id, linkA2.id]])),
+  [{ key: `${linkA2.id}:implicit`, targetId: linkA2.id, kind: "implicit" }],
+  "Inline link drawing must accept a precomputed sequential map without changing routing semantics"
+);
 linkA1.next = linkB1.id;
 assert.deepEqual(editor._frameOutgoingLinks(linkScene, linkA1), [{ key: `${linkB1.id}:explicit`, targetId: linkB1.id, kind: "explicit" }], "Explicit cross-branch links must be exposed to the frame-list connector overlay");
 assert.deepEqual(editor._frameOutgoingLinks(linkScene, linkChoice), [{ key: `${linkB1.id}:choice`, targetId: linkB1.id, kind: "choice" }], "Choice destinations must be exposed to the frame-list connector overlay");
