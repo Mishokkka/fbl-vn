@@ -674,7 +674,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const isLastTextBlock = this.currentTextIndex >= Math.max(0, blocks.length - 1);
         const localVote = isVoteOverride ? null : this._getLocalVoteForCurrentStep();
         const voteState = this._getVoteStateForCurrentStep();
-        const voteTotal = activeParticipants.length;
+        const voteTotal = isVoteMode && Number.isFinite(Number(voteState.total))
+            ? Number(voteState.total)
+            : activeParticipants.length;
         const choices = frame && Array.isArray(frame.choices) ? frame.choices : [];
         const choiceCounts = voteState && voteState.choices ? voteState.choices : {};
         const currentVolumeLevels = this._volumeLevels();
