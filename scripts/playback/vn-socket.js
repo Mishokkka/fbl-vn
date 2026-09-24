@@ -217,6 +217,14 @@ export class VNSocket {
             .map(user => user.id);
     }
 
+    /**
+     * Launch a synchronized cutscene and wait only for the session's current
+     * active targets, so players who leave during preload cannot hold startup.
+     *
+     * @param {object} scene Scene payload to open.
+     * @param {{mode?: string|null}} options Launch options.
+     * @returns {Promise<void>}
+     */
     static async openForPlayers(scene, { mode = null } = {}) {
         if (!game.user.isGM) {
             ui.notifications?.warn("VN: запуск катсцен доступен только ГМу.");
@@ -281,7 +289,6 @@ export class VNSocket {
             const ready = this.ready.get(scene.id) ?? new Set();
             const readyCount = currentTargets.filter(id => ready.has(id)).length;
             ui.notifications?.info(`VN: предзагрузка завершена у ${readyCount}/${currentTargets.length} клиентов. Запускаю катсцену.`);
-            if (!session) return;
             session.started = true;
             this.emit("start", this._withSceneTargets(scene.id, { sceneId: scene.id }));
             await Promise.resolve(this.handlers.start?.({ sceneId: scene.id, leaderId: game.user.id }, game.user.id));
