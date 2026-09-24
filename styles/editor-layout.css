@@ -132,6 +132,8 @@
 }
 
 .fbl-vn-frame-list {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
@@ -260,5 +262,137 @@
 
   .fbl-vn-bottom-actions > button {
     flex: 0 0 auto;
+  }
+}
+
+
+/* Collapsible scene rail + widened frame workspace */
+.fbl-vn-editor.is-scenes-collapsed {
+  --vn-frame-workspace-w: 540px;
+
+  grid-template-columns: var(--vn-frame-workspace-w) minmax(0, 1fr);
+  grid-template-areas:
+    "frames scene"
+    "frames panel"
+    "frames bottom";
+}
+
+.fbl-vn-editor.is-scenes-collapsed .fbl-vn-scenes {
+  display: none;
+}
+
+.fbl-vn-editor.is-dual-branch {
+  --vn-frame-workspace-w: 640px;
+
+  grid-template-columns: 250px var(--vn-frame-workspace-w) minmax(0, 1fr);
+}
+
+.fbl-vn-editor.is-scenes-collapsed.is-dual-branch {
+  --vn-frame-workspace-w: 720px;
+
+  grid-template-columns: var(--vn-frame-workspace-w) minmax(0, 1fr);
+}
+
+.fbl-vn-scenes-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fbl-vn-scenes-head-actions button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.fbl-vn-frames {
+  grid-template-rows: 38px auto minmax(0, 1fr) auto;
+}
+
+.fbl-vn-frame-tools > button.is-active {
+  border-color: rgba(182, 138, 74, 0.58);
+  background: rgba(182, 138, 74, 0.18);
+  color: var(--vn-text);
+}
+
+.fbl-vn-branch-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 42px;
+  padding: 5px 8px;
+}
+
+.fbl-vn-branch-panel.is-dual {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.fbl-vn-branch-panel .branch-select-field {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  color: var(--vn-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+}
+
+.fbl-vn-branch-panel .branch-select-field > span {
+  white-space: nowrap;
+}
+
+.fbl-vn-branch-panel .branch-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 28px);
+  gap: 4px;
+}
+
+@media (max-width: 1240px) {
+  .fbl-vn-editor.is-dual-branch:not(.is-scenes-collapsed) {
+    --vn-frame-workspace-w: 600px;
+  }
+
+  .fbl-vn-editor.is-scenes-collapsed.is-dual-branch {
+    --vn-frame-workspace-w: 680px;
+  }
+
+  .fbl-vn-editor.is-scenes-collapsed:not(.is-dual-branch) {
+    --vn-frame-workspace-w: 500px;
+  }
+}
+
+@media (max-width: 1000px) {
+  .fbl-vn-editor.is-dual-branch:not(.is-scenes-collapsed) {
+    grid-template-columns: 190px minmax(0, 1fr);
+    grid-template-rows: auto minmax(170px, 0.75fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "scenes scene"
+      "scenes frames"
+      "scenes panel"
+      "scenes bottom";
+  }
+
+  .fbl-vn-editor.is-scenes-collapsed,
+  .fbl-vn-editor.is-scenes-collapsed.is-dual-branch {
+    --vn-frame-workspace-w: min(58vw, 640px);
+
+    grid-template-columns: var(--vn-frame-workspace-w) minmax(0, 1fr);
+    grid-template-rows: auto minmax(170px, 0.75fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "frames scene"
+      "frames scene"
+      "frames panel"
+      "frames bottom";
+  }
+
+  .fbl-vn-editor.is-scenes-collapsed .fbl-vn-scene-head {
+    grid-area: scene;
+  }
+}
+
+@media (max-width: 720px) {
+  .fbl-vn-editor.is-dual-branch:not(.is-scenes-collapsed) {
+    grid-template-columns: 150px minmax(0, 1fr);
   }
 }
