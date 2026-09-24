@@ -1176,7 +1176,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const issue = issues.find(item => item.frameId) || null;
             if (!issue) return;
             const frame = (this.selectedScene?.frames || []).find(item => item.id === issue.frameId);
-            if (frame) this.selectedBranchId = frame.branchId || this.selectedBranchId;
+            if (frame?.branchId) this._activateBranchForSelection(frame.branchId);
             this.selectedFrameId = issue.frameId;
             this._renderEditorParts(["frames", "framePanel"]);
         });
@@ -1321,6 +1321,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     _syncFrameTargetPickingState() {
+        if (this._activeFrameTargetInput && this._activeFrameTargetInput.isConnected === false) {
+            this._activeFrameTargetInput = null;
+        }
         const root = this._editorGridElement();
         root?.classList?.toggle("is-frame-target-picking", Boolean(this._activeFrameTargetInput));
     }
@@ -2288,7 +2291,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const scene = await this._commitFromForm({ persist: false });
         const direction = target.dataset.direction === "up" ? -1 : 1;
         if (!scene || !this.selectedFrameId) return;
-        const rows = this._buildFrameTreeRows(scene, this._buildFrameViews(scene, new Map()));
+        const rows = this._buildFrameTreeRows(
+            scene,
+            this._buildFrameViews(scene, new Map(), this.selectedBranchId || ""),
+            this.selectedBranchId || ""
+        );
         const index = rows.findIndex(row => row.isFrame && row.id === this.selectedFrameId);
         if (index < 0) return;
         const targetRow = rows[index + direction];
