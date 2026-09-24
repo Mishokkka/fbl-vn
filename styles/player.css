@@ -635,3 +635,36 @@
     font-size: clamp(21px, 3.2vw, 34px);
   }
 }
+
+
+.fbl-vn-rejoin {
+  position: fixed;
+  left: 50%;
+  bottom: 92px;
+  z-index: 110;
+  min-width: 220px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 16px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(201, 167, 111, 0.58);
+  border-radius: 10px;
+  background: rgba(15, 13, 10, 0.94);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.48);
+  color: #e7c58d;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+}
+
+.fbl-vn-rejoin:hover:not(:disabled),
+.fbl-vn-rejoin:focus-visible {
+  background: rgba(61, 45, 23, 0.98);
+  border-color: rgba(231, 197, 141, 0.82);
+}
+
+.fbl-vn-rejoin:disabled {
+  opacity: 0.68;
+  cursor: wait;
+}
