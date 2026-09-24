@@ -154,6 +154,13 @@ const emptyTargetPayload = VNSocket._withSceneTargets(reconnectSceneId, { sceneI
 assert.deepEqual(emptyTargetPayload.targetIds, [], "An active session with no remaining players must preserve an explicit empty target list");
 assert.equal(VNSocket._isTargeted(emptyTargetPayload), false, "An explicit empty target list must target nobody instead of degenerating into a broadcast");
 
+VNSocket.activeLeaders.set("scene-local-leave", gm1.id);
+emitted.length = 0;
+assert.equal(VNSocket.leave("scene-local-leave", gm1.id), true, "Leaving a vote session must emit a leave message to the leader");
+assert.equal(VNSocket.activeLeaders.has("scene-local-leave"), false, "A client that explicitly leaves must clear stale leader trust for that scene");
+const emittedLeave = emitted.find(entry => entry.payload?.type === "leave");
+assert.deepEqual(emittedLeave?.payload?.data?.targetIds, [gm1.id], "Local leave must target only the current leader");
+
 emitted.length = 0;
 VNSocket._onUserConnected(player, true);
 await new Promise(resolve => setTimeout(resolve, 0));
