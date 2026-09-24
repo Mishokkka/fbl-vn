@@ -62,6 +62,7 @@ function registerSocketOnce() {
         vote: (payload, senderId) => VNPlayerApp.recordVote(payload, senderId),
         leave: (payload, senderId) => VNPlayerApp.handleParticipantLeave(payload.sceneId, senderId),
         rejoin: (payload, senderId) => VNPlayerApp.handleParticipantRejoin(payload.sceneId, senderId),
+        rejoinOffer: payload => VNPlayerApp.handleRejoinOffer(payload),
         voteState: payload => VNPlayerApp.updateVoteState(payload),
         userConnected: (user, connected) => VNPlayerApp.handleUserConnection(user, connected),
         getSyncState: sceneId => VNPlayerApp.getSyncState(sceneId),
