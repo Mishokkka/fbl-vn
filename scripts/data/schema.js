@@ -1,4 +1,4 @@
-import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { duplicateData, randomId } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -49,12 +49,22 @@ export function createSceneCounter(name = "Новый счётчик", initial =
     };
 }
 
+export function createCounterCondition(options = {}) {
+    return {
+        id: options.id || randomId("condition"),
+        counterId: String(options.counterId || ""),
+        operator: Object.values(COUNTER_OPERATORS).includes(options.operator) && options.operator !== COUNTER_OPERATORS.NONE
+            ? options.operator
+            : COUNTER_OPERATORS.GTE,
+        value: normalizeNumber(options.value, 0)
+    };
+}
+
 export function createFrameNextRouting() {
     return {
         enabled: false,
-        counterId: "",
-        operator: COUNTER_OPERATORS.GTE,
-        value: 0,
+        conditionLogic: COUNTER_CONDITION_LOGIC.ALL,
+        conditions: [],
         trueFrameId: "",
         falseFrameId: ""
     };
@@ -156,9 +166,8 @@ export function createChoice() {
         id: randomId("choice"),
         text: "Новый выбор",
         next: "",
-        conditionCounterId: "",
-        conditionOperator: COUNTER_OPERATORS.NONE,
-        conditionValue: 0,
+        conditionLogic: COUNTER_CONDITION_LOGIC.ALL,
+        conditions: [],
         effectCounterId: "",
         effectOperation: COUNTER_EFFECTS.NONE,
         effectValue: 0
@@ -320,17 +329,54 @@ export function sanitizeSceneCounter(counter) {
     return clean;
 }
 
-export function sanitizeFrameNextRouting(routing) {
-    const source = routing !== null && routing !== void 0 ? routing : createFrameNextRouting();
+export function sanitizeCounterCondition(condition, usedIds = null) {
+    const source = condition !== null && typeof condition === "object" && !Array.isArray(condition) ? condition : {};
     const clean = duplicateData(source);
-    clean.enabled = clean.enabled === true;
+    let id = typeof clean.id === "string" ? clean.id.trim() : "";
+    if (!id || usedIds?.has(id)) {
+        do id = randomId("condition");
+        while (usedIds?.has(id));
+    }
+    clean.id = id;
+    usedIds?.add(id);
     clean.counterId = String(clean.counterId || "");
     clean.operator = Object.values(COUNTER_OPERATORS).includes(clean.operator) && clean.operator !== COUNTER_OPERATORS.NONE
         ? clean.operator
         : COUNTER_OPERATORS.GTE;
     clean.value = normalizeNumber(clean.value, 0);
+    return clean;
+}
+
+function sanitizeConditionLogic(value) {
+    return value === COUNTER_CONDITION_LOGIC.ANY ? COUNTER_CONDITION_LOGIC.ANY : COUNTER_CONDITION_LOGIC.ALL;
+}
+
+function legacyCounterConditions(source, { counterKey = "counterId", operatorKey = "operator", valueKey = "value" } = {}) {
+    const counterId = String(source?.[counterKey] || "");
+    const operator = source?.[operatorKey];
+    if (!counterId || !operator || operator === COUNTER_OPERATORS.NONE) return [];
+    return [createCounterCondition({
+        counterId,
+        operator,
+        value: source?.[valueKey]
+    })];
+}
+
+export function sanitizeFrameNextRouting(routing) {
+    const source = routing !== null && routing !== void 0 ? routing : createFrameNextRouting();
+    const clean = duplicateData(source);
+    clean.enabled = clean.enabled === true;
+    const sourceConditions = Array.isArray(source.conditions)
+        ? source.conditions
+        : legacyCounterConditions(source);
+    const conditionIds = new Set();
+    clean.conditions = sourceConditions.map(condition => sanitizeCounterCondition(condition, conditionIds));
+    clean.conditionLogic = sanitizeConditionLogic(source.conditionLogic);
     clean.trueFrameId = String(clean.trueFrameId || clean.trueSceneId || "");
     clean.falseFrameId = String(clean.falseFrameId || clean.falseSceneId || "");
+    delete clean.counterId;
+    delete clean.operator;
+    delete clean.value;
     delete clean.trueSceneId;
     delete clean.falseSceneId;
     return clean;
@@ -466,17 +512,27 @@ export function sanitizeTextBlock(block) {
 }
 
 export function sanitizeChoice(choice) {
-    const clean = duplicateData(choice !== null && choice !== void 0 ? choice : {});
+    const source = choice !== null && choice !== void 0 ? choice : {};
+    const clean = duplicateData(source);
     clean.id || (clean.id = randomId("choice"));
     if (clean.text === undefined || clean.text === null) clean.text = "Новый выбор";
     clean.next || (clean.next = "");
-    clean.conditionCounterId || (clean.conditionCounterId = "");
-    clean.conditionOperator = Object.values(COUNTER_OPERATORS).includes(clean.conditionOperator) ? clean.conditionOperator : COUNTER_OPERATORS.NONE;
-    clean.conditionValue = normalizeNumber(clean.conditionValue, 0);
+    const sourceConditions = Array.isArray(source.conditions)
+        ? source.conditions
+        : legacyCounterConditions(source, {
+            counterKey: "conditionCounterId",
+            operatorKey: "conditionOperator",
+            valueKey: "conditionValue"
+        });
+    const conditionIds = new Set();
+    clean.conditions = sourceConditions.map(condition => sanitizeCounterCondition(condition, conditionIds));
+    clean.conditionLogic = sanitizeConditionLogic(source.conditionLogic);
+    delete clean.conditionCounterId;
+    delete clean.conditionOperator;
+    delete clean.conditionValue;
     clean.effectCounterId || (clean.effectCounterId = "");
     clean.effectOperation = Object.values(COUNTER_EFFECTS).includes(clean.effectOperation) ? clean.effectOperation : COUNTER_EFFECTS.NONE;
     clean.effectValue = Math.max(0, normalizeNumber(clean.effectValue, 0));
-    if (!clean.conditionCounterId || !clean.conditionOperator) clean.conditionOperator = COUNTER_OPERATORS.NONE;
     if (!clean.effectCounterId || !clean.effectOperation || !clean.effectValue) clean.effectOperation = COUNTER_EFFECTS.NONE;
     return clean;
 }
@@ -497,7 +553,7 @@ export function getInitialCounterState(scene) {
 }
 
 export function evaluateCounterCondition(counterId, operator, value, counterState = {}) {
-    if (!counterId || !operator || operator === COUNTER_OPERATORS.NONE) return true;
+    if (!counterId || !operator || operator === COUNTER_OPERATORS.NONE) return false;
     const current = normalizeNumber(counterState[counterId], 0);
     const target = normalizeNumber(value, 0);
     switch (operator) {
@@ -507,20 +563,36 @@ export function evaluateCounterCondition(counterId, operator, value, counterStat
         case COUNTER_OPERATORS.LTE: return current <= target;
         case COUNTER_OPERATORS.LT: return current < target;
         case COUNTER_OPERATORS.NE: return current !== target;
-        default: return true;
+        default: return false;
     }
 }
 
+export function evaluateCounterConditions(conditions, logic = COUNTER_CONDITION_LOGIC.ALL, counterState = {}) {
+    const items = Array.isArray(conditions) ? conditions : [];
+    if (!items.length) return null;
+    const results = items.map(condition => evaluateCounterCondition(
+        condition?.counterId || "",
+        condition?.operator || "",
+        condition?.value,
+        counterState
+    ));
+    return sanitizeConditionLogic(logic) === COUNTER_CONDITION_LOGIC.ANY
+        ? results.some(Boolean)
+        : results.every(Boolean);
+}
+
 export function isChoiceAvailable(choice, counterState = {}) {
-    if (!choice || !choice.conditionCounterId || !choice.conditionOperator) return true;
-    return evaluateCounterCondition(choice.conditionCounterId, choice.conditionOperator, choice.conditionValue, counterState);
+    if (!choice) return false;
+    const clean = sanitizeChoice(choice);
+    const matched = evaluateCounterConditions(clean.conditions, clean.conditionLogic, counterState);
+    return matched === null ? true : matched;
 }
 
 export function resolveFrameNextRouting(frame, counterState = {}) {
     const routing = sanitizeFrameNextRouting(frame?.nextRouting || frame?.sceneRouting);
     if (!routing.enabled) return { enabled: false, matched: null, frameId: "" };
-    if (!routing.counterId || !routing.operator) return { enabled: true, matched: null, frameId: "" };
-    const matched = evaluateCounterCondition(routing.counterId, routing.operator, routing.value, counterState);
+    const matched = evaluateCounterConditions(routing.conditions, routing.conditionLogic, counterState);
+    if (matched === null) return { enabled: true, matched: null, frameId: "" };
     return {
         enabled: true,
         matched,
@@ -818,14 +890,21 @@ export function validateScene(scene) {
             if (frame.isFinal) {
                 issues.push(issue(ISSUE_SEVERITY.WARNING, "frame-routing-final", `Кадр «${label}» отмечен финальным, поэтому проверка счётчика для следующего кадра не выполнится.`, { frameId: frame.id, field: "frame.isFinal" }));
             }
-            if (!nextRouting.counterId) {
-                issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-no-counter", "Для условного следующего кадра не выбран счётчик.", { frameId: frame.id, field: "frame.nextRouting.counterId" }));
+            if (!nextRouting.conditions.length) {
+                issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-no-conditions", "Для условного следующего кадра не добавлено ни одного условия.", { frameId: frame.id, field: "frame.nextRouting.conditions" }));
             }
-            else if (!counterIds.has(nextRouting.counterId)) {
-                issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-missing-counter", "Условный следующий кадр ссылается на несуществующий счётчик.", { frameId: frame.id, field: "frame.nextRouting.counterId" }));
-            }
-            if (!Object.values(COUNTER_OPERATORS).includes(nextRouting.operator) || nextRouting.operator === COUNTER_OPERATORS.NONE) {
-                issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-bad-operator", "Для условного следующего кадра не выбрано корректное сравнение.", { frameId: frame.id, field: "frame.nextRouting.operator" }));
+            for (let conditionIndex = 0; conditionIndex < nextRouting.conditions.length; conditionIndex += 1) {
+                const condition = nextRouting.conditions[conditionIndex];
+                const fieldBase = `frame.nextRouting.conditions.${condition.id || conditionIndex}`;
+                if (!condition.counterId) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-no-counter", `В условии ${conditionIndex + 1} не выбран счётчик.`, { frameId: frame.id, field: `${fieldBase}.counterId` }));
+                }
+                else if (!counterIds.has(condition.counterId)) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-missing-counter", `Условие ${conditionIndex + 1} ссылается на несуществующий счётчик.`, { frameId: frame.id, field: `${fieldBase}.counterId` }));
+                }
+                if (!Object.values(COUNTER_OPERATORS).includes(condition.operator) || condition.operator === COUNTER_OPERATORS.NONE) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-bad-operator", `В условии ${conditionIndex + 1} не выбрано корректное сравнение.`, { frameId: frame.id, field: `${fieldBase}.operator` }));
+                }
             }
             for (const [field, targetId, branchLabel] of [
                 ["frame.nextRouting.trueFrameId", nextRouting.trueFrameId, "ветки «если да»"],
@@ -912,8 +991,16 @@ export function validateScene(scene) {
             if (!String(choice.text || "").trim()) {
                 issues.push(issue(ISSUE_SEVERITY.ERROR, "empty-choice-text", `В кадре «${label}» пустой ${choiceLabel}.`, { frameId: frame.id, choiceId: choice.id, field: "choice.text" }));
             }
-            if (choice.conditionCounterId && !counterIds.has(choice.conditionCounterId)) {
-                issues.push(issue(ISSUE_SEVERITY.WARNING, "missing-choice-condition-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» указан несуществующий счётчик условия.`, { frameId: frame.id, choiceId: choice.id, field: "choice.conditionCounterId" }));
+            const cleanChoice = sanitizeChoice(choice);
+            for (let conditionIndex = 0; conditionIndex < cleanChoice.conditions.length; conditionIndex += 1) {
+                const condition = cleanChoice.conditions[conditionIndex];
+                const fieldBase = `choice.conditions.${condition.id || conditionIndex}`;
+                if (!condition.counterId) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "choice-condition-no-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» в условии ${conditionIndex + 1} не выбран счётчик.`, { frameId: frame.id, choiceId: choice.id, field: `${fieldBase}.counterId` }));
+                }
+                else if (!counterIds.has(condition.counterId)) {
+                    issues.push(issue(ISSUE_SEVERITY.WARNING, "missing-choice-condition-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» условие ${conditionIndex + 1} ссылается на несуществующий счётчик.`, { frameId: frame.id, choiceId: choice.id, field: `${fieldBase}.counterId` }));
+                }
             }
             if (choice.effectCounterId && !counterIds.has(choice.effectCounterId)) {
                 issues.push(issue(ISSUE_SEVERITY.WARNING, "missing-choice-effect-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» указан несуществующий счётчик эффекта.`, { frameId: frame.id, choiceId: choice.id, field: "choice.effectCounterId" }));

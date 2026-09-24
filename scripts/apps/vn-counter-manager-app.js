@@ -1,6 +1,6 @@
 import { VNSceneStore } from "../data/scene-store.js";
 import { createSceneCounter, sanitizeSceneCounter } from "../data/schema.js";
-import { COUNTER_EFFECTS, COUNTER_OPERATORS, MODULE_ID } from "../utils/constants.js";
+import { COUNTER_EFFECTS, MODULE_ID } from "../utils/constants.js";
 import { confirmDialog, notify, randomId } from "../utils/foundry-helpers.js";
 
 const ApplicationV2 = foundry.applications.api.ApplicationV2;
@@ -21,15 +21,21 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
         const usageById = new Map((scene?.counters || []).map(counter => [counter.id, { choiceConditions: 0, choiceEffects: 0, frameEffects: 0, nextRoutings: 0, total: 0 }]));
         for (const frame of scene && Array.isArray(scene.frames) ? scene.frames : []) {
             for (const choice of Array.isArray(frame.choices) ? frame.choices : []) {
-                const conditionUsage = usageById.get(choice.conditionCounterId);
-                if (conditionUsage) conditionUsage.choiceConditions += 1;
+                for (const condition of Array.isArray(choice.conditions) ? choice.conditions : []) {
+                    const conditionUsage = usageById.get(condition.counterId);
+                    if (conditionUsage) conditionUsage.choiceConditions += 1;
+                }
                 const effectUsage = usageById.get(choice.effectCounterId);
                 if (effectUsage) effectUsage.choiceEffects += 1;
             }
             const frameEffectUsage = usageById.get(frame.effectCounterId);
             if (frameEffectUsage && frame.effectOperation && Number(frame.effectValue || 0) > 0) frameEffectUsage.frameEffects += 1;
-            const routingUsage = frame?.nextRouting?.enabled ? usageById.get(frame.nextRouting.counterId) : null;
-            if (routingUsage) routingUsage.nextRoutings += 1;
+            if (frame?.nextRouting?.enabled) {
+                for (const condition of Array.isArray(frame.nextRouting.conditions) ? frame.nextRouting.conditions : []) {
+                    const routingUsage = usageById.get(condition.counterId);
+                    if (routingUsage) routingUsage.nextRoutings += 1;
+                }
+            }
         }
         for (const usage of usageById.values()) usage.total = usage.choiceConditions + usage.choiceEffects + usage.frameEffects + usage.nextRoutings;
         return usageById;
@@ -134,11 +140,8 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
         scene.counters = scene.counters.filter(item => item.id !== counterId);
         for (const frame of scene.frames || []) {
             for (const choice of frame.choices || []) {
-                if (choice.conditionCounterId === counterId) {
-                    choice.conditionCounterId = "";
-                    choice.conditionOperator = COUNTER_OPERATORS.NONE;
-                    choice.conditionValue = 0;
-                }
+                choice.conditions = (Array.isArray(choice.conditions) ? choice.conditions : [])
+                    .filter(condition => condition.counterId !== counterId);
                 if (choice.effectCounterId === counterId) {
                     choice.effectCounterId = "";
                     choice.effectOperation = COUNTER_EFFECTS.NONE;
@@ -152,9 +155,10 @@ export class VNCounterManagerApp extends HandlebarsApplicationMixin(ApplicationV
                 frame.effectOperation = COUNTER_EFFECTS.NONE;
                 frame.effectValue = 0;
             }
-            if (frame.nextRouting?.counterId !== counterId) continue;
-            frame.nextRouting.enabled = false;
-            frame.nextRouting.counterId = "";
+            if (!frame.nextRouting) continue;
+            frame.nextRouting.conditions = (Array.isArray(frame.nextRouting.conditions) ? frame.nextRouting.conditions : [])
+                .filter(condition => condition.counterId !== counterId);
+            if (frame.nextRouting.enabled && frame.nextRouting.conditions.length === 0) frame.nextRouting.enabled = false;
         }
         await VNSceneStore.upsertScene(scene);
         this._refreshEditor();

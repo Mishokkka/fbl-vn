@@ -1,12 +1,12 @@
 import { VNSceneStore } from "../data/scene-store.js";
-import { clearFrameReferences, createAudioCue, createChoice, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
+import { clearFrameReferences, createAudioCue, createChoice, createCounterCondition, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { VNPlayerApp } from "./vn-player-app.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
 import { VNCharacterManagerApp } from "./vn-character-manager-app.js";
 import { VNCounterManagerApp } from "./vn-counter-manager-app.js";
 import { VNGraphApp } from "./vn-graph-app.js";
-import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { confirmDialog, downloadJson, duplicateData, escapeHtml, formDialog, notify, notifyError, notifyWarn, randomId, readJsonFile } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -287,8 +287,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 frameEffectOperationOptions: this._counterEffectOptions(frame ? frame.effectOperation || "" : ""),
                 nextRouting,
                 nextRoutingEnabled: nextRouting.enabled === true,
-                nextRoutingCounterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, nextRouting.counterId || "", true),
-                nextRoutingOperatorOptions: this._counterConditionOptions(nextRouting.operator || COUNTER_OPERATORS.GTE).filter(option => option.value),
+                nextRoutingLogicOptions: this._counterConditionLogicOptions(nextRouting.conditionLogic),
+                nextRoutingConditions: this._buildCounterConditionViews(nextRouting.conditions, renderIndex),
+                hasNextRoutingConditions: Array.isArray(nextRouting.conditions) && nextRouting.conditions.length > 0,
                 nextRoutingTrueTarget: this._frameTargetDisplayFromIndex(renderIndex, nextRouting.trueFrameId || "", "Следующий кадр по списку"),
                 nextRoutingFalseTarget: this._frameTargetDisplayFromIndex(renderIndex, nextRouting.falseFrameId || "", "Следующий кадр по списку"),
                 nextRoutingTrueInvalid: renderIndex.errorKeys.has(`${frame ? frame.id : ""}::frame.nextRouting.trueFrameId`),
@@ -450,19 +451,26 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const rows = [];
         const visitedFolders = new Set();
         const visitedFrames = new Set();
-        const shouldRecoverUnvisitedFrame = frame => {
-            let folderId = frame && frame.folderId ? frame.folderId : "";
-            if (!folderId) return true;
-            const seen = new Set();
-            while (folderId) {
-                if (seen.has(folderId)) return true;
-                seen.add(folderId);
-                const folder = folderMap.get(folderId);
-                if (!folder) return true;
-                if (folder.collapsed === true) return false;
-                folderId = folder.parentId || "";
+        const hasHiddenOrBrokenAncestor = (folderId, ownId = "") => {
+            let currentId = folderId || "";
+            const seen = new Set(ownId ? [ownId] : []);
+            while (currentId) {
+                if (seen.has(currentId)) return { hidden: false, broken: true };
+                seen.add(currentId);
+                const folder = folderMap.get(currentId);
+                if (!folder) return { hidden: false, broken: true };
+                if (folder.collapsed === true) return { hidden: true, broken: false };
+                currentId = folder.parentId || "";
             }
-            return true;
+            return { hidden: false, broken: false };
+        };
+        const shouldRecoverUnvisitedFolder = folder => {
+            const state = hasHiddenOrBrokenAncestor(folder?.parentId || "", folder?.id || "");
+            return !state.hidden;
+        };
+        const shouldRecoverUnvisitedFrame = frame => {
+            const state = hasHiddenOrBrokenAncestor(frame?.folderId || "");
+            return !state.hidden;
         };
         const folderRow = (folder, depth, parentId = folder.parentId || "") => {
             const collapsed = folder.collapsed === true;
@@ -511,7 +519,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         pushChildren("", 0);
         for (const folder of folders) {
-            if (visitedFolders.has(folder.id)) continue;
+            if (visitedFolders.has(folder.id) || !shouldRecoverUnvisitedFolder(folder)) continue;
             const row = folderRow(folder, 0, "");
             rows.push(row);
             visitedFolders.add(folder.id);
@@ -623,6 +631,32 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ], selected || COUNTER_OPERATORS.NONE);
     }
 
+    _counterConditionLogicOptions(selected = COUNTER_CONDITION_LOGIC.ALL) {
+        return this._options([
+            [COUNTER_CONDITION_LOGIC.ALL, "Все условия (И)"],
+            [COUNTER_CONDITION_LOGIC.ANY, "Хотя бы одно (ИЛИ)"]
+        ], selected === COUNTER_CONDITION_LOGIC.ANY ? COUNTER_CONDITION_LOGIC.ANY : COUNTER_CONDITION_LOGIC.ALL);
+    }
+
+    _buildCounterConditionViews(conditions, renderIndex) {
+        return (Array.isArray(conditions) ? conditions : []).map((condition, index) => ({
+            ...condition,
+            index: index + 1,
+            counterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, condition.counterId || "", true),
+            operatorOptions: this._counterConditionOptions(condition.operator || COUNTER_OPERATORS.GTE).filter(option => option.value)
+        }));
+    }
+
+    _readCounterConditions(root, rowSelector) {
+        if (!root) return [];
+        return [...root.querySelectorAll(rowSelector)].map(row => ({
+            id: row.dataset.conditionId || randomId("condition"),
+            counterId: this._readRowValue(row, "[data-counter-condition-counter]", ""),
+            operator: this._readRowValue(row, "[data-counter-condition-operator]", COUNTER_OPERATORS.GTE),
+            value: Number(this._readRowValue(row, "[data-counter-condition-value]", "0") || 0)
+        }));
+    }
+
     _counterEffectOptions(selected = "") {
         return this._options([
             [COUNTER_EFFECTS.NONE, "Не менять"],
@@ -640,8 +674,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 index: index + 1,
                 targetOptions: this._frameTargetsFromIndex(renderIndex, choice.next, true),
                 targetLabel: this._frameTargetDisplayFromIndex(renderIndex, choice.next || "", "Следующий кадр по списку"),
-                conditionCounterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, choice.conditionCounterId || "", true),
-                conditionOperatorOptions: this._counterConditionOptions(choice.conditionOperator || ""),
+                conditionLogicOptions: this._counterConditionLogicOptions(choice.conditionLogic),
+                conditionViews: this._buildCounterConditionViews(choice.conditions, renderIndex),
+                hasConditions: Array.isArray(choice.conditions) && choice.conditions.length > 0,
                 effectCounterOptions: this._counterOptionsFromBase(renderIndex.counterOptionsBase, choice.effectCounterId || "", true),
                 effectOperationOptions: this._counterEffectOptions(choice.effectOperation || ""),
                 issueCount: choiceIssues.length,
@@ -825,9 +860,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const current = frame.nextRouting && typeof frame.nextRouting === "object" ? frame.nextRouting : {};
         frame.nextRouting = {
             enabled: enabled === true,
-            counterId: this._readValue("frame.nextRouting.counterId", current.counterId || ""),
-            operator: this._readValue("frame.nextRouting.operator", current.operator || COUNTER_OPERATORS.GTE),
-            value: Number(this._readValue("frame.nextRouting.value", current.value || 0) || 0),
+            conditionLogic: this._readValue("frame.nextRouting.conditionLogic", current.conditionLogic || COUNTER_CONDITION_LOGIC.ALL),
+            conditions: this._readCounterConditions(this.element, "[data-next-routing-condition-row]"),
             trueFrameId: this._readValue("frame.nextRouting.trueFrameId", current.trueFrameId || ""),
             falseFrameId: this._readValue("frame.nextRouting.falseFrameId", current.falseFrameId || "")
         };
@@ -1960,9 +1994,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (nextRoutingToggle) {
                 frame.nextRouting = {
                     enabled: nextRoutingToggle.checked === true,
-                    counterId: this._readValue("frame.nextRouting.counterId", frame.nextRouting?.counterId || ""),
-                    operator: this._readValue("frame.nextRouting.operator", frame.nextRouting?.operator || COUNTER_OPERATORS.GTE),
-                    value: Number(this._readValue("frame.nextRouting.value", frame.nextRouting?.value || 0) || 0),
+                    conditionLogic: this._readValue("frame.nextRouting.conditionLogic", frame.nextRouting?.conditionLogic || COUNTER_CONDITION_LOGIC.ALL),
+                    conditions: this._readCounterConditions(this.element, "[data-next-routing-condition-row]"),
                     trueFrameId: this._readValue("frame.nextRouting.trueFrameId", frame.nextRouting?.trueFrameId || ""),
                     falseFrameId: this._readValue("frame.nextRouting.falseFrameId", frame.nextRouting?.falseFrameId || "")
                 };
@@ -1977,9 +2010,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     id: row.dataset.choiceId,
                     text: this._readRowValue(row, "[data-choice-text]", ""),
                     next: this._readRowValue(row, "[data-choice-next]", ""),
-                    conditionCounterId: this._readRowValue(row, "[data-choice-condition-counter]", ""),
-                    conditionOperator: this._readRowValue(row, "[data-choice-condition-operator]", ""),
-                    conditionValue: this._readRowValue(row, "[data-choice-condition-value]", "0"),
+                    conditionLogic: this._readRowValue(row, "[data-choice-condition-logic]", COUNTER_CONDITION_LOGIC.ALL),
+                    conditions: this._readCounterConditions(row, "[data-choice-condition-row]"),
                     effectCounterId: this._readRowValue(row, "[data-choice-effect-counter]", ""),
                     effectOperation: this._readRowValue(row, "[data-choice-effect-operation]", ""),
                     effectValue: this._readRowValue(row, "[data-choice-effect-value]", "0")
@@ -2752,6 +2784,29 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._renderEditorParts(["frames", "framePanel"]);
     }
 
+    static async _onAddNextRoutingCondition(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame) return;
+        frame.nextRouting ||= {};
+        frame.nextRouting.conditions = Array.isArray(frame.nextRouting.conditions) ? frame.nextRouting.conditions : [];
+        frame.nextRouting.conditions.push(createCounterCondition());
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onDeleteNextRoutingCondition(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        if (!scene || !frame?.nextRouting) return;
+        const conditionId = target.dataset.conditionId || "";
+        frame.nextRouting.conditions = (frame.nextRouting.conditions || []).filter(condition => condition.id !== conditionId);
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
     static async _onAddChoice(event, target) {
         event.preventDefault();
         const scene = await this._commitFromForm({ persist: false });
@@ -2770,6 +2825,32 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
         if (!frame) return;
         frame.choices = (frame.choices || []).filter(choice => choice.id !== target.dataset.choiceId);
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onAddChoiceCondition(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
+        if (!frame || !Array.isArray(frame.choices)) return;
+        const choice = frame.choices.find(item => item.id === target.dataset.choiceId);
+        if (!choice) return;
+        choice.conditions = Array.isArray(choice.conditions) ? choice.conditions : [];
+        choice.conditions.push(createCounterCondition());
+        await VNSceneStore.upsertScene(scene);
+        this._renderEditorParts(["frames", "framePanel"]);
+    }
+
+    static async _onDeleteChoiceCondition(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene ? scene.frames.find(f => f.id === this.selectedFrameId) : null;
+        if (!frame || !Array.isArray(frame.choices)) return;
+        const choice = frame.choices.find(item => item.id === target.dataset.choiceId);
+        if (!choice) return;
+        const conditionId = target.dataset.conditionId || "";
+        choice.conditions = (choice.conditions || []).filter(condition => condition.id !== conditionId);
         await VNSceneStore.upsertScene(scene);
         this._renderEditorParts(["frames", "framePanel"]);
     }
@@ -3018,8 +3099,12 @@ VNEditorApp.DEFAULT_OPTIONS = {
         deleteAudioCue: queuedEditorAction(VNEditorApp._onDeleteAudioCue),
         duplicateAudioCue: queuedEditorAction(VNEditorApp._onDuplicateAudioCue),
         moveAudioCue: queuedEditorAction(VNEditorApp._onMoveAudioCue),
+        addNextRoutingCondition: queuedEditorAction(VNEditorApp._onAddNextRoutingCondition),
+        deleteNextRoutingCondition: queuedEditorAction(VNEditorApp._onDeleteNextRoutingCondition),
         addChoice: queuedEditorAction(VNEditorApp._onAddChoice),
         deleteChoice: queuedEditorAction(VNEditorApp._onDeleteChoice),
+        addChoiceCondition: queuedEditorAction(VNEditorApp._onAddChoiceCondition),
+        deleteChoiceCondition: queuedEditorAction(VNEditorApp._onDeleteChoiceCondition),
         duplicateChoice: queuedEditorAction(VNEditorApp._onDuplicateChoice),
         moveChoice: queuedEditorAction(VNEditorApp._onMoveChoice),
         clearFrameTarget: queuedEditorAction(VNEditorApp._onClearFrameTarget),
