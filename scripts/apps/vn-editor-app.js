@@ -1324,6 +1324,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this._activeFrameTargetInput && this._activeFrameTargetInput.isConnected === false) {
             this._activeFrameTargetInput = null;
         }
+        if (!this._activeFrameTargetInput) this._targetPickSuppressFrameId = null;
         const root = this._editorGridElement();
         root?.classList?.toggle("is-frame-target-picking", Boolean(this._activeFrameTargetInput));
     }
