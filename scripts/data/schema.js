@@ -890,14 +890,21 @@ export function validateScene(scene) {
             if (frame.isFinal) {
                 issues.push(issue(ISSUE_SEVERITY.WARNING, "frame-routing-final", `Кадр «${label}» отмечен финальным, поэтому проверка счётчика для следующего кадра не выполнится.`, { frameId: frame.id, field: "frame.isFinal" }));
             }
-            if (!nextRouting.counterId) {
-                issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-no-counter", "Для условного следующего кадра не выбран счётчик.", { frameId: frame.id, field: "frame.nextRouting.counterId" }));
+            if (!nextRouting.conditions.length) {
+                issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-no-conditions", "Для условного следующего кадра не добавлено ни одного условия.", { frameId: frame.id, field: "frame.nextRouting.conditions" }));
             }
-            else if (!counterIds.has(nextRouting.counterId)) {
-                issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-missing-counter", "Условный следующий кадр ссылается на несуществующий счётчик.", { frameId: frame.id, field: "frame.nextRouting.counterId" }));
-            }
-            if (!Object.values(COUNTER_OPERATORS).includes(nextRouting.operator) || nextRouting.operator === COUNTER_OPERATORS.NONE) {
-                issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-bad-operator", "Для условного следующего кадра не выбрано корректное сравнение.", { frameId: frame.id, field: "frame.nextRouting.operator" }));
+            for (let conditionIndex = 0; conditionIndex < nextRouting.conditions.length; conditionIndex += 1) {
+                const condition = nextRouting.conditions[conditionIndex];
+                const fieldBase = `frame.nextRouting.conditions.${condition.id || conditionIndex}`;
+                if (!condition.counterId) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-no-counter", `В условии ${conditionIndex + 1} не выбран счётчик.`, { frameId: frame.id, field: `${fieldBase}.counterId` }));
+                }
+                else if (!counterIds.has(condition.counterId)) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-missing-counter", `Условие ${conditionIndex + 1} ссылается на несуществующий счётчик.`, { frameId: frame.id, field: `${fieldBase}.counterId` }));
+                }
+                if (!Object.values(COUNTER_OPERATORS).includes(condition.operator) || condition.operator === COUNTER_OPERATORS.NONE) {
+                    issues.push(issue(ISSUE_SEVERITY.ERROR, "frame-routing-bad-operator", `В условии ${conditionIndex + 1} не выбрано корректное сравнение.`, { frameId: frame.id, field: `${fieldBase}.operator` }));
+                }
             }
             for (const [field, targetId, branchLabel] of [
                 ["frame.nextRouting.trueFrameId", nextRouting.trueFrameId, "ветки «если да»"],
@@ -984,8 +991,16 @@ export function validateScene(scene) {
             if (!String(choice.text || "").trim()) {
                 issues.push(issue(ISSUE_SEVERITY.ERROR, "empty-choice-text", `В кадре «${label}» пустой ${choiceLabel}.`, { frameId: frame.id, choiceId: choice.id, field: "choice.text" }));
             }
-            if (choice.conditionCounterId && !counterIds.has(choice.conditionCounterId)) {
-                issues.push(issue(ISSUE_SEVERITY.WARNING, "missing-choice-condition-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» указан несуществующий счётчик условия.`, { frameId: frame.id, choiceId: choice.id, field: "choice.conditionCounterId" }));
+            const cleanChoice = sanitizeChoice(choice);
+            for (let conditionIndex = 0; conditionIndex < cleanChoice.conditions.length; conditionIndex += 1) {
+                const condition = cleanChoice.conditions[conditionIndex];
+                const fieldBase = `choice.conditions.${condition.id || conditionIndex}`;
+                if (!condition.counterId) {
+                    issues.push(issue(ISSUE_SEVERITY.WARNING, "choice-condition-no-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» в условии ${conditionIndex + 1} не выбран счётчик.`, { frameId: frame.id, choiceId: choice.id, field: `${fieldBase}.counterId` }));
+                }
+                else if (!counterIds.has(condition.counterId)) {
+                    issues.push(issue(ISSUE_SEVERITY.WARNING, "missing-choice-condition-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» условие ${conditionIndex + 1} ссылается на несуществующий счётчик.`, { frameId: frame.id, choiceId: choice.id, field: `${fieldBase}.counterId` }));
+                }
             }
             if (choice.effectCounterId && !counterIds.has(choice.effectCounterId)) {
                 issues.push(issue(ISSUE_SEVERITY.WARNING, "missing-choice-effect-counter", `В кадре «${label}» у варианта «${choice.text || choiceLabel}» указан несуществующий счётчик эффекта.`, { frameId: frame.id, choiceId: choice.id, field: "choice.effectCounterId" }));
