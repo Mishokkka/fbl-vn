@@ -358,6 +358,155 @@ assert.equal(panelContext.selectedMusicCues.length, 2, "Frame panel must expose 
 assert.equal(panelContext.selectedSfxCues.length, 1, "Frame panel must expose all SFX cues");
 assert.deepEqual(panelContext.musicChannelOptions.map(option => option.value), ["music-1", "music-2"], "Music channel suggestions must include channels used by the scene");
 assert.deepEqual(panelContext.sfxChannelOptions.map(option => option.value), ["wind"], "SFX channel suggestions must include channels used by the scene");
+
+// New frames must be inserted directly after the selected sibling rather than appended.
+const insertionScene = createScene();
+const insertionBranchId = insertionScene.branches[0].id;
+const insertionA = insertionScene.frames[0];
+insertionA.id = "insert-a";
+insertionA.branchId = insertionBranchId;
+insertionA.folderId = "";
+insertionA.sort = 0;
+const insertionB = createFrame("dialogue");
+insertionB.id = "insert-b";
+insertionB.branchId = insertionBranchId;
+insertionB.folderId = "";
+insertionB.sort = 1000;
+const insertionC = createFrame("dialogue");
+insertionC.id = "insert-c";
+insertionC.branchId = insertionBranchId;
+insertionC.folderId = "";
+insertionC.sort = 2000;
+insertionScene.frames = [insertionA, insertionB, insertionC];
+insertionScene.startFrame = insertionA.id;
+const insertionEditor = Object.create(VNEditorApp.prototype);
+insertionEditor.selectedFrameId = insertionB.id;
+insertionEditor.selectedBranchId = insertionBranchId;
+insertionEditor.secondaryBranchId = null;
+insertionEditor.selectedFolderId = null;
+insertionEditor._commitFromForm = async () => insertionScene;
+insertionEditor._renderEditorParts = () => {};
+const savedInsertionUpsert = VNSceneStore.upsertScene;
+VNSceneStore.upsertScene = async value => value;
+try {
+  await VNEditorApp._onAddFrame.call(insertionEditor, { preventDefault() {} }, { dataset: { type: "dialogue" } });
+}
+finally {
+  VNSceneStore.upsertScene = savedInsertionUpsert;
+}
+const insertedFrameId = insertionEditor.selectedFrameId;
+assert.notEqual(insertedFrameId, insertionA.id);
+assert.notEqual(insertedFrameId, insertionB.id);
+assert.notEqual(insertedFrameId, insertionC.id);
+assert.deepEqual(
+  insertionScene.frames.map(frame => frame.id),
+  [insertionA.id, insertionB.id, insertedFrameId, insertionC.id],
+  "Adding a frame must place it immediately after the selected frame in the same branch/folder"
+);
+
+// Two branch columns must be renderable together, and selecting the secondary branch swaps the pair.
+const dualScene = createScene();
+const dualPrimaryId = dualScene.branches[0].id;
+dualScene.branches[0].name = "Primary";
+const dualSecondary = { id: "dual-secondary", name: "Secondary", sort: 1000 };
+dualScene.branches.push(dualSecondary);
+const dualPrimaryFrame = dualScene.frames[0];
+dualPrimaryFrame.id = "dual-primary-frame";
+dualPrimaryFrame.branchId = dualPrimaryId;
+dualPrimaryFrame.sort = 0;
+const dualSecondaryFrame = createFrame("dialogue");
+dualSecondaryFrame.id = "dual-secondary-frame";
+dualSecondaryFrame.branchId = dualSecondary.id;
+dualSecondaryFrame.sort = 0;
+dualScene.frames.push(dualSecondaryFrame);
+const dualEditor = Object.create(VNEditorApp.prototype);
+dualEditor.selectedSceneId = dualScene.id;
+dualEditor.selectedFrameId = dualPrimaryFrame.id;
+dualEditor.selectedBranchId = dualPrimaryId;
+dualEditor.secondaryBranchId = dualSecondary.id;
+dualEditor.selectedFolderId = null;
+dualEditor.editingFolderId = null;
+dualEditor._lastFrameTargetSceneId = null;
+dualEditor._lastFrameTargetEntries = null;
+const dualIssues = validateScene(dualScene);
+const dualState = {
+  scenes: [dualScene],
+  selectedScene: dualScene,
+  selectedFrame: dualPrimaryFrame,
+  activeBranch: dualScene.branches[0],
+  activeBranchId: dualPrimaryId,
+  issues: dualIssues,
+  renderIndex: null,
+  frameViews: null,
+  characters: null,
+  characterById: null
+};
+const dualContext = dualEditor._buildPartContext("frames", dualState);
+assert.equal(dualContext.showSecondBranch, true, "Frames part must expose a second branch column when one is selected");
+assert.equal(dualContext.secondaryFrameTreeRows.some(row => row.id === dualSecondaryFrame.id), true, "Second branch column must contain its own frames");
+dualEditor._activateBranchForSelection(dualSecondary.id);
+assert.equal(dualEditor.selectedBranchId, dualSecondary.id, "Selecting a frame in the second column must make that branch active");
+assert.equal(dualEditor.secondaryBranchId, dualPrimaryId, "The previously active branch must remain visible as the second column");
+
+// Inline transition indicators must follow the same per-branch sequential fallback as playback.
+const linkScene = createScene();
+const linkBranchA = linkScene.branches[0].id;
+const linkBranchB = "link-branch-b";
+linkScene.branches.push({ id: linkBranchB, name: "B", sort: 1000 });
+const linkA1 = linkScene.frames[0];
+linkA1.id = "link-a1";
+linkA1.branchId = linkBranchA;
+linkA1.isFinal = false;
+linkA1.next = "";
+const linkB1 = createFrame("dialogue");
+linkB1.id = "link-b1";
+linkB1.branchId = linkBranchB;
+linkB1.isFinal = false;
+const linkA2 = createFrame("dialogue");
+linkA2.id = "link-a2";
+linkA2.branchId = linkBranchA;
+linkA2.isFinal = false;
+const linkChoice = createFrame("choice");
+linkChoice.id = "link-choice";
+linkChoice.branchId = linkBranchA;
+linkChoice.isFinal = false;
+linkChoice.choices = [{ id: "link-choice-option", text: "Go", next: linkB1.id }];
+linkScene.frames = [linkA1, linkB1, linkA2, linkChoice];
+assert.equal(editor._frameSequentialTarget(linkScene, linkA1), linkA2.id, "Implicit frame links must advance to the next frame in the same branch even when scene.frames is interleaved");
+assert.deepEqual(editor._frameOutgoingLinks(linkScene, linkA1), [{ key: `${linkA2.id}:implicit`, targetId: linkA2.id, kind: "implicit" }]);
+linkA1.next = linkB1.id;
+assert.deepEqual(editor._frameOutgoingLinks(linkScene, linkA1), [{ key: `${linkB1.id}:explicit`, targetId: linkB1.id, kind: "explicit" }], "Explicit cross-branch links must be exposed to the frame-list connector overlay");
+assert.deepEqual(editor._frameOutgoingLinks(linkScene, linkChoice), [{ key: `${linkB1.id}:choice`, targetId: linkB1.id, kind: "choice" }], "Choice destinations must be exposed to the frame-list connector overlay");
+linkA2.nextRouting = { enabled: true, counterId: "", operator: "gte", value: 0, trueFrameId: linkB1.id, falseFrameId: linkChoice.id };
+assert.deepEqual(
+  editor._frameOutgoingLinks(linkScene, linkA2).map(link => [link.targetId, link.kind]),
+  [[linkB1.id, "conditional"], [linkChoice.id, "conditional"]],
+  "Conditional routing must expose both visible destinations"
+);
+
+// While a target-search input is active, clicking a frame must set the target without navigating the editor.
+const targetPickerEditor = Object.create(VNEditorApp.prototype);
+targetPickerEditor.selectedFrameId = dualPrimaryFrame.id;
+targetPickerEditor._lastFrameTargetSceneId = dualScene.id;
+targetPickerEditor._lastFrameTargetEntries = targetPickerEditor._frameTargetEntries(dualScene);
+Object.defineProperty(targetPickerEditor, "selectedScene", { value: dualScene, configurable: true });
+const targetHidden = { value: "" };
+const targetRow = {
+  querySelector(selector) { return selector === "[data-choice-next]" ? targetHidden : null; }
+};
+let targetInputFocused = 0;
+const targetInput = {
+  value: "",
+  dataset: {},
+  closest(selector) { return selector === "[data-choice-row]" ? targetRow : null; },
+  focus() { targetInputFocused += 1; }
+};
+assert.equal(targetPickerEditor._setFrameTargetFromList(targetInput, dualSecondaryFrame.id), true, "Click-picking must accept a visible frame as the current target");
+assert.equal(targetHidden.value, dualSecondaryFrame.id, "Click-picking must write the selected frame id into the hidden target field");
+assert.equal(targetInput.value.includes("Secondary"), true, "Click-picking must update the search box with the resolved frame label");
+assert.equal(targetPickerEditor.selectedFrameId, dualPrimaryFrame.id, "Choosing a target from the frame list must not navigate the editor to that frame");
+assert.equal(targetInputFocused, 1, "Target picker must keep the search field active for repeated mouse selection");
+
 assert.deepEqual(Object.keys(VNEditorApp.PARTS), ["resources", "scenes", "frames", "sceneHead", "framePanel", "bottomActions", "empty"]);
 let renderOptions = null;
 editor.rendered = true;
