@@ -55,6 +55,10 @@ export function migrateData(source) {
         migrateToV11(data);
         schemaVersion = 11;
     }
+    if (schemaVersion < 12) {
+        migrateToV12(data);
+        schemaVersion = 12;
+    }
     data.schemaVersion = DATA_SCHEMA_VERSION;
     return data;
 }
@@ -358,6 +362,54 @@ function migrateToV11(data) {
             frame.effectCounterId ||= "";
             frame.effectOperation ||= "";
             frame.effectValue = Number.isFinite(Number(frame.effectValue)) ? Math.max(0, Number(frame.effectValue)) : 0;
+        }
+    }
+}
+
+function migrateToV12(data) {
+    const migrateConditions = (source, { allowNone = false } = {}) => {
+        if (Array.isArray(source.conditions)) return;
+        const counterId = String(source.counterId || source.conditionCounterId || "");
+        const operator = String(source.operator || source.conditionOperator || "");
+        const value = Number.isFinite(Number(source.value ?? source.conditionValue))
+            ? Number(source.value ?? source.conditionValue)
+            : 0;
+        source.conditions = counterId && (allowNone || operator)
+            ? [{
+                id: randomId("condition"),
+                counterId,
+                operator: operator || "gte",
+                value
+            }]
+            : [];
+    };
+
+    data.scenes = Array.isArray(data.scenes) ? data.scenes : [];
+    for (const scene of data.scenes) {
+        if (!scene || typeof scene !== "object") continue;
+        scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
+        for (const frame of scene.frames) {
+            if (!frame || typeof frame !== "object") continue;
+
+            const routing = frame.nextRouting && typeof frame.nextRouting === "object"
+                ? frame.nextRouting
+                : {};
+            migrateConditions(routing);
+            routing.conditionLogic = routing.conditionLogic === "or" ? "or" : "and";
+            delete routing.counterId;
+            delete routing.operator;
+            delete routing.value;
+            frame.nextRouting = routing;
+
+            frame.choices = Array.isArray(frame.choices) ? frame.choices : [];
+            for (const choice of frame.choices) {
+                if (!choice || typeof choice !== "object") continue;
+                migrateConditions(choice);
+                choice.conditionLogic = choice.conditionLogic === "or" ? "or" : "and";
+                delete choice.conditionCounterId;
+                delete choice.conditionOperator;
+                delete choice.conditionValue;
+            }
         }
     }
 }
