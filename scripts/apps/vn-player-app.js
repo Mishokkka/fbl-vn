@@ -1347,7 +1347,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             action,
             voters,
             choices,
-            total: activeParticipants.size
+            total: activeParticipants.size,
+            participantIds: [...this.participantIds]
         };
     }
 
@@ -1361,6 +1362,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (payload.frameId !== this.currentFrameId) return;
         if (Number(payload.textIndex || 0) !== Number(this.currentTextIndex || 0)) return;
         const voters = uniqueIds(payload.voters || []);
+        if (Array.isArray(payload.participantIds)) {
+            this.participantIds = uniqueIds(payload.participantIds);
+            for (const userId of [...this._inactiveParticipantIds]) {
+                if (!this.participantIds.includes(userId)) this._inactiveParticipantIds.delete(userId);
+            }
+        }
         const choices = {};
         const sourceChoices = payload.choices && typeof payload.choices === "object" ? payload.choices : {};
         for (const [choiceId, count] of Object.entries(sourceChoices)) choices[choiceId] = Math.max(0, Number(count || 0));
