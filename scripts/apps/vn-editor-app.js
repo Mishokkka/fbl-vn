@@ -2126,6 +2126,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.selectedSceneId = next ? next.id : null;
         this.selectedFrameId = next ? next.startFrame : null;
         this.secondaryBranchId = null;
+        if (!next) this.scenesCollapsed = false;
         this._renderEditorParts();
     }
 
@@ -2175,6 +2176,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     static _onToggleScenesColumn(event, target) {
         event.preventDefault();
+        if (!this.selectedScene) {
+            this.scenesCollapsed = false;
+            this._syncEditorLayoutState();
+            return;
+        }
         this.scenesCollapsed = this.scenesCollapsed !== true;
         this._syncEditorLayoutState();
         this._renderEditorParts(["scenes", "frames"]);
