@@ -42,12 +42,13 @@ export class VNSocket {
             case "start":
             case "advance":
             case "close":
-            case "voteState": {
+            case "voteState":
+            case "rejoinOffer": {
                 if (!this._isTrustedGmCommand(type, data, senderId)) {
                     console.warn(`${MODULE_ID} | Ignored untrusted socket command: ${type}`, payload);
                     return;
                 }
-                if (type === "open" && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
+                if ((type === "open" || type === "rejoinOffer") && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
                 this._dispatchTrustedCommand(type, data, senderId);
                 if (type === "close" && data.sceneId) this.activeLeaders.delete(data.sceneId);
                 break;
@@ -89,7 +90,7 @@ export class VNSocket {
         const sceneId = data?.sceneId || data?.scene?.id || "";
         if (!sceneId) return false;
         const currentLeaderId = this.activeLeaders.get(sceneId);
-        if (type === "open") {
+        if (type === "open" || type === "rejoinOffer") {
             if (!currentLeaderId || currentLeaderId === senderId) return true;
             const currentLeader = game.users?.get?.(currentLeaderId);
             return currentLeader?.active !== true;
@@ -366,7 +367,20 @@ export class VNSocket {
         });
         if (!connected || !game.user?.isGM || !user || user.isGM) return;
         for (const [sceneId, session] of this.activeSessions.entries()) {
-            if (session.leaderId !== game.user.id || !session.targetIds.includes(user.id)) continue;
+            if (session.leaderId !== game.user.id) continue;
+            const eligibleTargetIds = Array.isArray(session.eligibleTargetIds) ? session.eligibleTargetIds : session.targetIds;
+            if (!eligibleTargetIds.includes(user.id)) continue;
+
+            if (!session.targetIds.includes(user.id)) {
+                this.emit("rejoinOffer", {
+                    sceneId,
+                    sceneTitle: String(session.scene?.title || ""),
+                    leaderId: session.leaderId,
+                    targetIds: [user.id]
+                });
+                continue;
+            }
+
             const resumeState = this.handlers.getSyncState?.(sceneId) || null;
             this.emit("open", {
                 scene: session.scene,
