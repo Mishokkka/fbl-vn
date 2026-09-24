@@ -155,6 +155,20 @@ emitted.length = 0;
 VNSocket._onUserConnected(player, true);
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(emitted.some(entry => entry.payload?.type === "open" && entry.payload?.data?.sceneId === reconnectSceneId), false, "A player who explicitly left must not be auto-reopened merely by reconnecting");
+const reconnectOffer = emitted.find(entry => entry.payload?.type === "rejoinOffer" && entry.payload?.data?.sceneId === reconnectSceneId);
+assert.ok(reconnectOffer, "Reconnect after an explicit leave must restore the manual return affordance instead of reopening the cutscene");
+assert.deepEqual(reconnectOffer.payload.data.targetIds, [player.id], "Rejoin offer must target only the departed eligible player");
+assert.equal(reconnectOffer.payload.data.sceneTitle, "Reconnect", "Rejoin offer must carry enough display context to rebuild the return button");
+
+let clientRejoinOffer = null;
+game.user = player;
+VNSocket.activeLeaders.delete(reconnectSceneId);
+VNSocket.handlers.rejoinOffer = data => { clientRejoinOffer = data; };
+socketCallback(reconnectOffer.payload);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(clientRejoinOffer?.sceneId, reconnectSceneId, "A fresh client must accept a trusted GM rejoin offer even after losing local session state");
+assert.equal(VNSocket.activeLeaders.get(reconnectSceneId), gm1.id, "Trusted rejoin offer must restore the active leader identity for subsequent rejoin/close commands");
+game.user = gm1;
 
 let rejoinHandlerCall = null;
 VNSocket.handlers.rejoin = (data, senderId) => { rejoinHandlerCall = { data, senderId }; };
