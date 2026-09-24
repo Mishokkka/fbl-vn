@@ -1491,6 +1491,7 @@ votePlayer._localVote = null;
 votePlayer._voteState = null;
 votePlayer._leaderVoteStep = "";
 votePlayer._leaderVotes = new Map();
+votePlayer._inactiveParticipantIds = new Set();
 votePlayer._resolvingVote = false;
 votePlayer.element = {
   querySelectorAll() { return []; },
@@ -1543,16 +1544,17 @@ let publishedVoteStates = 0;
 let disconnectResolveCalls = 0;
 votePlayer._publishVoteState = () => { publishedVoteStates += 1; };
 votePlayer._resolveLeaderVotes = async () => { disconnectResolveCalls += 1; };
-playerUser2.active = false;
+assert.equal(playerUser2.active, true, "Disconnect regression keeps the Foundry user object active to verify the hook flag is authoritative");
 votePlayer._onParticipantConnectionChange(playerUser2, false);
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "Disconnecting a voter must discard that user's stale vote");
+assert.equal(votePlayer._inactiveParticipantIds.has(playerUser2.id), true, "The explicit disconnect hook must remove the player from quorum even before Foundry's user.active flag settles");
 assert.equal(disconnectResolveCalls, 1, "If every remaining active player has voted, a disconnect must stop blocking the vote and resolve immediately");
 assert.equal(publishedVoteStates, 1, "Disconnecting a voter must republish the reduced quorum");
-playerUser2.active = true;
 votePlayer._onParticipantConnectionChange(playerUser2, true);
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "A reconnected player must rejoin without recovering a stale pre-disconnect vote");
+assert.equal(votePlayer._inactiveParticipantIds.has(playerUser2.id), false, "Reconnect must restore the player to the active quorum");
 assert.equal(disconnectResolveCalls, 1, "Reconnect must add the player back to quorum instead of resolving with their old vote");
 
 votePlayer._leaderVotes.set(playerUser.id, { action: "continue", choiceId: "" });
