@@ -1491,7 +1491,7 @@ votePlayer._localVote = null;
 votePlayer._voteState = null;
 votePlayer._leaderVoteStep = "";
 votePlayer._leaderVotes = new Map();
-votePlayer._inactiveParticipantIds = new Set();
+votePlayer._participantConnectionState = new Map();
 votePlayer._resolvingVote = false;
 votePlayer.element = {
   querySelectorAll() { return []; },
@@ -1549,13 +1549,13 @@ assert.equal(playerUser2.active, true, "Disconnect regression keeps the Foundry 
 votePlayer._onParticipantConnectionChange(playerUser2, false);
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "Disconnecting a voter must discard that user's stale vote");
-assert.equal(votePlayer._inactiveParticipantIds.has(playerUser2.id), true, "The explicit disconnect hook must remove the player from quorum even before Foundry's user.active flag settles");
+assert.equal(votePlayer._participantConnectionState.get(playerUser2.id), false, "The explicit disconnect hook must remove the player from quorum even before Foundry's user.active flag settles");
 assert.equal(disconnectResolveCalls, 1, "If every remaining active player has voted, a disconnect must stop blocking the vote and resolve immediately");
 assert.equal(publishedVoteStates, 1, "Disconnecting a voter must republish the reduced quorum");
 votePlayer._onParticipantConnectionChange(playerUser2, true);
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(votePlayer._leaderVotes.has(playerUser2.id), false, "A reconnected player must rejoin without recovering a stale pre-disconnect vote");
-assert.equal(votePlayer._inactiveParticipantIds.has(playerUser2.id), false, "Reconnect must restore the player to the active quorum");
+assert.equal(votePlayer._participantConnectionState.get(playerUser2.id), true, "Reconnect hook state must restore the player to quorum even if Foundry's user.active flag is still stale");
 assert.equal(disconnectResolveCalls, 1, "Reconnect must add the player back to quorum instead of resolving with their old vote");
 
 votePlayer._leaderVotes.set(playerUser.id, { action: "continue", choiceId: "" });
@@ -1571,7 +1571,7 @@ assert.equal(leaveResolveCalls, 1, "Leaving must unblock a quorum already satisf
 let voteRenders = 0;
 votePlayer.render = async () => { voteRenders += 1; return votePlayer; };
 votePlayer.participantIds = [gm1.id, playerUser.id, playerUser2.id];
-votePlayer._inactiveParticipantIds.add(playerUser2.id);
+votePlayer._participantConnectionState.set(playerUser2.id, false);
 votePlayer._applyVoteState({
   sceneId: scene.id,
   frameId: "frame-root",
@@ -1582,7 +1582,7 @@ votePlayer._applyVoteState({
   participantIds: [playerUser.id]
 });
 assert.deepEqual(votePlayer.participantIds, [playerUser.id], "Vote-state synchronization must replace stale local membership after another player explicitly leaves");
-assert.equal(votePlayer._inactiveParticipantIds.has(playerUser2.id), false, "Removed participants must not linger in the local disconnect set");
+assert.equal(votePlayer._participantConnectionState.has(playerUser2.id), false, "Removed participants must not linger in the local connection-state map");
 assert.equal(voteRenders, 0, "Vote-state synchronization must patch the DOM without requesting a full player render");
 
 const savedSocketLeave = VNSocket.leave;
@@ -1606,7 +1606,7 @@ reconnectVotePlayer.mode = PLAYER_MODES.VOTE;
 reconnectVotePlayer.currentFrameId = "frame-root";
 reconnectVotePlayer.currentTextIndex = 0;
 reconnectVotePlayer.participantIds = [playerUser.id, playerUser2.id];
-reconnectVotePlayer._inactiveParticipantIds = new Set();
+reconnectVotePlayer._participantConnectionState = new Map();
 reconnectVotePlayer._leaderVotes = new Map([[playerUser.id, { action: "continue", choiceId: "" }]]);
 reconnectVotePlayer.counterState = { counter: 2 };
 reconnectVotePlayer.visualState = { background: "resume-bg.webp", portrait: "", portraitPosition: "left" };
