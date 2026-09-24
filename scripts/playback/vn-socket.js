@@ -66,6 +66,10 @@ export class VNSocket {
                 if (!this._removeSessionParticipant(data?.sceneId || "", senderId)) return;
                 this.handlers.leave?.(data, senderId);
                 break;
+            case "rejoin":
+                if (!game.user?.isGM) return;
+                void this._handleRejoinRequest(data, senderId);
+                break;
             default:
                 console.warn(`${MODULE_ID} | Unknown socket payload`, payload);
         }
@@ -116,6 +120,12 @@ export class VNSocket {
         return mode === PLAYER_MODES.VOTE ? players : [game.user.id, ...players];
     }
 
+    static _eligibleTargetIdsForScene(sceneId) {
+        const session = this.activeSessions.get(sceneId);
+        if (session && Array.isArray(session.eligibleTargetIds)) return [...session.eligibleTargetIds];
+        return this._targetIdsForScene(sceneId);
+    }
+
     static _removeSessionParticipant(sceneId, userId) {
         if (!sceneId || !userId) return false;
         const session = this.activeSessions.get(sceneId);
@@ -128,6 +138,45 @@ export class VNSocket {
         this.ready.get(sceneId)?.delete(userId);
         this.readyTargets.get(sceneId)?.delete(userId);
         return true;
+    }
+
+    static _restoreSessionParticipant(sceneId, userId) {
+        if (!sceneId || !userId) return null;
+        const session = this.activeSessions.get(sceneId);
+        const user = game.users?.get?.(userId);
+        if (!session || session.mode !== PLAYER_MODES.VOTE || session.leaderId !== game.user?.id || user?.isGM) return null;
+        if (!Array.isArray(session.eligibleTargetIds) || !session.eligibleTargetIds.includes(userId)) return null;
+
+        if (!session.targetIds.includes(userId)) session.targetIds.push(userId);
+        if (!session.participantIds.includes(userId)) session.participantIds.push(userId);
+        if (!this.activeTargets.has(sceneId)) this.activeTargets.set(sceneId, new Set());
+        if (!this.activeParticipants.has(sceneId)) this.activeParticipants.set(sceneId, new Set());
+        this.activeTargets.get(sceneId).add(userId);
+        this.activeParticipants.get(sceneId).add(userId);
+        this.ready.get(sceneId)?.delete(userId);
+        this.readyTargets.get(sceneId)?.add(userId);
+        return session;
+    }
+
+    static async _handleRejoinRequest(data, senderId) {
+        const sceneId = data?.sceneId || "";
+        const session = this._restoreSessionParticipant(sceneId, senderId);
+        if (!session) {
+            this.emit("close", { sceneId, leaderId: game.user?.id || null, targetIds: [senderId] });
+            return;
+        }
+
+        await Promise.resolve(this.handlers.rejoin?.({ sceneId }, senderId));
+        const resumeState = this.handlers.getSyncState?.(sceneId) || null;
+        this.emit("open", {
+            scene: session.scene,
+            sceneId,
+            mode: session.mode,
+            leaderId: session.leaderId,
+            targetIds: [senderId],
+            participantIds: [...session.participantIds],
+            resumeState: session.started ? resumeState : null
+        });
     }
 
     static _withSceneTargets(sceneId, data = {}) {
@@ -192,7 +241,15 @@ export class VNSocket {
             this.activeTargets.set(scene.id, new Set(targetIds));
             this.activeParticipants.set(scene.id, new Set(participantIds));
             this.activeLeaders.set(scene.id, game.user.id);
-            this.activeSessions.set(scene.id, { scene, mode, leaderId: game.user.id, targetIds: [...targetIds], participantIds: [...participantIds], started: false });
+            this.activeSessions.set(scene.id, {
+                scene,
+                mode,
+                leaderId: game.user.id,
+                targetIds: [...targetIds],
+                participantIds: [...participantIds],
+                eligibleTargetIds: [...targetIds],
+                started: false
+            });
             this.clearReady(scene.id, targetIds);
             this.emit("open", {
                 scene,
@@ -207,16 +264,23 @@ export class VNSocket {
             const configuredWait = Number(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_WAIT_MS) ?? 10000);
             const maxWait = Number.isFinite(configuredWait) ? Math.max(0, configuredWait) : 10000;
             const started = Date.now();
-            while (targetIds.length && Date.now() - started < maxWait) {
+            while (Date.now() - started < maxWait) {
+                const currentSession = this.activeSessions.get(scene.id);
+                if (!currentSession) return;
+                const currentTargets = Array.isArray(currentSession.targetIds) ? currentSession.targetIds : [];
+                if (!currentTargets.length) break;
                 const ready = this.ready.get(scene.id) ?? new Set();
-                const connectedTargets = targetIds.filter(id => game.users?.get?.(id)?.active);
+                const connectedTargets = currentTargets.filter(id => game.users?.get?.(id)?.active);
                 if (connectedTargets.every(id => ready.has(id))) break;
                 await wait(250);
             }
             if (localPreload) await localPreload;
-            const readyCount = this.getReadyCount(scene.id);
-            ui.notifications?.info(`VN: предзагрузка завершена у ${readyCount}/${targetIds.length} клиентов. Запускаю катсцену.`);
             const session = this.activeSessions.get(scene.id);
+            if (!session) return;
+            const currentTargets = Array.isArray(session.targetIds) ? session.targetIds : [];
+            const ready = this.ready.get(scene.id) ?? new Set();
+            const readyCount = currentTargets.filter(id => ready.has(id)).length;
+            ui.notifications?.info(`VN: предзагрузка завершена у ${readyCount}/${currentTargets.length} клиентов. Запускаю катсцену.`);
             if (!session) return;
             session.started = true;
             this.emit("start", this._withSceneTargets(scene.id, { sceneId: scene.id }));
@@ -256,9 +320,14 @@ export class VNSocket {
         if (!sceneId) return false;
         const data = { sceneId };
         if (leaderId) data.targetIds = [leaderId];
-        const sent = this.emit("leave", data);
-        this.activeLeaders.delete(sceneId);
-        return sent;
+        return this.emit("leave", data);
+    }
+
+    static rejoin(sceneId, leaderId = null) {
+        if (!sceneId) return false;
+        const data = { sceneId };
+        if (leaderId) data.targetIds = [leaderId];
+        return this.emit("rejoin", data);
     }
 
     static broadcastVoteState(sceneId, state = {}) {
@@ -270,8 +339,9 @@ export class VNSocket {
     }
 
     static close(sceneId) {
-        const data = this._withSceneTargets(sceneId, { sceneId });
-        this.emit("close", data);
+        const leaderId = this.activeLeaders.get(sceneId) || game.user?.id || null;
+        const targetIds = this._eligibleTargetIdsForScene(sceneId);
+        this.emit("close", { sceneId, leaderId, targetIds });
         Promise.resolve(this.handlers.close?.({ sceneId, leaderId: game.user.id }, game.user.id)).catch(error => {
             console.error(`${MODULE_ID} | Local close handler failed.`, error);
         });
