@@ -93,6 +93,13 @@ if (!playerSource.includes("static async previewFrame(scene, frameId, options = 
 if (!playerSource.includes("AUDIO_ACTIONS") || !playerSource.includes('_applyPreviewCueState(music, frame.musicCues, "music")') || !playerSource.includes('_applyPreviewCueState(sfx, frame.sfxCues, "sfx")')) errors.push("Selected-frame preview must reconstruct inherited audio channel state");
 if (!playerSource.includes('.filter(frame => (frame.branchId || "") === currentBranchId)') || !playerSource.includes('return { steps, counterState, branchId: currentBranchId, source: "branch" }')) errors.push("Selected-frame preview must reconstruct deterministic inherited state from preceding frames in the current editor branch");
 if (!editorSource.includes('["previewFrame", "Просмотреть выбранный кадр"') || !editorSource.includes("static async _onPreviewFrame(event, target)") || !editorSource.includes("const branchId = this.selectedBranchId || frame.branchId || \"\"") || !editorSource.includes("VNPlayerApp.previewFrame(scene, frame.id, { branchId })")) errors.push("Editor header must preview the selected frame in the current editor branch through the real player");
+if (!playerSource.includes("_isGmVoteOverride()") || !playerSource.includes("return this._resolveGmVoteOverride({ action: \"continue\" })") || !playerSource.includes('return this._resolveGmVoteOverride({ action: "choice", choiceId })')) errors.push("Vote mode must give the leader GM an immediate override path without treating the GM as a voter");
+if (!playerSource.includes("_voteParticipantIds()") || !playerSource.includes("user.isGM !== true") || !socketSource.includes("mode === PLAYER_MODES.VOTE ? players : [game.user.id, ...players]")) errors.push("Vote quorum must contain non-GM players only");
+if (!playerSource.includes("if (connected !== true) this._leaderVotes.delete(user.id)") || !playerSource.includes("_onParticipantLeave(userId)")) errors.push("Vote leader must discard stale votes on disconnect and explicit leave");
+if (!playerSource.includes("async requestClose()") || !playerSource.includes("VNSocket.leave(this.scene.id, this.leaderId)") || !socketSource.includes('return this.emit("leave", data)')) errors.push("Vote participants must be able to leave locally and notify the leader");
+if (!socketSource.includes("_removeSessionParticipant(sceneId, userId)") || !mainSource.includes("leave: (payload, senderId) => VNPlayerApp.handleParticipantLeave(payload.sceneId, senderId)")) errors.push("Socket session membership must remove explicit leavers from quorum and reconnect targets");
+if (!socketSource.includes("session.targetIds.includes(user.id)") || !socketSource.includes("resumeState: session.started ? resumeState : null")) errors.push("Disconnected vote participants must remain eligible for reconnect and synchronized resume");
+if (!playerTemplateSource.includes("Продолжить (ГМ)") || !playerSource.includes('isVoteOverride ? "Продолжить (ГМ)"')) errors.push("Vote UI must identify the GM priority Continue control");
 if (!counterManagerSource.includes("frameEffects") || !counterManagerSource.includes("frame.effectCounterId === counterId")) errors.push("Counter manager must count and clear frame counter effects");
 if (!graphSource.includes("const isBranchPoint = links.length !== 1 || links.some(link => link.kind === \"condition\")")) errors.push("Compact graph must keep non-linear counter-routing frames visible");
 const compactVisibilityBlock = graphSource.match(/_compactVisibleFrameIds\(scene, frames, outgoing\)\s*\{([\s\S]*?)\n\s*return visible;\n\s*\}/)?.[1] || "";
@@ -193,8 +200,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.11") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.11")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.12") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.12")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
