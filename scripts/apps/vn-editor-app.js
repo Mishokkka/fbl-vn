@@ -1,12 +1,12 @@
 import { VNSceneStore } from "../data/scene-store.js";
-import { clearFrameReferences, createAudioCue, createChoice, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
+import { clearFrameReferences, createAudioCue, createChoice, createCounterCondition, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { VNPlayerApp } from "./vn-player-app.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
 import { VNCharacterManagerApp } from "./vn-character-manager-app.js";
 import { VNCounterManagerApp } from "./vn-counter-manager-app.js";
 import { VNGraphApp } from "./vn-graph-app.js";
-import { AUDIO_ACTIONS, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
 import { confirmDialog, downloadJson, duplicateData, escapeHtml, formDialog, notify, notifyError, notifyWarn, randomId, readJsonFile } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -450,19 +450,26 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const rows = [];
         const visitedFolders = new Set();
         const visitedFrames = new Set();
-        const shouldRecoverUnvisitedFrame = frame => {
-            let folderId = frame && frame.folderId ? frame.folderId : "";
-            if (!folderId) return true;
-            const seen = new Set();
-            while (folderId) {
-                if (seen.has(folderId)) return true;
-                seen.add(folderId);
-                const folder = folderMap.get(folderId);
-                if (!folder) return true;
-                if (folder.collapsed === true) return false;
-                folderId = folder.parentId || "";
+        const hasHiddenOrBrokenAncestor = (folderId, ownId = "") => {
+            let currentId = folderId || "";
+            const seen = new Set(ownId ? [ownId] : []);
+            while (currentId) {
+                if (seen.has(currentId)) return { hidden: false, broken: true };
+                seen.add(currentId);
+                const folder = folderMap.get(currentId);
+                if (!folder) return { hidden: false, broken: true };
+                if (folder.collapsed === true) return { hidden: true, broken: false };
+                currentId = folder.parentId || "";
             }
-            return true;
+            return { hidden: false, broken: false };
+        };
+        const shouldRecoverUnvisitedFolder = folder => {
+            const state = hasHiddenOrBrokenAncestor(folder?.parentId || "", folder?.id || "");
+            return !state.hidden;
+        };
+        const shouldRecoverUnvisitedFrame = frame => {
+            const state = hasHiddenOrBrokenAncestor(frame?.folderId || "");
+            return !state.hidden;
         };
         const folderRow = (folder, depth, parentId = folder.parentId || "") => {
             const collapsed = folder.collapsed === true;
@@ -511,7 +518,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         pushChildren("", 0);
         for (const folder of folders) {
-            if (visitedFolders.has(folder.id)) continue;
+            if (visitedFolders.has(folder.id) || !shouldRecoverUnvisitedFolder(folder)) continue;
             const row = folderRow(folder, 0, "");
             rows.push(row);
             visitedFolders.add(folder.id);
