@@ -1508,6 +1508,7 @@ votePlayer._leaderVotes.set(playerUser.id, { action: "continue", choiceId: "" })
 let builtVoteState = votePlayer._buildVoteStateFromLeaderVotes();
 assert.deepEqual(builtVoteState.voters, [playerUser.id], "GM input must never appear in published voter ids");
 assert.equal(builtVoteState.total, 2, "Vote totals must count active players only, excluding the GM");
+assert.deepEqual(builtVoteState.participantIds, [gm1.id, playerUser.id, playerUser2.id], "Published vote state must carry the current session roster so clients can forget explicit leavers");
 assert.equal(builtVoteState.choices && Object.keys(builtVoteState.choices).length, 0);
 
 let gmOverrideContinueCount = 0;
@@ -1569,7 +1570,19 @@ assert.equal(leaveResolveCalls, 1, "Leaving must unblock a quorum already satisf
 
 let voteRenders = 0;
 votePlayer.render = async () => { voteRenders += 1; return votePlayer; };
-votePlayer._applyVoteState({ sceneId: scene.id, frameId: "frame-root", textIndex: 0, voters: [playerUser.id], choices: {}, total: 1 });
+votePlayer.participantIds = [gm1.id, playerUser.id, playerUser2.id];
+votePlayer._inactiveParticipantIds.add(playerUser2.id);
+votePlayer._applyVoteState({
+  sceneId: scene.id,
+  frameId: "frame-root",
+  textIndex: 0,
+  voters: [playerUser.id],
+  choices: {},
+  total: 1,
+  participantIds: [playerUser.id]
+});
+assert.deepEqual(votePlayer.participantIds, [playerUser.id], "Vote-state synchronization must replace stale local membership after another player explicitly leaves");
+assert.equal(votePlayer._inactiveParticipantIds.has(playerUser2.id), false, "Removed participants must not linger in the local disconnect set");
 assert.equal(voteRenders, 0, "Vote-state synchronization must patch the DOM without requesting a full player render");
 
 const savedSocketLeave = VNSocket.leave;
