@@ -860,9 +860,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const current = frame.nextRouting && typeof frame.nextRouting === "object" ? frame.nextRouting : {};
         frame.nextRouting = {
             enabled: enabled === true,
-            counterId: this._readValue("frame.nextRouting.counterId", current.counterId || ""),
-            operator: this._readValue("frame.nextRouting.operator", current.operator || COUNTER_OPERATORS.GTE),
-            value: Number(this._readValue("frame.nextRouting.value", current.value || 0) || 0),
+            conditionLogic: this._readValue("frame.nextRouting.conditionLogic", current.conditionLogic || COUNTER_CONDITION_LOGIC.ALL),
+            conditions: this._readCounterConditions(this.element, "[data-next-routing-condition-row]"),
             trueFrameId: this._readValue("frame.nextRouting.trueFrameId", current.trueFrameId || ""),
             falseFrameId: this._readValue("frame.nextRouting.falseFrameId", current.falseFrameId || "")
         };
@@ -1995,9 +1994,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (nextRoutingToggle) {
                 frame.nextRouting = {
                     enabled: nextRoutingToggle.checked === true,
-                    counterId: this._readValue("frame.nextRouting.counterId", frame.nextRouting?.counterId || ""),
-                    operator: this._readValue("frame.nextRouting.operator", frame.nextRouting?.operator || COUNTER_OPERATORS.GTE),
-                    value: Number(this._readValue("frame.nextRouting.value", frame.nextRouting?.value || 0) || 0),
+                    conditionLogic: this._readValue("frame.nextRouting.conditionLogic", frame.nextRouting?.conditionLogic || COUNTER_CONDITION_LOGIC.ALL),
+                    conditions: this._readCounterConditions(this.element, "[data-next-routing-condition-row]"),
                     trueFrameId: this._readValue("frame.nextRouting.trueFrameId", frame.nextRouting?.trueFrameId || ""),
                     falseFrameId: this._readValue("frame.nextRouting.falseFrameId", frame.nextRouting?.falseFrameId || "")
                 };
@@ -2012,9 +2010,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     id: row.dataset.choiceId,
                     text: this._readRowValue(row, "[data-choice-text]", ""),
                     next: this._readRowValue(row, "[data-choice-next]", ""),
-                    conditionCounterId: this._readRowValue(row, "[data-choice-condition-counter]", ""),
-                    conditionOperator: this._readRowValue(row, "[data-choice-condition-operator]", ""),
-                    conditionValue: this._readRowValue(row, "[data-choice-condition-value]", "0"),
+                    conditionLogic: this._readRowValue(row, "[data-choice-condition-logic]", COUNTER_CONDITION_LOGIC.ALL),
+                    conditions: this._readCounterConditions(row, "[data-choice-condition-row]"),
                     effectCounterId: this._readRowValue(row, "[data-choice-effect-counter]", ""),
                     effectOperation: this._readRowValue(row, "[data-choice-effect-operation]", ""),
                     effectValue: this._readRowValue(row, "[data-choice-effect-value]", "0")
