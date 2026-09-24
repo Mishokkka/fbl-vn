@@ -1375,9 +1375,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return index >= 0 && index < branchFrames.length - 1 ? branchFrames[index + 1].id : "";
     }
 
-    _frameOutgoingLinks(scene, frame) {
+    _frameOutgoingLinks(scene, frame, sequentialById = null) {
         if (!scene || !frame || frame.isFinal === true) return [];
-        const sequential = this._frameSequentialTarget(scene, frame);
+        const sequential = sequentialById
+            ? (sequentialById.get(frame.id) || "")
+            : this._frameSequentialTarget(scene, frame);
         const links = [];
         const push = (targetId, kind) => {
             const id = targetId || sequential;
@@ -1405,7 +1407,6 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const list = root?.querySelector?.("[data-frame-list]");
         if (!list) return;
         const draw = () => this._drawFrameListLinks(root);
-        list.addEventListener("scroll", draw, { passive: true });
         if (typeof globalThis.ResizeObserver === "function") {
             this._frameLinkResizeObserver = new globalThis.ResizeObserver(draw);
             this._frameLinkResizeObserver.observe(list);
@@ -1450,22 +1451,40 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         const listRect = list.getBoundingClientRect();
         const frameNodes = new Map();
+        const frameRects = new Map();
+        const frameColumns = new Map();
+        const columnRects = new Map();
         for (const node of list.querySelectorAll("[data-frame-id]")) {
             const id = node.dataset.frameId || "";
-            if (id && !frameNodes.has(id)) frameNodes.set(id, node);
+            if (!id || frameNodes.has(id)) continue;
+            frameNodes.set(id, node);
+            frameRects.set(id, node.getBoundingClientRect());
+            const column = node.closest?.("[data-branch-column]") || null;
+            frameColumns.set(id, column);
+            if (column && !columnRects.has(column)) columnRects.set(column, column.getBoundingClientRect());
         }
 
+        const sequentialById = new Map();
+        const previousByBranch = new Map();
+        for (const frame of scene.frames || []) {
+            const branchId = frame.branchId || "";
+            const previous = previousByBranch.get(branchId);
+            if (previous) sequentialById.set(previous.id, frame.id);
+            previousByBranch.set(branchId, frame);
+        }
+
+        const pathSpecs = [];
         let edgeIndex = 0;
         for (const frame of scene.frames || []) {
             const sourceNode = frameNodes.get(frame.id);
-            if (!sourceNode) continue;
-            for (const link of this._frameOutgoingLinks(scene, frame)) {
+            const sourceRect = frameRects.get(frame.id);
+            if (!sourceNode || !sourceRect) continue;
+            for (const link of this._frameOutgoingLinks(scene, frame, sequentialById)) {
                 const targetNode = frameNodes.get(link.targetId);
-                if (!targetNode || targetNode === sourceNode) continue;
-                const sourceRect = sourceNode.getBoundingClientRect();
-                const targetRect = targetNode.getBoundingClientRect();
-                const sourceColumn = sourceNode.closest?.("[data-branch-column]");
-                const targetColumn = targetNode.closest?.("[data-branch-column]");
+                const targetRect = frameRects.get(link.targetId);
+                if (!targetNode || targetNode === sourceNode || !targetRect) continue;
+                const sourceColumn = frameColumns.get(frame.id) || null;
+                const targetColumn = frameColumns.get(link.targetId) || null;
                 const sameColumn = sourceColumn && targetColumn && sourceColumn === targetColumn;
                 const sxRight = sourceRect.right - listRect.left + list.scrollLeft - 2;
                 const sxLeft = sourceRect.left - listRect.left + list.scrollLeft + 2;
@@ -1475,8 +1494,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 const ty = targetRect.top - listRect.top + list.scrollTop + targetRect.height / 2;
                 let d = "";
                 if (sameColumn) {
-                    const columnRect = sourceColumn.getBoundingClientRect();
-                    const gutterRight = columnRect.right - listRect.left + list.scrollLeft - 5;
+                    const columnRect = columnRects.get(sourceColumn);
+                    const gutterRight = (columnRect?.right ?? sourceRect.right) - listRect.left + list.scrollLeft - 5;
                     const routeX = Math.max(sxRight + 7, gutterRight - 8 - (edgeIndex % 3) * 4);
                     d = `M ${sxRight} ${sy} H ${routeX} V ${ty} H ${txRight}`;
                 }
@@ -1488,13 +1507,17 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     const midX = (sxLeft + txRight) / 2;
                     d = `M ${sxLeft} ${sy} H ${midX} V ${ty} H ${txRight}`;
                 }
-                const path = doc.createElementNS(ns, "path");
-                path.setAttribute("d", d);
-                path.setAttribute("marker-end", "url(#fbl-vn-frame-link-arrow)");
-                path.setAttribute("class", `fbl-vn-frame-link is-${link.kind}`);
-                svg.appendChild(path);
+                pathSpecs.push({ d, kind: link.kind });
                 edgeIndex += 1;
             }
+        }
+
+        for (const spec of pathSpecs) {
+            const path = doc.createElementNS(ns, "path");
+            path.setAttribute("d", spec.d);
+            path.setAttribute("marker-end", "url(#fbl-vn-frame-link-arrow)");
+            path.setAttribute("class", `fbl-vn-frame-link is-${spec.kind}`);
+            svg.appendChild(path);
         }
     }
 
@@ -1638,7 +1661,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (!frame) return;
             frame.branchId = newBranchId;
             frame.folderId = newParent;
-            this.selectedBranchId = newBranchId;
+            this._activateBranchForSelection(newBranchId);
             this.selectedFrameId = frame.id;
             this.selectedFolderId = newParent || null;
         }
@@ -1647,7 +1670,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (!folder) return;
             this._setFolderBranch(scene, folder.id, newBranchId);
             folder.parentId = newParent;
-            this.selectedBranchId = newBranchId;
+            this._activateBranchForSelection(newBranchId);
             this.selectedFolderId = folder.id;
         }
         this._normalizeTreeOrder(scene, newParent, { type: sourceType, id: sourceId }, insertIndex, newBranchId);
@@ -1970,7 +1993,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.selectedSceneId = saved.id;
         const currentFrame = saved.frames.find(item => item.id === this.selectedFrameId);
         if (!currentFrame) this.selectedFrameId = saved.frames[0] ? saved.frames[0].id : null;
-        else this.selectedBranchId = currentFrame.branchId || this.selectedBranchId;
+        else if (currentFrame.branchId) this._activateBranchForSelection(currentFrame.branchId);
         return saved;
     }
 
