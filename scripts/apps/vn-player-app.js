@@ -180,6 +180,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     static async openScene(payload) {
         if (!payload || !payload.scene) return;
         const scene = payload.scene;
+        VNPlayerApp.clearRejoinOffer(scene.id);
         for (const app of [...VNPlayerApp.active.values()]) {
             await app.close({ force: true });
         }
@@ -253,8 +254,69 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     static closeScene(sceneId) {
+        VNPlayerApp.clearRejoinOffer(sceneId);
+        VNPlayerApp.pendingStarts.delete(sceneId);
+        VNPlayerApp.pendingAdvances.delete(sceneId);
         const app = VNPlayerApp.active.get(sceneId);
         if (app) return app.close({ force: true });
+    }
+
+    static offerRejoin(scene, leaderId) {
+        if (!scene?.id || game.user?.isGM) return;
+        VNPlayerApp.rejoinOffers.set(scene.id, {
+            sceneId: scene.id,
+            sceneTitle: String(scene.title || ""),
+            leaderId: leaderId || null
+        });
+        VNPlayerApp._renderRejoinControl();
+    }
+
+    static clearRejoinOffer(sceneId) {
+        if (sceneId) VNPlayerApp.rejoinOffers.delete(sceneId);
+        else VNPlayerApp.rejoinOffers.clear();
+        VNPlayerApp._renderRejoinControl();
+    }
+
+    static _renderRejoinControl() {
+        const doc = globalThis.document;
+        if (!doc?.body || typeof doc.querySelector !== "function" || typeof doc.createElement !== "function") return;
+        let button = doc.querySelector("[data-fbl-vn-rejoin]");
+        const offer = [...VNPlayerApp.rejoinOffers.values()].at(-1) || null;
+        if (!offer) {
+            button?.remove?.();
+            return;
+        }
+
+        if (!button) {
+            button = doc.createElement("button");
+            button.type = "button";
+            button.className = "fbl-vn-rejoin";
+            button.dataset.fblVnRejoin = "true";
+            button.addEventListener("click", () => {
+                const sceneId = button.dataset.sceneId || "";
+                if (sceneId) VNPlayerApp.requestRejoin(sceneId);
+            });
+            doc.body.append(button);
+        }
+
+        button.dataset.sceneId = offer.sceneId;
+        button.disabled = false;
+        button.textContent = offer.sceneTitle ? `Вернуться в катсцену: ${offer.sceneTitle}` : "Вернуться в катсцену";
+    }
+
+    static requestRejoin(sceneId) {
+        const offer = VNPlayerApp.rejoinOffers.get(sceneId);
+        if (!offer) return false;
+        const button = globalThis.document?.querySelector?.("[data-fbl-vn-rejoin]");
+        if (button && button.dataset.sceneId === sceneId) {
+            button.disabled = true;
+            button.textContent = "Возвращаю в катсцену…";
+            globalThis.setTimeout?.(() => {
+                if (!VNPlayerApp.rejoinOffers.has(sceneId)) return;
+                VNPlayerApp._renderRejoinControl();
+            }, 1500);
+        }
+        return VNSocket.rejoin(sceneId, offer.leaderId);
     }
 
     static recordVote(payload, senderId) {
@@ -291,6 +353,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const app = VNPlayerApp.active.get(sceneId);
         if (!app) return;
         return app._onParticipantLeave(userId);
+    }
+
+    static handleParticipantRejoin(sceneId, userId) {
+        const app = VNPlayerApp.active.get(sceneId);
+        if (!app) return;
+        return app._onParticipantRejoin(userId);
     }
 
     async preload(options = {}) {
@@ -653,6 +721,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async requestClose() {
         if (this.mode === PLAYER_MODES.VOTE && this.networked && !this._isLeader()) {
+            VNPlayerApp.offerRejoin(this.scene, this.leaderId);
             VNSocket.leave(this.scene.id, this.leaderId);
             return this.close({ force: true });
         }
@@ -1407,6 +1476,14 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
+    _onParticipantRejoin(userId) {
+        if (!this._isLeader() || this.mode !== PLAYER_MODES.VOTE || !userId) return;
+        if (!this.participantIds.includes(userId)) this.participantIds.push(userId);
+        this._participantConnectionState.set(userId, true);
+        this._leaderVotes.delete(userId);
+        if (this.started) this._publishVoteState();
+    }
+
     async _resolveGmVoteOverride({ action, choiceId = "" }) {
         if (!this._isGmVoteOverride() || this._resolvingVote) return;
         const frame = this._getFrame(this.currentFrameId);
@@ -1565,6 +1642,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 VNPlayerApp.active = new Map();
 VNPlayerApp.pendingStarts = new Set();
 VNPlayerApp.pendingAdvances = new Map();
+VNPlayerApp.rejoinOffers = new Map();
 VNPlayerApp.DEFAULT_OPTIONS = {
     id: "fbl-vn-player",
     classes: ["fbl-vn-player-app"],
