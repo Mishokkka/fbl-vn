@@ -94,14 +94,14 @@ export class VNSocket {
     }
 
     static _isTargeted(data) {
-        const targetIds = Array.isArray(data?.targetIds) ? data.targetIds : [];
-        if (!targetIds.length) return true;
-        return targetIds.includes(game.user.id);
+        if (!data || !Object.prototype.hasOwnProperty.call(data, "targetIds")) return true;
+        if (!Array.isArray(data.targetIds)) return false;
+        return data.targetIds.includes(game.user.id);
     }
 
     static _targetIdsForScene(sceneId) {
         const targets = this.activeTargets.get(sceneId);
-        return targets && targets.size ? [...targets] : [];
+        return targets ? [...targets] : [];
     }
 
     static _participantIdsForScene(sceneId) {
@@ -119,7 +119,7 @@ export class VNSocket {
     static _removeSessionParticipant(sceneId, userId) {
         if (!sceneId || !userId) return false;
         const session = this.activeSessions.get(sceneId);
-        if (!session || session.leaderId !== game.user?.id || !session.targetIds.includes(userId)) return false;
+        if (!session || session.mode !== PLAYER_MODES.VOTE || session.leaderId !== game.user?.id || !session.targetIds.includes(userId)) return false;
 
         session.targetIds = session.targetIds.filter(id => id !== userId);
         session.participantIds = session.participantIds.filter(id => id !== userId);
@@ -131,10 +131,11 @@ export class VNSocket {
     }
 
     static _withSceneTargets(sceneId, data = {}) {
+        const hasTargetSet = this.activeTargets.has(sceneId);
         const targetIds = this._targetIdsForScene(sceneId);
         const leaderId = this.activeLeaders.get(sceneId) || game.user?.id || null;
         const payload = Object.assign({}, data, { leaderId });
-        return targetIds.length ? Object.assign(payload, { targetIds }) : payload;
+        return hasTargetSet ? Object.assign(payload, { targetIds }) : payload;
     }
 
     static signalReady(sceneId, leaderId = null) {
