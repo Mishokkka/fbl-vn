@@ -131,6 +131,16 @@ if (!socketSource.includes('this.emit("close", { sceneId, leaderId, targetIds })
 if (!playerSource.includes("voteState: app.mode === PLAYER_MODES.VOTE ? app._buildVoteStateFromLeaderVotes() : null") || !playerSource.includes("if (this.mode === PLAYER_MODES.VOTE && state.voteState) this._applyVoteState(state.voteState)")) errors.push("Vote reconnect must restore current quorum and remaining players' votes without restoring the disconnected player's stale vote");
 if (!playerTemplateSource.includes("Продолжить (ГМ)") || !playerSource.includes('isVoteOverride ? "Продолжить (ГМ)"')) errors.push("Vote UI must identify the GM priority Continue control");
 if (!counterManagerSource.includes("frameEffects") || !counterManagerSource.includes("frame.effectCounterId === counterId")) errors.push("Counter manager must count and clear frame counter effects");
+if (!constantsSource.includes('COUNTER_CONDITION_LOGIC') || !constantsSource.includes('ALL: "and"') || !constantsSource.includes('ANY: "or"')) errors.push("Counter condition logic constants must expose AND and OR");
+if (!schemaSource.includes("export function createCounterCondition") || !schemaSource.includes("export function evaluateCounterConditions") || !schemaSource.includes("conditionLogic") || !schemaSource.includes("conditions: []")) errors.push("Schema must support canonical compound counter condition groups");
+if (!schemaSource.includes("const matched = evaluateCounterConditions(routing.conditions, routing.conditionLogic, counterState)") || !schemaSource.includes("const matched = evaluateCounterConditions(clean.conditions, clean.conditionLogic, counterState)")) errors.push("Runtime routing and choice availability must evaluate compound condition groups");
+if (!editorSource.includes("_buildCounterConditionViews(conditions, renderIndex)") || !editorSource.includes("_readCounterConditions(root, rowSelector)") || !editorSource.includes("_counterConditionLogicOptions")) errors.push("Editor must build and read reusable compound counter conditions");
+if (!editorFrameTemplateSource.includes('data-action="addNextRoutingCondition"') || !editorFrameTemplateSource.includes('data-next-routing-condition-row') || !editorFrameTemplateSource.includes('name="frame.nextRouting.conditionLogic"')) errors.push("Frame routing UI must expose multiple AND/OR counter conditions");
+if (!editorFrameTemplateSource.includes('data-action="addChoiceCondition"') || !editorFrameTemplateSource.includes('data-choice-condition-row') || !editorFrameTemplateSource.includes('data-choice-condition-logic')) errors.push("Choice UI must expose multiple AND/OR availability conditions");
+if (!counterManagerSource.includes("for (const condition of Array.isArray(choice.conditions)") || !counterManagerSource.includes("for (const condition of Array.isArray(frame.nextRouting.conditions)")) errors.push("Counter manager must count every compound condition reference");
+if (!counterManagerSource.includes(".filter(condition => condition.counterId !== counterId)") || !counterManagerSource.includes("frame.nextRouting.conditions.length === 0")) errors.push("Deleting a counter must remove matching condition rows and disable empty routing");
+const treeRowsBlock = editorSource.match(/_buildFrameTreeRows\(scene, frameViews, branchId = ""\)\s*\{([\s\S]*?)\n\s*return rows;\n\s*\}/)?.[1] || "";
+if (!treeRowsBlock.includes("shouldRecoverUnvisitedFolder") || !treeRowsBlock.includes("if (folder.collapsed === true) return { hidden: true, broken: false }") || !treeRowsBlock.includes("!shouldRecoverUnvisitedFolder(folder)")) errors.push("Collapsed parent folders must keep nested unvisited folders hidden instead of recovering them at root");
 if (!graphSource.includes("const isBranchPoint = links.length !== 1 || links.some(link => link.kind === \"condition\")")) errors.push("Compact graph must keep non-linear counter-routing frames visible");
 const compactVisibilityBlock = graphSource.match(/_compactVisibleFrameIds\(scene, frames, outgoing\)\s*\{([\s\S]*?)\n\s*return visible;\n\s*\}/)?.[1] || "";
 if (/branchId/.test(compactVisibilityBlock)) errors.push("Compact visibility must not keep linear frames merely because a link crosses editor branches");
@@ -159,8 +169,9 @@ const editorGridRule = editorLayoutCssSource.match(/(?:^|\n)\.fbl-vn-editor\s*\{
 if (/height:\s*100%;/.test(editorGridRule)) errors.push("Editor grid must not claim 100% of the framed ApplicationV2 height");
 if (!/\.fbl-vn-character-manager\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/.test(characterCssSource)) errors.push("Character manager must constrain its grid so the preset list can scroll");
 if (!/\.fbl-vn-character-list\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/.test(characterCssSource)) errors.push("Character preset list must retain vertical scrolling");
-if (!constantsSource.includes("DATA_SCHEMA_VERSION = 11")) errors.push("Data schema version must be 11");
+if (!constantsSource.includes("DATA_SCHEMA_VERSION = 12")) errors.push("Data schema version must be 12");
 if (!migrationSource.includes("function migrateToV11")) errors.push("Schema v11 migration is missing");
+if (!migrationSource.includes("function migrateToV12") || !migrationSource.includes("schemaVersion < 12")) errors.push("Schema v12 compound-condition migration is missing");
 if (!playerSource.includes("splitTextGraphemes(plainText).length > 900") || !playerSource.includes("splitTextGraphemes(child.data)")) errors.push("Typewriter must count and reveal Unicode grapheme clusters");
 if (!read("scripts/utils/rich-text.js").includes("export function splitTextGraphemes")) errors.push("Shared grapheme segmentation helper is missing");
 if (!schemaSource.includes("export function collectFrameAssetPaths") || !schemaSource.includes("export function collectFrameEntryAssetPaths")) errors.push("Schema must expose full-frame and frame-entry asset collection for progressive preload");
@@ -230,8 +241,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.13") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.13")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.14") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.14")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
