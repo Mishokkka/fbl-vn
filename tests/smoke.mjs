@@ -1521,11 +1521,34 @@ await votePlayer._submitContinueVote();
 assert.equal(gmOverrideContinueCount, 1, "GM pressing Continue in vote mode must bypass quorum immediately");
 votePlayer._resolveGmVoteOverride = savedResolveGmOverride;
 
+votePlayer.currentFrameId = "frame-root";
+votePlayer.currentTextIndex = 0;
+votePlayer._resolvingVote = false;
+votePlayer._leaderVotes = new Map([
+  [playerUser.id, { action: "continue", choiceId: "" }],
+  [playerUser2.id, { action: "continue", choiceId: "" }]
+]);
+let gmDirectContinue = 0;
+let gmOverridePublishes = 0;
+const savedAdvanceAfterContinueVote = votePlayer._advanceAfterContinueVote;
+const savedPublishVoteState = votePlayer._publishVoteState;
+votePlayer._advanceAfterContinueVote = async frame => {
+  gmDirectContinue += 1;
+  assert.equal(frame.id, "frame-root");
+};
+votePlayer._publishVoteState = () => { gmOverridePublishes += 1; };
+await votePlayer._resolveGmVoteOverride({ action: "continue" });
+assert.equal(gmDirectContinue, 1, "GM override resolver must advance immediately without waiting for player quorum");
+assert.equal(votePlayer._leaderVotes.size, 0, "GM override must discard unfinished player votes for the overridden step");
+assert.equal(gmOverridePublishes, 1, "GM override must publish the cleared vote state before advancing");
+votePlayer._advanceAfterContinueVote = savedAdvanceAfterContinueVote;
+votePlayer._publishVoteState = savedPublishVoteState;
+
 const voteChoiceFrame = createFrame("choice");
 voteChoiceFrame.id = "vote-choice-frame";
 voteChoiceFrame.branchId = scene.branches[0].id;
 voteChoiceFrame.isFinal = false;
-voteChoiceFrame.choices = [{ id: "vote-choice-a", text: "A", next: "" }];
+voteChoiceFrame.choices = [{ id: "vote-choice-a", text: "A", next: "frame-root" }];
 scene.frames.push(voteChoiceFrame);
 votePlayer._buildPlaybackIndex();
 votePlayer.currentFrameId = voteChoiceFrame.id;
@@ -1535,6 +1558,25 @@ votePlayer._resolveGmVoteOverride = async payload => { gmOverrideChoicePayload =
 await votePlayer._submitChoiceVote("vote-choice-a");
 assert.deepEqual(gmOverrideChoicePayload, { action: "choice", choiceId: "vote-choice-a" }, "GM choice input must bypass player voting and resolve that exact choice immediately");
 votePlayer._resolveGmVoteOverride = savedResolveGmOverride;
+
+votePlayer.currentFrameId = voteChoiceFrame.id;
+votePlayer.currentTextIndex = 0;
+votePlayer._resolvingVote = false;
+votePlayer._leaderVotes = new Map([[playerUser.id, { action: "choice", choiceId: "other" }]]);
+let appliedGmChoice = null;
+let gmChoiceTransition = null;
+votePlayer._publishVoteState = () => {};
+const savedApplyChoiceEffect = votePlayer._applyChoiceEffect;
+const savedGoToFrame = votePlayer.goToFrame;
+votePlayer._applyChoiceEffect = choice => { appliedGmChoice = choice.id; };
+votePlayer.goToFrame = async (frameId, options) => { gmChoiceTransition = { frameId, options }; };
+await votePlayer._resolveGmVoteOverride({ action: "choice", choiceId: "vote-choice-a" });
+assert.equal(appliedGmChoice, "vote-choice-a", "GM override must apply exactly the choice clicked by the GM, regardless of existing player votes");
+assert.deepEqual(gmChoiceTransition, { frameId: "frame-root", options: { choiceId: "vote-choice-a" } }, "GM choice override must transition immediately along the GM-selected choice");
+assert.equal(votePlayer._leaderVotes.size, 0, "GM choice override must discard unfinished player choice votes");
+votePlayer._applyChoiceEffect = savedApplyChoiceEffect;
+votePlayer.goToFrame = savedGoToFrame;
+votePlayer._publishVoteState = savedPublishVoteState;
 
 votePlayer.currentFrameId = "frame-root";
 votePlayer._leaderVotes = new Map([
