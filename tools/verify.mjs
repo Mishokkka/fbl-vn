@@ -46,11 +46,14 @@ const migrationSource = read("scripts/data/migrations.js");
 const constantsSource = read("scripts/utils/constants.js");
 const characterTemplateSource = read("templates/character-manager.hbs");
 const editorFrameTemplateSource = read("templates/editor-frame-panel.hbs");
+const editorFramesTemplateSource = read("templates/editor-frames.hbs");
+const editorScenesTemplateSource = read("templates/editor-scenes.hbs");
 const graphTemplateSource = read("templates/graph.hbs");
 const playerTemplateSource = read("templates/player.hbs");
 const characterCssSource = read("styles/character-manager.css");
 const editorFormsCssSource = read("styles/editor-forms.css");
 const editorLayoutCssSource = read("styles/editor-layout.css");
+const editorComponentsCssSource = read("styles/editor-components.css");
 const graphCssSource = read("styles/graph.css");
 const playerCssSource = read("styles/player.css");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
@@ -88,6 +91,12 @@ if (!schemaSource.includes('effectCounterId: ""') || !schemaSource.includes("exp
 if (!schemaSource.includes("missing-frame-effect-counter")) errors.push("Scene validation must report missing frame-effect counters");
 if (!editorFrameTemplateSource.includes('name="frame.effectCounterId"') || !editorFrameTemplateSource.includes('name="frame.effectOperation"') || !editorFrameTemplateSource.includes('name="frame.effectValue"')) errors.push("Frame editor must expose counter effect controls");
 if (!editorSource.includes("frameEffectCounterOptions") || !editorSource.includes("frameEffectOperationOptions")) errors.push("Frame editor context must expose counter effect options");
+if (!editorSource.includes("currentIndex + 1") || !editorSource.includes("this._normalizeTreeOrder(scene, frame.folderId || \"\", { type: \"frame\", id: frame.id }, insertIndex")) errors.push("New frames must insert immediately after the selected sibling instead of appending to the branch");
+if (!editorSource.includes("_setFrameTargetFromList(input, frameId)") || !editorSource.includes("_enableFrameListTargetPicking(root = this.element)") || !editorSource.includes("event.stopImmediatePropagation?.()")) errors.push("Focused frame-target search must support mouse picking from the frame list without navigating");
+if (!editorSource.includes("_frameOutgoingLinks(scene, frame)") || !editorSource.includes("_drawFrameListLinks(root)") || !editorFramesTemplateSource.includes("data-frame-link-svg") || !/\.fbl-vn-frame-link\s*\{/.test(editorComponentsCssSource)) errors.push("Frame list must render compact transition connectors for visible destinations");
+if (!editorSource.includes("this.scenesCollapsed") || !editorFramesTemplateSource.includes('data-action="toggleScenesColumn"') || !editorScenesTemplateSource.includes('data-action="toggleScenesColumn"') || !/\.fbl-vn-editor\.is-scenes-collapsed\s*\{/.test(editorLayoutCssSource)) errors.push("Cutscene column must be collapsible with a restore control in the frame toolbar");
+if (!editorSource.includes("this.secondaryBranchId") || !editorSource.includes("_activateBranchForSelection(branchId)") || !editorFramesTemplateSource.includes("data-secondary-branch-select") || !editorFramesTemplateSource.includes("secondaryFrameTreeRows") || !/\.fbl-vn-frame-columns\.is-dual\s*\{/.test(editorComponentsCssSource)) errors.push("Editor must support two simultaneously visible branch columns");
+if (!editorSource.includes("_frameSequentialTarget(scene, frame)") || !editorSource.includes('item.branchId || "") === (frame.branchId || "")')) errors.push("Inline implicit links must follow the same per-branch sequential fallback as playback");
 if (!playerSource.includes("this._applyFrameEffect(frame);") || !playerSource.includes("applyFrameCounterEffect")) errors.push("Player must apply a frame counter effect on frame entry");
 if (!playerSource.includes("static async previewFrame(scene, frameId, options = {})") || !playerSource.includes("async startFramePreview(frameId, options = {})") || !playerSource.includes("_findBranchPreviewPath(targetFrameId, branchId = \"\")") || !playerSource.includes("_findPreviewPath(targetFrameId)") || !playerSource.includes("_warmFramePreview(previewPath)")) errors.push("Player must support selected-frame preview with current-branch inherited state and graph fallback");
 if (!playerSource.includes("AUDIO_ACTIONS") || !playerSource.includes('_applyPreviewCueState(music, frame.musicCues, "music")') || !playerSource.includes('_applyPreviewCueState(sfx, frame.sfxCues, "sfx")')) errors.push("Selected-frame preview must reconstruct inherited audio channel state");
@@ -211,8 +220,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.12") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.12")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.13") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.13")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
