@@ -216,10 +216,25 @@ export class VNSceneStore {
         this._sceneById = new Map(clean.scenes.map(scene => [scene.id, scene]));
         this._assetById = new Map(clean.assets.map(asset => [asset.id, asset]));
         this._characterById = new Map(clean.characters.map(character => [character.id, character]));
+        this._revision = Number(this._revision || 0) + 1;
+    }
+
+    static get revision() {
+        this._getSnapshot();
+        return Number(this._revision || 0);
     }
 
     static get data() {
         return duplicateData(this._getSnapshot());
+    }
+
+    static get sceneSummaries() {
+        return this._getSnapshot().scenes.map(scene => ({
+            id: scene.id,
+            title: scene.title,
+            startFrame: scene.startFrame || "",
+            frameCount: Array.isArray(scene.frames) ? scene.frames.length : 0
+        }));
     }
 
     static _sanitizeData(data) {
@@ -504,6 +519,7 @@ VNSceneStore._cache = null;
 VNSceneStore._sceneById = null;
 VNSceneStore._assetById = null;
 VNSceneStore._characterById = null;
+VNSceneStore._revision = 0;
 
 VNSceneStore._storageDocument = null;
 VNSceneStore._storageReady = false;
