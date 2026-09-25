@@ -330,6 +330,50 @@ assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations m
 assert.ok(VNSceneStore.revision > revisionBeforeQueuedMutations, "Store revision must advance when persisted data changes");
 await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
 
+const noOpEditor = Object.create(VNEditorApp.prototype);
+noOpEditor._pendingRenderParts = new Set();
+noOpEditor._selectedSceneCache = null;
+noOpEditor._lastCommitChanged = false;
+noOpEditor.selectedSceneId = scene.id;
+noOpEditor.selectedFrameId = "frame-nested";
+noOpEditor.selectedBranchId = branchId;
+noOpEditor.secondaryBranchId = null;
+const storedNestedForCommit = VNSceneStore.getScene(scene.id).frames.find(frame => frame.id === "frame-nested");
+const storedNestedTextBlock = storedNestedForCommit.textBlocks[0];
+const noOpRichEditor = {
+  innerHTML: storedNestedTextBlock.richText || "",
+  textContent: storedNestedTextBlock.text || ""
+};
+const noOpTextRow = {
+  dataset: { textBlockId: storedNestedTextBlock.id },
+  querySelector(selector) {
+    return selector === "[data-text-block-rich]" ? noOpRichEditor : null;
+  }
+};
+noOpEditor.element = {
+  querySelector() { return null; },
+  querySelectorAll(selector) {
+    if (selector === "[data-text-block-row]") return [noOpTextRow];
+    return [];
+  }
+};
+const savedNoOpUpsert = VNSceneStore.upsertScene;
+let noOpUpserts = 0;
+VNSceneStore.upsertScene = async (...args) => {
+  noOpUpserts += 1;
+  return savedNoOpUpsert.apply(VNSceneStore, args);
+};
+const noOpRevision = VNSceneStore.revision;
+try {
+  await noOpEditor._commitFromForm();
+}
+finally {
+  VNSceneStore.upsertScene = savedNoOpUpsert;
+}
+assert.equal(noOpEditor._lastCommitChanged, false, "An unchanged frame form must stay on the current-frame fast path");
+assert.equal(noOpUpserts, 0, "An unchanged frame form must not write the scene store");
+assert.equal(VNSceneStore.revision, noOpRevision, "An unchanged frame form must not invalidate store-backed editor caches");
+
 const editor = Object.create(VNEditorApp.prototype);
 editor._pendingRenderParts = new Set();
 editor._actionQueue = Promise.resolve();
