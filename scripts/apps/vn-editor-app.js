@@ -1,5 +1,5 @@
 import { VNSceneStore } from "../data/scene-store.js";
-import { clearFrameReferences, createAudioCue, createChoice, createCounterCondition, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
+import { clearFrameReferences, createAudioCue, createChoice, createCounterCondition, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeFrame, sanitizeScene, validateScene } from "../data/schema.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { VNPlayerApp } from "./vn-player-app.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
@@ -1984,24 +1984,26 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async _commitFromForm({ persist = true } = {}) {
         const originalScene = this.selectedScene;
-        const scene = duplicateData(originalScene);
         this._lastCommitChanged = false;
-        if (!scene || !this.element) return scene;
+        if (!originalScene || !this.element) return originalScene;
+
         const sceneTitle = this.element.querySelector("[name='scene.title']");
         const sceneMode = this.element.querySelector("[name='scene.defaultMode']");
         const sceneStart = this.element.querySelector("[name='scene.startFrame']");
-        if (sceneTitle) scene.title = sceneTitle.value || "Без названия";
-        if (sceneMode) scene.defaultMode = sceneMode.value || PLAYER_MODES.INDIVIDUAL;
-        if (sceneStart) scene.startFrame = sceneStart.value || scene.startFrame;
+        const nextTitle = sceneTitle ? (sceneTitle.value || "Без названия") : originalScene.title;
+        const nextMode = sceneMode ? (sceneMode.value || PLAYER_MODES.INDIVIDUAL) : originalScene.defaultMode;
+        const nextStartFrame = sceneStart ? (sceneStart.value || originalScene.startFrame) : originalScene.startFrame;
 
-        const frame = scene.frames.find(item => item.id === this.selectedFrameId);
-        if (frame) {
+        const originalFrame = (originalScene.frames || []).find(item => item.id === this.selectedFrameId) || null;
+        let cleanFrame = originalFrame;
+        if (originalFrame) {
+            const frame = duplicateData(originalFrame);
             const oldType = frame.type;
             frame.type = this._readValue("frame.type", frame.type);
             frame.title = this._readValue("frame.title", frame.title);
             frame.branchId = this._readValue("frame.branchId", frame.branchId || this.selectedBranchId || "");
             frame.folderId = this._readValue("frame.folderId", frame.folderId || "");
-            const folderForFrame = (scene.frameFolders || []).find(folder => folder.id === frame.folderId);
+            const folderForFrame = (originalScene.frameFolders || []).find(folder => folder.id === frame.folderId);
             if (frame.folderId && (!folderForFrame || folderForFrame.branchId !== frame.branchId)) frame.folderId = "";
             const finalInput = this.element.querySelector("[name='frame.isFinal']");
             frame.isFinal = Boolean(finalInput && finalInput.checked);
@@ -2062,7 +2064,28 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     effectValue: this._readRowValue(row, "[data-choice-effect-value]", "0")
                 }));
             }
+            cleanFrame = sanitizeFrame(frame);
         }
+
+        const frameChanged = Boolean(originalFrame && cleanFrame && !this._sameData(originalFrame, cleanFrame));
+        const metadataChanged = nextTitle !== originalScene.title
+            || nextMode !== originalScene.defaultMode
+            || nextStartFrame !== originalScene.startFrame;
+        if (!frameChanged && !metadataChanged) {
+            const currentFrame = (originalScene.frames || []).find(item => item.id === this.selectedFrameId) || null;
+            if (currentFrame?.branchId) this._activateBranchForSelection(currentFrame.branchId);
+            return originalScene;
+        }
+
+        const scene = duplicateData(originalScene);
+        scene.title = nextTitle;
+        scene.defaultMode = nextMode;
+        scene.startFrame = nextStartFrame;
+        if (originalFrame && cleanFrame) {
+            const frameIndex = scene.frames.findIndex(item => item.id === originalFrame.id);
+            if (frameIndex >= 0) scene.frames[frameIndex] = cleanFrame;
+        }
+
         const clean = sanitizeScene(scene);
         const changed = !this._sameData(originalScene, clean);
         this._lastCommitChanged = changed;
