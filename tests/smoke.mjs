@@ -82,9 +82,14 @@ const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, co
 const { migrateData } = await import("../scripts/data/migrations.js");
 const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
-const { duplicateData, localize, mergeData, randomId } = await import("../scripts/utils/foundry-helpers.js");
+const { duplicateData, localize, mergeData, randomId, serializeJson } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
+
+const compactJson = serializeJson({ alpha: 1, nested: { beta: [2, 3] } });
+assert.equal(compactJson.includes("\n"), false, "JSON export serialization must be compact by default");
+assert.deepEqual(JSON.parse(compactJson), { alpha: 1, nested: { beta: [2, 3] } }, "Compact JSON export must preserve the exact data shape");
+assert.equal(serializeJson({ alpha: 1 }, { pretty: true }).includes("\n"), true, "Pretty serialization must remain available for diagnostics");
 
 const characterManager = new VNCharacterManagerApp();
 assert.equal(characterManager.expandedCharacterIds.size, 0, "Character presets must be collapsed when the manager first opens");
@@ -299,6 +304,13 @@ VNPreloader.preloadPath = savedPreloadPath;
 
 await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
 
+const sceneSummaries = VNSceneStore.sceneSummaries;
+assert.equal(sceneSummaries.length, 1, "Scene summaries must expose one lightweight row per stored scene");
+assert.equal(sceneSummaries[0].id, scene.id);
+assert.equal(sceneSummaries[0].frameCount, scene.frames.length, "Scene summaries must expose frame counts without cloning frame payloads");
+assert.equal("frames" in sceneSummaries[0], false, "Scene summaries must not carry full frame arrays");
+const revisionBeforeQueuedMutations = VNSceneStore.revision;
+
 const stored = VNSceneStore.getScene(scene.id);
 stored.title = "Mutated clone";
 assert.equal(VNSceneStore.getScene(scene.id).title, "Smoke", "getScene must return a defensive clone");
@@ -315,6 +327,7 @@ await Promise.all([
 const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
+assert.ok(VNSceneStore.revision > revisionBeforeQueuedMutations, "Store revision must advance when persisted data changes");
 await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const editor = Object.create(VNEditorApp.prototype);
@@ -322,8 +335,12 @@ editor._pendingRenderParts = new Set();
 editor._actionQueue = Promise.resolve();
 editor._renderQueue = Promise.resolve();
 editor._lastValidationSnapshot = null;
+editor._selectedSceneCache = null;
+editor._lastPreparedScene = null;
+editor._lastPreparedSceneRevision = -1;
 editor._lastFrameTargetSceneId = null;
 editor._lastFrameTargetEntries = null;
+editor._lastCommitChanged = false;
 editor.selectedSceneId = scene.id;
 editor.selectedFrameId = "frame-root";
 editor.selectedBranchId = branchId;
@@ -349,6 +366,11 @@ const scenesContext = editor._buildPartContext("scenes", editorState);
 const framesContext = editor._buildPartContext("frames", editorState);
 const panelContext = editor._buildPartContext("framePanel", editorState);
 assert.equal(scenesContext.scenes.length, 1, "Scenes part must receive scene rows");
+assert.equal(scenesContext.scenes[0].frameCount, scene.frames.length, "Scenes part must consume lightweight scene summary counts");
+assert.equal("frames" in editorState.scenes[0], false, "Editor state scene list must stay lightweight for large cutscenes");
+const cachedValidationIssues = editor._lastValidationSnapshot.issues;
+const repeatedEditorState = editor._prepareEditorState();
+assert.strictEqual(editor._issuesForState(repeatedEditorState), cachedValidationIssues, "Validation results must be reused while the store revision is unchanged");
 assert.equal(framesContext.frameTreeRows.length, 4, "Frames part must receive folder and frame rows");
 assert.deepEqual(framesContext.branchOptions.map(option => option.value), [branchId], "Frames part must expose branch selector options");
 assert.equal("branches" in framesContext, false, "Unused branch view payload must not return");
@@ -365,6 +387,42 @@ assert.equal(panelContext.selectedMusicCues.length, 2, "Frame panel must expose 
 assert.equal(panelContext.selectedSfxCues.length, 1, "Frame panel must expose all SFX cues");
 assert.deepEqual(panelContext.musicChannelOptions.map(option => option.value), ["music-1", "music-2"], "Music channel suggestions must include channels used by the scene");
 assert.deepEqual(panelContext.sfxChannelOptions.map(option => option.value), ["wind"], "SFX channel suggestions must include channels used by the scene");
+
+// Selecting an unchanged frame in the same branch must avoid rebuilding the full frame list.
+const fastSelectEditor = Object.create(VNEditorApp.prototype);
+fastSelectEditor.selectedSceneId = scene.id;
+fastSelectEditor.selectedFrameId = "frame-root";
+fastSelectEditor.selectedBranchId = branchId;
+fastSelectEditor.secondaryBranchId = null;
+fastSelectEditor.selectedFolderId = null;
+fastSelectEditor._selectedSceneCache = null;
+fastSelectEditor._lastCommitChanged = false;
+fastSelectEditor._commitFromForm = async () => {
+  fastSelectEditor._lastCommitChanged = false;
+  return fastSelectEditor.selectedScene;
+};
+fastSelectEditor._syncFrameSelectionDom = () => true;
+let fastSelectParts = null;
+fastSelectEditor._renderEditorParts = parts => { fastSelectParts = parts; };
+await VNEditorApp._onSelectFrame.call(fastSelectEditor, { preventDefault() {} }, { dataset: { frameId: "frame-nested" } });
+assert.deepEqual(fastSelectParts, ["framePanel"], "Unchanged same-branch frame selection must rerender only the frame panel");
+
+const changedSelectEditor = Object.create(VNEditorApp.prototype);
+changedSelectEditor.selectedSceneId = scene.id;
+changedSelectEditor.selectedFrameId = "frame-root";
+changedSelectEditor.selectedBranchId = branchId;
+changedSelectEditor.secondaryBranchId = null;
+changedSelectEditor.selectedFolderId = null;
+changedSelectEditor._selectedSceneCache = null;
+changedSelectEditor._commitFromForm = async () => {
+  changedSelectEditor._lastCommitChanged = true;
+  return changedSelectEditor.selectedScene;
+};
+changedSelectEditor._syncFrameSelectionDom = () => true;
+let changedSelectParts = null;
+changedSelectEditor._renderEditorParts = parts => { changedSelectParts = parts; };
+await VNEditorApp._onSelectFrame.call(changedSelectEditor, { preventDefault() {} }, { dataset: { frameId: "frame-nested" } });
+assert.deepEqual(changedSelectParts, ["frames", "framePanel"], "Changed frame selection must preserve the full list rerender path");
 
 // New frames must be inserted directly after the selected sibling rather than appended.
 const insertionScene = createScene();
