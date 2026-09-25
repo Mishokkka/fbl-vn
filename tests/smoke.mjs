@@ -373,6 +373,19 @@ finally {
 assert.equal(noOpEditor._lastCommitChanged, false, "An unchanged frame form must stay on the current-frame fast path");
 assert.equal(noOpUpserts, 0, "An unchanged frame form must not write the scene store");
 assert.equal(VNSceneStore.revision, noOpRevision, "An unchanged frame form must not invalidate store-backed editor caches");
+const noOpDraft = await noOpEditor._commitFromForm({ persist: false });
+const noOpDraftFrame = noOpDraft.frames.find(frame => frame.id === "frame-nested");
+noOpDraftFrame.speaker = "Transient draft mutation";
+assert.notEqual(
+  noOpEditor.selectedScene.frames.find(frame => frame.id === "frame-nested").speaker,
+  "Transient draft mutation",
+  "A non-persisting no-op commit must return an isolated draft instead of the editor's cached selected scene"
+);
+assert.notEqual(
+  VNSceneStore.getScene(scene.id).frames.find(frame => frame.id === "frame-nested").speaker,
+  "Transient draft mutation",
+  "Abandoned draft edits must never leak into the canonical scene store"
+);
 
 const editor = Object.create(VNEditorApp.prototype);
 editor._pendingRenderParts = new Set();
