@@ -2074,7 +2074,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!frameChanged && !metadataChanged) {
             const currentFrame = (originalScene.frames || []).find(item => item.id === this.selectedFrameId) || null;
             if (currentFrame?.branchId) this._activateBranchForSelection(currentFrame.branchId);
-            return originalScene;
+            return persist ? originalScene : duplicateData(originalScene);
         }
 
         const scene = duplicateData(originalScene);
