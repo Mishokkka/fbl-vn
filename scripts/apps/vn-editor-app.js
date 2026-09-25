@@ -892,7 +892,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             falseFrameId: this._readValue("frame.nextRouting.falseFrameId", current.falseFrameId || "")
         };
         const clean = sanitizeScene(scene);
-        const saved = await VNSceneStore.upsertScene(clean);
+        const saved = await VNSceneStore.upsertScene(clean, { sanitized: true, knownChanged: true });
         this.selectedSceneId = saved.id;
         return saved;
     }
@@ -2090,7 +2090,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const changed = !this._sameData(originalScene, clean);
         this._lastCommitChanged = changed;
         this._trackCommittedFormChanges(originalScene, clean, this.selectedFrameId, changed);
-        const saved = persist && changed ? await VNSceneStore.upsertScene(clean) : clean;
+        const saved = persist && changed ? await VNSceneStore.upsertScene(clean, { sanitized: true, knownChanged: true }) : clean;
         this.selectedSceneId = saved.id;
         const currentFrame = saved.frames.find(item => item.id === this.selectedFrameId);
         if (!currentFrame) this.selectedFrameId = saved.frames[0] ? saved.frames[0].id : null;
