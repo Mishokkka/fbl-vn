@@ -1,5 +1,5 @@
 import { VNSceneStore } from "../data/scene-store.js";
-import { clearFrameReferences, createAudioCue, createChoice, createCounterCondition, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeScene, validateScene } from "../data/schema.js";
+import { clearFrameReferences, createAudioCue, createChoice, createCounterCondition, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeFrame, sanitizeScene, validateScene } from "../data/schema.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { VNPlayerApp } from "./vn-player-app.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
@@ -34,7 +34,7 @@ function queuedEditorAction(handler) {
 export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     constructor(options = {}) {
         super(options);
-        const scenes = VNSceneStore.scenes;
+        const scenes = VNSceneStore.sceneSummaries;
         const firstScene = scenes[0] ? scenes[0] : null;
         this.selectedSceneId = options.sceneId !== undefined ? options.sceneId : (firstScene ? firstScene.id : null);
         const selectedScene = VNSceneStore.getScene(this.selectedSceneId);
@@ -48,12 +48,18 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._actionQueue = Promise.resolve();
         this._renderQueue = Promise.resolve();
         this._lastValidationSnapshot = null;
+        this._selectedSceneCache = null;
+        this._lastPreparedScene = null;
+        this._lastPreparedSceneRevision = -1;
         this._lastFrameTargetSceneId = null;
         this._lastFrameTargetEntries = null;
+        this._lastCommitChanged = false;
         this.scenesCollapsed = options.scenesCollapsed === true;
         this.secondaryBranchId = options.secondaryBranchId || null;
         this._activeFrameTargetInput = null;
         this._frameLinkResizeObserver = null;
+        this._frameLinkDrawRaf = null;
+        this._frameLinkDrawRoot = null;
     }
 
     _enqueueEditorAction(operation) {
@@ -70,7 +76,12 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     get selectedScene() {
-        return VNSceneStore.getScene(this.selectedSceneId);
+        const revision = VNSceneStore.revision;
+        const cached = this._selectedSceneCache;
+        if (cached && cached.sceneId === this.selectedSceneId && cached.revision === revision) return cached.scene;
+        const scene = VNSceneStore.getScene(this.selectedSceneId);
+        this._selectedSceneCache = { sceneId: this.selectedSceneId || null, revision, scene };
+        return scene;
     }
 
     get selectedFrame() {
@@ -83,8 +94,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     async _prepareContext(options) {
         const context = await super._prepareContext(options);
         const state = this._prepareEditorState();
-        const issues = state.selectedScene ? this._issuesForState(state) : [];
-        this._lastValidationSnapshot = { sceneId: state.selectedScene?.id || null, issues };
+        if (state.selectedScene) this._issuesForState(state);
+        this._lastPreparedScene = state.selectedScene;
+        this._lastPreparedSceneRevision = VNSceneStore.revision;
         Object.defineProperty(context, EDITOR_CONTEXT_STATE, { value: state, configurable: true });
         return Object.assign(context, {
             selectedScene: state.selectedScene,
@@ -104,9 +116,10 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     _prepareEditorState() {
-        const scenes = VNSceneStore.scenes;
-        let selectedScene = scenes.find(scene => scene.id === this.selectedSceneId) || scenes[0] || null;
-        if (selectedScene && selectedScene.id !== this.selectedSceneId) this.selectedSceneId = selectedScene.id;
+        const scenes = VNSceneStore.sceneSummaries;
+        const selectedSummary = scenes.find(scene => scene.id === this.selectedSceneId) || scenes[0] || null;
+        if (selectedSummary && selectedSummary.id !== this.selectedSceneId) this.selectedSceneId = selectedSummary.id;
+        const selectedScene = selectedSummary ? this.selectedScene : null;
         let selectedFrame = selectedScene && Array.isArray(selectedScene.frames)
             ? selectedScene.frames.find(frame => frame.id === this.selectedFrameId) || selectedScene.frames[0] || null
             : null;
@@ -142,7 +155,20 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     _issuesForState(state) {
-        if (!state.issues) state.issues = validateScene(state.selectedScene);
+        if (state.issues) return state.issues;
+        const scene = state.selectedScene;
+        if (!scene) {
+            state.issues = [];
+            return state.issues;
+        }
+        const revision = VNSceneStore.revision;
+        const cached = this._lastValidationSnapshot;
+        if (cached?.sceneId === scene.id && cached.revision === revision) {
+            state.issues = cached.issues;
+            return state.issues;
+        }
+        state.issues = validateScene(scene);
+        this._lastValidationSnapshot = { sceneId: scene.id, revision, issues: state.issues };
         return state.issues;
     }
 
@@ -182,7 +208,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     id: item.id,
                     title: item.title,
                     selected: item.id === this.selectedSceneId,
-                    frameCount: Array.isArray(item.frames) ? item.frames.length : 0
+                    frameCount: Number(item.frameCount || 0)
                 }))
             };
         }
@@ -763,7 +789,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
-    _trackCommittedFormChanges(before, after, frameId) {
+    _trackCommittedFormChanges(before, after, frameId, sceneChanged = false) {
         if (!before || !after) return;
         const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
         if (before.title !== after.title) this._markRenderParts(["scenes", "sceneHead"]);
@@ -772,7 +798,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const beforeFrame = (before.frames || []).find(frame => frame.id === frameId) || null;
         const afterFrame = (after.frames || []).find(frame => frame.id === frameId) || null;
         if (!same(beforeFrame, afterFrame)) this._markRenderParts(["resources", "frames", "sceneHead", "framePanel"]);
-        if (this._sceneChanged(after) && !(this._pendingRenderParts && this._pendingRenderParts.size)) {
+        if (sceneChanged && !(this._pendingRenderParts && this._pendingRenderParts.size)) {
             this._markRenderParts(EDITOR_WORKSPACE_PART_IDS);
         }
     }
@@ -866,7 +892,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             falseFrameId: this._readValue("frame.nextRouting.falseFrameId", current.falseFrameId || "")
         };
         const clean = sanitizeScene(scene);
-        const saved = await VNSceneStore.upsertScene(clean);
+        const saved = await VNSceneStore.upsertScene(clean, { sanitized: true, knownChanged: true });
         this.selectedSceneId = saved.id;
         return saved;
     }
@@ -1191,8 +1217,12 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
     _buildHeaderValidationControl() {
         const scene = this.selectedScene;
         if (!scene) return null;
+        const revision = VNSceneStore.revision;
         const cached = this._lastValidationSnapshot;
-        const issues = cached?.sceneId === scene.id ? cached.issues : validateScene(scene);
+        const issues = cached?.sceneId === scene.id && cached.revision === revision ? cached.issues : validateScene(scene);
+        if (cached?.sceneId !== scene.id || cached.revision !== revision) {
+            this._lastValidationSnapshot = { sceneId: scene.id, revision, issues };
+        }
         const errors = issues.filter(issue => issue.severity === "error");
         const warnings = issues.filter(issue => issue.severity === "warning");
         const control = document.createElement("button");
@@ -1271,10 +1301,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _enableFrameTargetControls(root = this.element) {
         if (!root) return;
-        const scene = this.selectedScene;
-        const entries = this._lastFrameTargetSceneId === scene?.id && Array.isArray(this._lastFrameTargetEntries)
-            ? this._lastFrameTargetEntries
-            : this._frameTargetEntries(scene);
+        const hasCachedEntries = this._lastFrameTargetSceneId === this.selectedSceneId && Array.isArray(this._lastFrameTargetEntries);
+        const scene = hasCachedEntries
+            ? null
+            : (this._lastPreparedScene?.id === this.selectedSceneId ? this._lastPreparedScene : this.selectedScene);
+        const entries = hasCachedEntries ? this._lastFrameTargetEntries : this._frameTargetEntries(scene);
         const byId = new Map(entries.map(entry => [entry.id, entry.label]));
         const labelCounts = new Map();
         for (const entry of entries) labelCounts.set(entry.label, (labelCounts.get(entry.label) || 0) + 1);
@@ -1342,10 +1373,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!input || !frameId) return false;
         const hidden = this._resolveFrameTargetHidden(input);
         if (!hidden) return false;
-        const scene = this.selectedScene;
-        const entries = this._lastFrameTargetSceneId === scene?.id && Array.isArray(this._lastFrameTargetEntries)
-            ? this._lastFrameTargetEntries
-            : this._frameTargetEntries(scene);
+        const hasCachedEntries = this._lastFrameTargetSceneId === this.selectedSceneId && Array.isArray(this._lastFrameTargetEntries);
+        const scene = hasCachedEntries
+            ? null
+            : (this._lastPreparedScene?.id === this.selectedSceneId ? this._lastPreparedScene : this.selectedScene);
+        const entries = hasCachedEntries ? this._lastFrameTargetEntries : this._frameTargetEntries(scene);
         const entry = entries.find(item => item.id === frameId);
         if (!entry) return false;
         hidden.value = frameId;
@@ -1440,20 +1472,38 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._frameLinkResizeObserver = null;
         const list = root?.querySelector?.("[data-frame-list]");
         if (!list) return;
-        const draw = () => this._drawFrameListLinks(root);
+        const requestDraw = () => {
+            this._frameLinkDrawRoot = root;
+            if (this._frameLinkDrawRaf !== null) return;
+            const raf = globalThis.requestAnimationFrame;
+            if (typeof raf !== "function") {
+                const drawRoot = this._frameLinkDrawRoot;
+                this._frameLinkDrawRoot = null;
+                this._drawFrameListLinks(drawRoot);
+                return;
+            }
+            this._frameLinkDrawRaf = raf(() => {
+                this._frameLinkDrawRaf = null;
+                const drawRoot = this._frameLinkDrawRoot;
+                this._frameLinkDrawRoot = null;
+                if (drawRoot?.isConnected === false) return;
+                this._drawFrameListLinks(drawRoot);
+            });
+        };
         if (typeof globalThis.ResizeObserver === "function") {
-            this._frameLinkResizeObserver = new globalThis.ResizeObserver(draw);
+            this._frameLinkResizeObserver = new globalThis.ResizeObserver(requestDraw);
             this._frameLinkResizeObserver.observe(list);
         }
-        const raf = globalThis.requestAnimationFrame;
-        if (typeof raf === "function") raf(draw);
-        else draw();
+        requestDraw();
     }
 
     _drawFrameListLinks(root) {
         const list = root?.querySelector?.("[data-frame-list]");
         const svg = root?.querySelector?.("[data-frame-link-svg]");
-        const scene = this.selectedScene;
+        const revision = VNSceneStore.revision;
+        const scene = this._lastPreparedScene?.id === this.selectedSceneId && this._lastPreparedSceneRevision === revision
+            ? this._lastPreparedScene
+            : this.selectedScene;
         const doc = globalThis.document;
         if (!list || !svg || !scene || !doc?.createElementNS) return;
         while (svg.firstChild) svg.removeChild(svg.firstChild);
@@ -1932,31 +1982,28 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
-    _sceneChanged(cleanScene) {
-        const current = this.selectedScene;
-        if (!current) return true;
-        return !this._sameData(sanitizeScene(current), cleanScene);
-    }
-
     async _commitFromForm({ persist = true } = {}) {
         const originalScene = this.selectedScene;
-        const scene = duplicateData(originalScene);
-        if (!scene || !this.element) return scene;
+        this._lastCommitChanged = false;
+        if (!originalScene || !this.element) return originalScene;
+
         const sceneTitle = this.element.querySelector("[name='scene.title']");
         const sceneMode = this.element.querySelector("[name='scene.defaultMode']");
         const sceneStart = this.element.querySelector("[name='scene.startFrame']");
-        if (sceneTitle) scene.title = sceneTitle.value || "Без названия";
-        if (sceneMode) scene.defaultMode = sceneMode.value || PLAYER_MODES.INDIVIDUAL;
-        if (sceneStart) scene.startFrame = sceneStart.value || scene.startFrame;
+        const nextTitle = sceneTitle ? (sceneTitle.value || "Без названия") : originalScene.title;
+        const nextMode = sceneMode ? (sceneMode.value || PLAYER_MODES.INDIVIDUAL) : originalScene.defaultMode;
+        const nextStartFrame = sceneStart ? (sceneStart.value || originalScene.startFrame) : originalScene.startFrame;
 
-        const frame = scene.frames.find(item => item.id === this.selectedFrameId);
-        if (frame) {
+        const originalFrame = (originalScene.frames || []).find(item => item.id === this.selectedFrameId) || null;
+        let cleanFrame = originalFrame;
+        if (originalFrame) {
+            const frame = duplicateData(originalFrame);
             const oldType = frame.type;
             frame.type = this._readValue("frame.type", frame.type);
             frame.title = this._readValue("frame.title", frame.title);
             frame.branchId = this._readValue("frame.branchId", frame.branchId || this.selectedBranchId || "");
             frame.folderId = this._readValue("frame.folderId", frame.folderId || "");
-            const folderForFrame = (scene.frameFolders || []).find(folder => folder.id === frame.folderId);
+            const folderForFrame = (originalScene.frameFolders || []).find(folder => folder.id === frame.folderId);
             if (frame.folderId && (!folderForFrame || folderForFrame.branchId !== frame.branchId)) frame.folderId = "";
             const finalInput = this.element.querySelector("[name='frame.isFinal']");
             frame.isFinal = Boolean(finalInput && finalInput.checked);
@@ -2017,11 +2064,33 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     effectValue: this._readRowValue(row, "[data-choice-effect-value]", "0")
                 }));
             }
+            cleanFrame = sanitizeFrame(frame);
         }
+
+        const frameChanged = Boolean(originalFrame && cleanFrame && !this._sameData(originalFrame, cleanFrame));
+        const metadataChanged = nextTitle !== originalScene.title
+            || nextMode !== originalScene.defaultMode
+            || nextStartFrame !== originalScene.startFrame;
+        if (!frameChanged && !metadataChanged) {
+            const currentFrame = (originalScene.frames || []).find(item => item.id === this.selectedFrameId) || null;
+            if (currentFrame?.branchId) this._activateBranchForSelection(currentFrame.branchId);
+            return persist ? originalScene : duplicateData(originalScene);
+        }
+
+        const scene = duplicateData(originalScene);
+        scene.title = nextTitle;
+        scene.defaultMode = nextMode;
+        scene.startFrame = nextStartFrame;
+        if (originalFrame && cleanFrame) {
+            const frameIndex = scene.frames.findIndex(item => item.id === originalFrame.id);
+            if (frameIndex >= 0) scene.frames[frameIndex] = cleanFrame;
+        }
+
         const clean = sanitizeScene(scene);
-        this._trackCommittedFormChanges(originalScene, clean, this.selectedFrameId);
-        const changed = this._sceneChanged(clean);
-        const saved = persist && changed ? await VNSceneStore.upsertScene(clean) : clean;
+        const changed = !this._sameData(originalScene, clean);
+        this._lastCommitChanged = changed;
+        this._trackCommittedFormChanges(originalScene, clean, this.selectedFrameId, changed);
+        const saved = persist && changed ? await VNSceneStore.upsertScene(clean, { sanitized: true, knownChanged: true }) : clean;
         this.selectedSceneId = saved.id;
         const currentFrame = saved.frames.find(item => item.id === this.selectedFrameId);
         if (!currentFrame) this.selectedFrameId = saved.frames[0] ? saved.frames[0].id : null;
@@ -2178,7 +2247,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!scene) return;
         if (!await confirmDialog(`Удалить катсцену «${scene.title}»?`, { title: "Удаление катсцены", yes: "Удалить", no: "Отмена" })) return;
         await VNSceneStore.deleteScene(scene.id);
-        const next = VNSceneStore.scenes[0] || null;
+        const next = VNSceneStore.sceneSummaries[0] || null;
         this.selectedSceneId = next ? next.id : null;
         this.selectedFrameId = next ? next.startFrame : null;
         this.secondaryBranchId = null;
@@ -2213,7 +2282,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const imported = await readJsonFile(file);
             await VNSceneStore.importData(imported);
             const firstImported = Array.isArray(imported && imported.scenes) ? imported.scenes[0] : (Array.isArray(imported) ? imported[0] : imported);
-            this.selectedSceneId = firstImported && firstImported.id ? firstImported.id : (VNSceneStore.scenes[0] ? VNSceneStore.scenes[0].id : null);
+            const firstStored = VNSceneStore.sceneSummaries[0] || null;
+            this.selectedSceneId = firstImported && firstImported.id ? firstImported.id : (firstStored ? firstStored.id : null);
             const scene = VNSceneStore.getScene(this.selectedSceneId);
             this.selectedFrameId = scene ? scene.startFrame : null;
             this.secondaryBranchId = null;
@@ -2289,15 +2359,43 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._renderEditorParts(["resources", "scenes", "frames", "sceneHead", "framePanel"]);
     }
 
+    _syncFrameSelectionDom(frameId, folderId = "") {
+        const root = this.element?.querySelector?.(".fbl-vn-frames");
+        if (!root) return false;
+        let found = false;
+        for (const row of root.querySelectorAll("[data-frame-id]")) {
+            const selected = row.dataset.frameId === frameId;
+            row.classList.toggle("is-selected", selected);
+            if (selected) found = true;
+        }
+        if (!found) return false;
+        for (const row of root.querySelectorAll(".fbl-vn-folder-row[data-folder-id]")) {
+            row.classList.toggle("is-selected", Boolean(folderId) && row.dataset.folderId === folderId);
+        }
+        const tools = root.querySelector(".fbl-vn-frame-tools");
+        if (tools) {
+            for (const action of ["renameFolder", "deleteFolder"]) {
+                const button = tools.querySelector(`[data-action='${action}']`);
+                if (button) button.disabled = !folderId;
+            }
+        }
+        return true;
+    }
+
     static async _onSelectFrame(event, target) {
         event.preventDefault();
+        const previousBranchId = this.selectedBranchId || "";
         await this._commitFromForm();
+        const committedChange = this._lastCommitChanged === true;
         this.selectedFrameId = target.dataset.frameId;
         const scene = this.selectedScene;
         const frame = scene && Array.isArray(scene.frames) ? scene.frames.find(item => item.id === this.selectedFrameId) : null;
+        const branchChanged = Boolean(frame?.branchId && frame.branchId !== previousBranchId);
         if (frame?.branchId) this._activateBranchForSelection(frame.branchId);
         this.selectedFolderId = frame && frame.folderId ? frame.folderId : null;
-        this._renderEditorParts(["frames", "framePanel"]);
+        const fastSelection = !committedChange && !branchChanged
+            && this._syncFrameSelectionDom(this.selectedFrameId, this.selectedFolderId || "");
+        this._renderEditorParts(fastSelection ? ["framePanel"] : ["frames", "framePanel"]);
     }
 
     static async _onSelectFolder(event, target) {

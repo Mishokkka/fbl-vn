@@ -59,8 +59,11 @@ export function safeFilename(value, fallback = "download.json") {
     const raw = String(value || fallback || "download.json").trim() || fallback;
     return raw.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").slice(0, 160);
 }
+export function serializeJson(data, { pretty = false } = {}) {
+    return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+}
 export function downloadJson(filename, data) {
-    const text = JSON.stringify(data, null, 2);
+    const text = serializeJson(data);
     const cleanFilename = safeFilename(filename, "fbl-vn-cutscenes.json");
     if (typeof globalThis.saveDataToFile === "function") {
         globalThis.saveDataToFile(text, "application/json", cleanFilename);

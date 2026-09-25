@@ -216,10 +216,25 @@ export class VNSceneStore {
         this._sceneById = new Map(clean.scenes.map(scene => [scene.id, scene]));
         this._assetById = new Map(clean.assets.map(asset => [asset.id, asset]));
         this._characterById = new Map(clean.characters.map(character => [character.id, character]));
+        this._revision = Number(this._revision || 0) + 1;
+    }
+
+    static get revision() {
+        this._getSnapshot();
+        return Number(this._revision || 0);
     }
 
     static get data() {
         return duplicateData(this._getSnapshot());
+    }
+
+    static get sceneSummaries() {
+        return this._getSnapshot().scenes.map(scene => ({
+            id: scene.id,
+            title: scene.title,
+            startFrame: scene.startFrame || "",
+            frameCount: Array.isArray(scene.frames) ? scene.frames.length : 0
+        }));
     }
 
     static _sanitizeData(data) {
@@ -260,12 +275,9 @@ export class VNSceneStore {
         }
     }
 
-    static async _setDataImmediate(data) {
-        const clean = this._sanitizeData(data || DEFAULT_DATA);
+    static async _persistCleanData(clean) {
         clean.schemaVersion = DATA_SCHEMA_VERSION;
         clean.version = 3;
-        const current = this._getSnapshot();
-        if (this._sameData(clean, current)) return duplicateData(clean);
         if (!game.user?.isGM) throw new Error("VN data can only be modified by a GM.");
         if (game.ready && !this._storageDocument) await this.initializeStorage();
         const usingJournalStorage = Boolean(this._storageDocument?.setFlag);
@@ -279,6 +291,15 @@ export class VNSceneStore {
         this._setCache(clean);
         if (!usingJournalStorage) Hooks.callAll(`${MODULE_ID}.dataChanged`, duplicateData(clean));
         return duplicateData(clean);
+    }
+
+    static async _setDataImmediate(data) {
+        const clean = this._sanitizeData(data || DEFAULT_DATA);
+        clean.schemaVersion = DATA_SCHEMA_VERSION;
+        clean.version = 3;
+        const current = this._getSnapshot();
+        if (this._sameData(clean, current)) return duplicateData(clean);
+        return this._persistCleanData(clean);
     }
 
     static _enqueueMutation(operation) {
@@ -336,13 +357,18 @@ export class VNSceneStore {
         return asset ? duplicateData(asset) : null;
     }
 
-    static upsertScene(scene) {
-        const clean = sanitizeScene(scene);
-        return this.mutateData(data => {
+    static upsertScene(scene, { sanitized = false, knownChanged = false } = {}) {
+        const clean = sanitized ? duplicateData(scene) : sanitizeScene(scene);
+        return this._enqueueMutation(async () => {
+            const current = this._getSnapshot();
+            const existing = this._sceneById.get(clean.id) || null;
+            if (!knownChanged && existing && this._sameData(existing, clean)) return duplicateData(clean);
+            const data = duplicateData(current);
             const index = data.scenes.findIndex(item => item.id === clean.id);
             if (index >= 0) data.scenes[index] = clean;
             else data.scenes.push(clean);
-            return clean;
+            await this._persistCleanData(data);
+            return duplicateData(clean);
         });
     }
 
@@ -504,6 +530,7 @@ VNSceneStore._cache = null;
 VNSceneStore._sceneById = null;
 VNSceneStore._assetById = null;
 VNSceneStore._characterById = null;
+VNSceneStore._revision = 0;
 
 VNSceneStore._storageDocument = null;
 VNSceneStore._storageReady = false;
