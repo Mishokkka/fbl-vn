@@ -177,15 +177,21 @@ export class VNSocket {
         }
 
         await Promise.resolve(this.handlers.rejoin?.({ sceneId }, senderId));
+        const currentSession = this.activeSessions.get(sceneId);
+        if (currentSession !== session || currentSession.leaderId !== game.user?.id || !currentSession.targetIds.includes(senderId)) {
+            this.emit("close", { sceneId, leaderId: game.user?.id || null, targetIds: [senderId] });
+            return;
+        }
+
         const resumeState = this.handlers.getSyncState?.(sceneId) || null;
         this.emit("open", {
-            scene: session.scene,
+            scene: currentSession.scene,
             sceneId,
-            mode: session.mode,
-            leaderId: session.leaderId,
+            mode: currentSession.mode,
+            leaderId: currentSession.leaderId,
             targetIds: [senderId],
-            participantIds: [...session.participantIds],
-            resumeState: session.started ? resumeState : null
+            participantIds: [...currentSession.participantIds],
+            resumeState: currentSession.started ? resumeState : null
         });
     }
 
