@@ -2034,11 +2034,14 @@ assert.equal(voteRenders, 0, "Vote-state synchronization must patch the DOM with
 
 const savedSocketLeave = VNSocket.leave;
 const savedSocketRejoin = VNSocket.rejoin;
+const savedRenderRejoinControl = VNPlayerApp._renderRejoinControl;
 const savedVoteModeUser = game.user;
 game.user = playerUser;
 VNPlayerApp.rejoinOffers.clear();
 let localLeaveCall = null;
 let localRejoinCall = null;
+let rejoinControlRenders = 0;
+VNPlayerApp._renderRejoinControl = () => { rejoinControlRenders += 1; };
 VNSocket.leave = (sceneId, leaderId) => { localLeaveCall = { sceneId, leaderId }; return true; };
 VNSocket.rejoin = (sceneId, leaderId) => { localRejoinCall = { sceneId, leaderId }; return true; };
 const leavingPlayer = Object.create(VNPlayerApp.prototype);
@@ -2052,6 +2055,7 @@ leavingPlayer.close = async () => { localCloseCalls += 1; };
 await leavingPlayer.requestClose();
 assert.deepEqual(localLeaveCall, { sceneId: scene.id, leaderId: gm1.id }, "Closing vote mode locally must notify the GM leader that this player left");
 assert.equal(localCloseCalls, 1, "A vote participant must be able to close only their local cutscene");
+assert.ok(rejoinControlRenders >= 2, "Local close must render the return control again after the fullscreen player has actually closed");
 assert.equal(VNPlayerApp.rejoinOffers.get(scene.id)?.leaderId, gm1.id, "Local leave must create a return offer while the GM session may still be active");
 assert.equal(VNPlayerApp.requestRejoin(scene.id), true, "The persistent return control must be able to request rejoin");
 assert.deepEqual(localRejoinCall, { sceneId: scene.id, leaderId: gm1.id }, "Return request must target the original session leader");
@@ -2065,9 +2069,100 @@ assert.deepEqual(
   "A trusted GM rejoinOffer must rebuild the manual return state after the client reconnects"
 );
 VNPlayerApp.clearRejoinOffer("scene-restored-offer");
+VNPlayerApp._renderRejoinControl = savedRenderRejoinControl;
 VNSocket.leave = savedSocketLeave;
 VNSocket.rejoin = savedSocketRejoin;
 game.user = savedVoteModeUser;
+
+const activeRecallApp = { _disposed: false };
+VNPlayerApp.active.set("scene-recall-existing", activeRecallApp);
+VNPlayerApp.rejoinOffers.set("scene-recall-existing", { sceneId: "scene-recall-existing", sceneTitle: "Recall", leaderId: gm1.id });
+assert.strictEqual(
+  await VNPlayerApp.recallScene({ sceneId: "scene-recall-existing", scene: { id: "scene-recall-existing" } }),
+  activeRecallApp,
+  "GM recall must leave an already-open player app intact instead of restarting it"
+);
+assert.equal(VNPlayerApp.rejoinOffers.has("scene-recall-existing"), false, "GM recall must clear a stale return offer for a player who is already inside");
+VNPlayerApp.active.delete("scene-recall-existing");
+
+let synchronizedRecallRenders = 0;
+let synchronizedRecallResumes = 0;
+let synchronizedVoteState = null;
+const synchronizedRecallApp = {
+  _disposed: false,
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  networked: true,
+  participantIds: [playerUser.id],
+  loading: false,
+  started: true,
+  currentFrameId: "frame-root",
+  currentTextIndex: 0,
+  counterState: { counter: 1 },
+  visualState: { background: "old-bg.webp", portrait: "", portraitPosition: "left" },
+  async render() { synchronizedRecallRenders += 1; },
+  async preload() {},
+  async resume(state) {
+    synchronizedRecallResumes += 1;
+    this.currentFrameId = state.currentFrameId;
+    this.currentTextIndex = Number(state.currentTextIndex || 0);
+  },
+  _applyVoteState(state) { synchronizedVoteState = state; }
+};
+VNPlayerApp.active.set("scene-recall-sync", synchronizedRecallApp);
+await VNPlayerApp.recallScene({
+  sceneId: "scene-recall-sync",
+  scene: { id: "scene-recall-sync" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [playerUser.id],
+  participantIds: [playerUser.id, playerUser2.id],
+  resumeState: {
+    currentFrameId: "frame-root",
+    currentTextIndex: 0,
+    counterState: { counter: 2 },
+    visualState: { background: "new-bg.webp", portrait: "", portraitPosition: "left" },
+    voteState: { frameId: "frame-root", textIndex: 0, voters: [], choices: {}, total: 2, participantIds: [playerUser.id, playerUser2.id] }
+  }
+});
+assert.equal(synchronizedRecallResumes, 0, "Duplicate open recovery on the current step must not restart playback or replay frame audio");
+assert.equal(synchronizedRecallRenders, 1, "Duplicate open recovery must refresh changed non-playback state in place");
+assert.deepEqual(synchronizedRecallApp.counterState, { counter: 2 }, "In-place recovery must synchronize counter state");
+assert.equal(synchronizedRecallApp.visualState.background, "new-bg.webp", "In-place recovery must synchronize visual state");
+assert.deepEqual(synchronizedRecallApp.participantIds, [playerUser.id, playerUser2.id], "In-place recovery must synchronize the vote roster");
+assert.equal(synchronizedVoteState?.total, 2, "In-place recovery must apply the current vote state");
+await VNPlayerApp.recallScene({
+  sceneId: "scene-recall-sync",
+  scene: { id: "scene-recall-sync" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [playerUser.id],
+  participantIds: [playerUser.id, playerUser2.id],
+  resumeState: {
+    currentFrameId: "frame-nested",
+    currentTextIndex: 0,
+    counterState: { counter: 2 },
+    visualState: { background: "new-bg.webp", portrait: "", portraitPosition: "left" },
+    voteState: null
+  }
+});
+assert.equal(synchronizedRecallResumes, 1, "Reconnect recovery on a different step must resume to the GM's current synchronized frame");
+VNPlayerApp.active.delete("scene-recall-sync");
+
+const savedOpenSceneForRecall = VNPlayerApp.openScene;
+let recalledOpenPayload = null;
+VNPlayerApp.openScene = async payload => {
+  recalledOpenPayload = payload;
+  return { recalled: true };
+};
+const recalledOpenResult = await VNPlayerApp.recallScene({
+  sceneId: "scene-recall-closed",
+  scene: { id: "scene-recall-closed", title: "Recall closed" },
+  leaderId: gm1.id
+});
+assert.deepEqual(recalledOpenResult, { recalled: true }, "GM recall must reopen a player who is no longer inside the cutscene");
+assert.equal(recalledOpenPayload?.sceneId, "scene-recall-closed", "GM recall must forward the synchronized payload to the normal open path");
+VNPlayerApp.openScene = savedOpenSceneForRecall;
 
 const reconnectVotePlayer = Object.create(VNPlayerApp.prototype);
 reconnectVotePlayer.mode = PLAYER_MODES.VOTE;

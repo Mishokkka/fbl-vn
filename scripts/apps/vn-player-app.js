@@ -3,7 +3,7 @@ import { VNPreloadController, VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
 import { AUDIO_ACTIONS, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
-import { notifyWarn } from "../utils/foundry-helpers.js";
+import { notify, notifyWarn } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } from "../utils/rich-text.js";
 
 const ApplicationV2 = foundry.applications.api.ApplicationV2;
@@ -227,6 +227,57 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await app.preload({ frameId });
         await app.startFramePreview(frameId, { branchId: options.branchId || "" });
         return app;
+    }
+
+    static async recallScene(payload) {
+        const sceneId = payload?.sceneId || payload?.scene?.id || "";
+        if (!sceneId) return null;
+        const existing = VNPlayerApp.active.get(sceneId);
+        if (!existing || existing._disposed === true) return VNPlayerApp.openScene(payload);
+
+        VNPlayerApp.clearRejoinOffer(sceneId);
+        if (payload?.mode !== undefined) existing.mode = payload.mode;
+        if (payload?.leaderId !== undefined) existing.leaderId = payload.leaderId;
+        if (payload?.networked === true || Array.isArray(payload?.targetIds)) existing.networked = true;
+
+        const nextParticipants = Array.isArray(payload?.participantIds) ? uniqueIds(payload.participantIds) : existing.participantIds;
+        const participantsChanged = JSON.stringify(nextParticipants) !== JSON.stringify(existing.participantIds);
+        if (participantsChanged) existing.participantIds = nextParticipants;
+
+        const state = payload?.resumeState;
+        if (!state) {
+            if (participantsChanged && existing.started) await existing.render();
+            return existing;
+        }
+
+        if (existing.loading) await existing.preload();
+        if (existing._disposed) return existing;
+
+        const requestedFrameId = state.currentFrameId || "";
+        const requestedTextIndex = Number(state.currentTextIndex || 0);
+        const needsPlaybackResume = !existing.started
+            || existing.currentFrameId !== requestedFrameId
+            || Number(existing.currentTextIndex || 0) !== requestedTextIndex;
+
+        if (needsPlaybackResume) {
+            await existing.resume(state);
+            return existing;
+        }
+
+        const nextCounterState = state.counterState && typeof state.counterState === "object"
+            ? Object.assign({}, state.counterState)
+            : existing.counterState;
+        const nextVisualState = state.visualState && typeof state.visualState === "object"
+            ? Object.assign(createVisualState(), state.visualState)
+            : existing.visualState;
+        const stateChanged = JSON.stringify(nextCounterState) !== JSON.stringify(existing.counterState)
+            || JSON.stringify(nextVisualState) !== JSON.stringify(existing.visualState);
+
+        existing.counterState = nextCounterState;
+        existing.visualState = nextVisualState;
+        if (existing.mode === PLAYER_MODES.VOTE && state.voteState) existing._applyVoteState(state.voteState);
+        if (stateChanged || participantsChanged) await existing.render();
+        return existing;
     }
 
     static startScene(sceneId) {
@@ -732,7 +783,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this.mode === PLAYER_MODES.VOTE && this.networked && !this._isLeader()) {
             VNPlayerApp.offerRejoin(this.scene, this.leaderId);
             VNSocket.leave(this.scene.id, this.leaderId);
-            return this.close({ force: true });
+            const result = await this.close({ force: true });
+            VNPlayerApp._renderRejoinControl();
+            return result;
         }
         return this.finish();
     }
@@ -747,6 +800,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const isVoteOverride = isVoteMode && this._isGmVoteOverride();
         const isParticipant = !isVoteMode || activeParticipants.includes(game.user.id) || isVoteOverride;
         const canAdvance = this.started && isParticipant && (this.mode !== PLAYER_MODES.GM || this._isLeader());
+        const canRecallPlayers = Boolean(this.networked && this._isLeader() && game.user?.isGM
+            && (this.mode === PLAYER_MODES.GM || this.mode === PLAYER_MODES.VOTE));
         const portraitPosition = ["left", "center", "right"].includes(this.visualState.portraitPosition) ? this.visualState.portraitPosition : "left";
         const transition = frame && ["none", "fade", "dark"].includes(frame.transition) ? frame.transition : "none";
         const isChoice = Boolean(frame && frame.type === "choice");
@@ -818,6 +873,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             isVoteMode,
             isVoteOverride,
             isLeader: this._isLeader(),
+            canRecallPlayers,
             canClose: this._canCloseLocally(),
             portraitClass: `portrait-${portraitPosition}`,
             portraitSrc: this.visualState.portrait,
@@ -1629,6 +1685,13 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         void this.requestClose();
     }
 
+    static async _onRecallPlayers(event, target) {
+        event.preventDefault();
+        const count = await VNSocket.recallPlayers(this.scene?.id || "");
+        if (count > 0) notify(`VN: команда возврата отправлена игрокам: ${count}.`);
+        else notifyWarn("VN: нет подключённых игроков, которых можно вернуть в эту катсцену.");
+    }
+
     static _onToggleVolumePanel(event, target) {
         event.preventDefault();
         this._volumePanelOpen = !this._volumePanelOpen;
@@ -1669,6 +1732,7 @@ VNPlayerApp.DEFAULT_OPTIONS = {
         next: VNPlayerApp._onNext,
         choose: VNPlayerApp._onChoose,
         closeCutscene: VNPlayerApp._onCloseCutscene,
+        recallPlayers: VNPlayerApp._onRecallPlayers,
         toggleVolumePanel: VNPlayerApp._onToggleVolumePanel,
         hideContent: VNPlayerApp._onHideContent,
         showContent: VNPlayerApp._onShowContent
