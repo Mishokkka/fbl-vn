@@ -36,6 +36,15 @@
           "sort": 0,
           "collapsed": false,
           "color": "#b68a4a"
+        },
+        {
+          "id": "folder-dialogue",
+          "name": "Диалог",
+          "branchId": "branch-main",
+          "parentId": "folder-main",
+          "sort": 1000,
+          "collapsed": false,
+          "color": "#8f6b3f"
         }
       ],
       "graphPositions": {
@@ -115,7 +124,7 @@
           "type": "dialogue",
           "title": "Реплика персонажа",
           "branchId": "branch-main",
-          "folderId": "folder-main",
+          "folderId": "folder-dialogue",
           "sort": 1000,
           "isFinal": false,
           "background": "",
@@ -223,7 +232,7 @@
                 "id": "condition-routing-trust",
                 "counterId": "counter-trust",
                 "operator": "gte",
-                "value": 2
+                "value": 1
               }
             ],
             "trueFrameId": "frame-alt",
@@ -250,7 +259,7 @@
                   "id": "condition-choice-trust",
                   "counterId": "counter-trust",
                   "operator": "gte",
-                  "value": 2
+                  "value": 1
                 },
                 {
                   "id": "condition-choice-low-trust",
