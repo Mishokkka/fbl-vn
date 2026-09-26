@@ -52,7 +52,7 @@ function registerSocketOnce() {
         throw new Error("Foundry module socket is unavailable during VN initialization.");
     }
     VNSocket.registerHandlers({
-        open: payload => VNPlayerApp.openScene(payload),
+        open: payload => VNPlayerApp.recallScene(payload),
         start: payload => VNPlayerApp.startScene(payload.sceneId),
         advance: payload => VNPlayerApp.advanceScene(payload.sceneId, payload.frameId, payload.textIndex, {
             choiceId: payload.choiceId || "",
