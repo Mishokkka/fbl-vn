@@ -190,7 +190,8 @@
 
 .fbl-vn-next,
 .fbl-vn-player-choice-list button,
-.fbl-vn-close {
+.fbl-vn-close,
+.fbl-vn-recall {
   border: 1px solid rgba(201, 167, 111, 0.45);
   border-radius: 8px;
   background: rgba(27, 22, 15, 0.92);
@@ -250,7 +251,8 @@
 
 .fbl-vn-next:hover,
 .fbl-vn-player-choice-list button:hover,
-.fbl-vn-close:hover {
+.fbl-vn-close:hover,
+.fbl-vn-recall:hover {
   background: rgba(61, 45, 23, 0.98);
 }
 
@@ -263,6 +265,20 @@
   display: grid;
   place-items: center;
   font-size: 18px;
+}
+
+.fbl-vn-recall {
+  position: absolute;
+  top: 18px;
+  right: 112px;
+  z-index: 4;
+  min-height: 38px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 @keyframes fbl-vn-fade {
@@ -641,7 +657,7 @@
   position: fixed;
   left: 50%;
   bottom: 92px;
-  z-index: 110;
+  z-index: 100100;
   min-width: 220px;
   max-width: min(560px, calc(100vw - 32px));
   padding: 10px 16px;
