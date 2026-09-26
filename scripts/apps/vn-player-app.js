@@ -233,11 +233,51 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const sceneId = payload?.sceneId || payload?.scene?.id || "";
         if (!sceneId) return null;
         const existing = VNPlayerApp.active.get(sceneId);
-        if (existing && existing._disposed !== true) {
-            VNPlayerApp.clearRejoinOffer(sceneId);
+        if (!existing || existing._disposed === true) return VNPlayerApp.openScene(payload);
+
+        VNPlayerApp.clearRejoinOffer(sceneId);
+        if (payload?.mode !== undefined) existing.mode = payload.mode;
+        if (payload?.leaderId !== undefined) existing.leaderId = payload.leaderId;
+        if (payload?.networked === true || Array.isArray(payload?.targetIds)) existing.networked = true;
+
+        const nextParticipants = Array.isArray(payload?.participantIds) ? uniqueIds(payload.participantIds) : existing.participantIds;
+        const participantsChanged = JSON.stringify(nextParticipants) !== JSON.stringify(existing.participantIds);
+        if (participantsChanged) existing.participantIds = nextParticipants;
+
+        const state = payload?.resumeState;
+        if (!state) {
+            if (participantsChanged && existing.started) await existing.render();
             return existing;
         }
-        return VNPlayerApp.openScene(payload);
+
+        if (existing.loading) await existing.preload();
+        if (existing._disposed) return existing;
+
+        const requestedFrameId = state.currentFrameId || "";
+        const requestedTextIndex = Number(state.currentTextIndex || 0);
+        const needsPlaybackResume = !existing.started
+            || existing.currentFrameId !== requestedFrameId
+            || Number(existing.currentTextIndex || 0) !== requestedTextIndex;
+
+        if (needsPlaybackResume) {
+            await existing.resume(state);
+            return existing;
+        }
+
+        const nextCounterState = state.counterState && typeof state.counterState === "object"
+            ? Object.assign({}, state.counterState)
+            : existing.counterState;
+        const nextVisualState = state.visualState && typeof state.visualState === "object"
+            ? Object.assign(createVisualState(), state.visualState)
+            : existing.visualState;
+        const stateChanged = JSON.stringify(nextCounterState) !== JSON.stringify(existing.counterState)
+            || JSON.stringify(nextVisualState) !== JSON.stringify(existing.visualState);
+
+        existing.counterState = nextCounterState;
+        existing.visualState = nextVisualState;
+        if (existing.mode === PLAYER_MODES.VOTE && state.voteState) existing._applyVoteState(state.voteState);
+        if (stateChanged || participantsChanged) await existing.render();
+        return existing;
     }
 
     static startScene(sceneId) {
