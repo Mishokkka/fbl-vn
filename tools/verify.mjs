@@ -81,6 +81,17 @@ if (exists(exportExamplePath)) {
     if (!choiceFrame || !Array.isArray(choiceFrame.choices) || !choiceFrame.choices.length || !Array.isArray(choiceFrame.nextRouting?.conditions)) {
       errors.push("Export example must document choices and compound next-routing conditions");
     }
+    const nestedFolder = exampleScene?.frameFolders?.find(folder => folder?.parentId);
+    if (!nestedFolder) errors.push("Export example must include at least one nested frame folder");
+    const trustCounter = exampleScene?.counters?.find(counter => counter?.id === "counter-trust");
+    const dialogueFrame = exampleFrames.find(frame => frame?.id === "frame-dialogue");
+    const trustBeforeChoice = Number(trustCounter?.initial || 0)
+      + (dialogueFrame?.effectCounterId === "counter-trust" && dialogueFrame?.effectOperation === "add" ? Number(dialogueFrame.effectValue || 0) : 0);
+    const routingTrust = choiceFrame?.nextRouting?.conditions?.find(condition => condition?.counterId === "counter-trust" && condition?.operator === "gte");
+    const secretChoice = choiceFrame?.choices?.find(choice => choice?.id === "choice-secret");
+    const secretTrust = secretChoice?.conditions?.find(condition => condition?.counterId === "counter-trust" && condition?.operator === "gte");
+    if (!routingTrust || trustBeforeChoice < Number(routingTrust.value || 0)) errors.push("Export example conditional routing must be reachable from its documented counter progression");
+    if (!secretTrust || trustBeforeChoice < Number(secretTrust.value || 0)) errors.push("Export example conditional choice must be reachable from its documented counter progression");
   }
   catch (error) {
     errors.push(`Export structure example is not valid JSON: ${error.message}`);
@@ -173,10 +184,14 @@ if (!mainSource.includes("rejoin: (payload, senderId) => VNPlayerApp.handleParti
 if (!playerSource.includes("VNPlayerApp.offerRejoin(this.scene, this.leaderId)") || !playerSource.includes("static requestRejoin(sceneId)") || !playerSource.includes("VNPlayerApp.rejoinOffers = new Map()") || !playerSource.includes("_onParticipantRejoin(userId)")) errors.push("Vote players must receive a persistent manual return control and the leader must restore their roster membership");
 if (!socketSource.includes('case "rejoinOffer":') || !socketSource.includes('type === "open" || type === "rejoinOffer"') || !socketSource.includes('this.emit("rejoinOffer"') || !mainSource.includes("rejoinOffer: payload => VNPlayerApp.handleRejoinOffer(payload)") || !playerSource.includes("static handleRejoinOffer(payload)")) errors.push("Explicit leavers who reconnect must recover a trusted manual-return offer without auto-opening the cutscene");
 if (!socketSource.includes('return this.emit("sessionStatusRequest", {})') || !socketSource.includes('case "sessionStatusRequest":') || !socketSource.includes("_handleSessionStatusRequest(senderId)") || !socketSource.includes("_sendSessionStatusToUser(sceneId, session, user.id)")) errors.push("Reloaded players must query the GM for active session status after socket registration so return offers cannot be lost");
+if (!socketSource.includes("static _scheduleSessionStatusRecovery()") || !socketSource.includes("for (const delay of [0, 750, 2500])") || !socketSource.includes("_clearSessionStatusRecovery()")) errors.push("Session-status recovery must retry briefly after startup and cancel once a trusted GM response arrives");
+if (!socketSource.includes("static _isUserConnected(userId)") || !socketSource.includes("this._connectionState.set(user.id, connected === true)") || !socketSource.includes("this._connectionState.set(senderId, true)")) errors.push("GM recall must prefer observed socket connectivity over a potentially stale Foundry user.active flag");
 if (!playerSource.includes("const result = await this.close({ force: true })") || !playerSource.includes("VNPlayerApp._renderRejoinControl();")) errors.push("Voluntary vote-mode leave must render the return control again after the fullscreen player closes");
 if (!/\.fbl-vn-rejoin\s*\{[\s\S]*?z-index:\s*100100;/.test(playerCssSource)) errors.push("The persistent return-to-cutscene control must render above Foundry fullscreen and UI layers");
 if (!playerTemplateSource.includes('data-action="recallPlayers"') || !playerTemplateSource.includes("Вернуть игроков") || !playerSource.includes("static async _onRecallPlayers") || !playerSource.includes("static async recallScene(payload)") || !socketSource.includes("static async recallPlayers(sceneId)") || !socketSource.includes('this.emit("recall"') || !mainSource.includes("recall: payload => VNPlayerApp.recallScene(payload)")) errors.push("GM synchronized playback must expose a trusted non-disruptive recall path for eligible connected players");
-if (!playerSource.includes("if (existing && existing._disposed !== true)") || !playerSource.includes("return existing;")) errors.push("GM recall must not restart players who are already inside the cutscene");
+if (!mainSource.includes("open: payload => VNPlayerApp.recallScene(payload)")) errors.push("Duplicate open recovery must route through recallScene so repeated status delivery is idempotent");
+if (!playerSource.includes("if (!existing || existing._disposed === true) return VNPlayerApp.openScene(payload)") || !playerSource.includes("const needsPlaybackResume =") || !playerSource.includes("if (stateChanged || participantsChanged) await existing.render()")) errors.push("Existing cutscene players must be reused and synchronized in place without replaying the current frame unnecessarily");
+if (!socketSource.includes("const currentSession = this.activeSessions.get(sceneId)") || !socketSource.includes("if (currentSession !== session || currentSession.leaderId !== game.user.id) return 0")) errors.push("GM recall must revalidate the active session after awaited roster restoration");
 if (!socketSource.includes('this.emit("close", { sceneId, leaderId, targetIds })') || !socketSource.includes("const targetIds = this._eligibleTargetIdsForScene(sceneId)")) errors.push("GM close must reach locally departed eligible players so their return controls are removed");
 if (!playerSource.includes("voteState: app.mode === PLAYER_MODES.VOTE ? app._buildVoteStateFromLeaderVotes() : null") || !playerSource.includes("if (this.mode === PLAYER_MODES.VOTE && state.voteState) this._applyVoteState(state.voteState)")) errors.push("Vote reconnect must restore current quorum and remaining players' votes without restoring the disconnected player's stale vote");
 if (!playerTemplateSource.includes("Продолжить (ГМ)") || !playerSource.includes('isVoteOverride ? "Продолжить (ГМ)"')) errors.push("Vote UI must identify the GM priority Continue control");
