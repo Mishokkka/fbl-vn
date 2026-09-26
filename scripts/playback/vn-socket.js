@@ -13,6 +13,11 @@ export class VNSocket {
         if (!this._userConnectedHookId) {
             this._userConnectedHookId = Hooks.on("userConnected", (user, connected) => this._onUserConnected(user, connected));
         }
+        if (!game.user?.isGM) {
+            const schedule = globalThis.setTimeout;
+            if (typeof schedule === "function") schedule(() => this.requestSessionStatus(), 0);
+            else this.requestSessionStatus();
+        }
     }
 
     static emit(type, data = {}) {
@@ -43,12 +48,13 @@ export class VNSocket {
             case "advance":
             case "close":
             case "voteState":
-            case "rejoinOffer": {
+            case "rejoinOffer":
+            case "recall": {
                 if (!this._isTrustedGmCommand(type, data, senderId)) {
                     console.warn(`${MODULE_ID} | Ignored untrusted socket command: ${type}`, payload);
                     return;
                 }
-                if ((type === "open" || type === "rejoinOffer") && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
+                if ((type === "open" || type === "rejoinOffer" || type === "recall") && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
                 this._dispatchTrustedCommand(type, data, senderId);
                 if (type === "close" && data.sceneId) this.activeLeaders.delete(data.sceneId);
                 break;
@@ -71,6 +77,10 @@ export class VNSocket {
                 if (!game.user?.isGM) return;
                 void this._handleRejoinRequest(data, senderId);
                 break;
+            case "sessionStatusRequest":
+                if (!game.user?.isGM) return;
+                this._handleSessionStatusRequest(senderId);
+                break;
             default:
                 console.warn(`${MODULE_ID} | Unknown socket payload`, payload);
         }
@@ -90,7 +100,7 @@ export class VNSocket {
         const sceneId = data?.sceneId || data?.scene?.id || "";
         if (!sceneId) return false;
         const currentLeaderId = this.activeLeaders.get(sceneId);
-        if (type === "open" || type === "rejoinOffer") {
+        if (type === "open" || type === "rejoinOffer" || type === "recall") {
             if (!currentLeaderId || currentLeaderId === senderId) return true;
             const currentLeader = game.users?.get?.(currentLeaderId);
             return currentLeader?.active !== true;
@@ -178,6 +188,42 @@ export class VNSocket {
             participantIds: [...session.participantIds],
             resumeState: session.started ? resumeState : null
         });
+    }
+
+    static _sendSessionStatusToUser(sceneId, session, userId) {
+        if (!sceneId || !session || !userId || session.leaderId !== game.user?.id) return false;
+        const eligibleTargetIds = Array.isArray(session.eligibleTargetIds) ? session.eligibleTargetIds : session.targetIds;
+        if (!eligibleTargetIds.includes(userId)) return false;
+
+        if (!session.targetIds.includes(userId)) {
+            this.emit("rejoinOffer", {
+                sceneId,
+                sceneTitle: String(session.scene?.title || ""),
+                leaderId: session.leaderId,
+                targetIds: [userId]
+            });
+            return true;
+        }
+
+        const resumeState = this.handlers.getSyncState?.(sceneId) || null;
+        this.emit("open", {
+            scene: session.scene,
+            sceneId,
+            mode: session.mode,
+            leaderId: session.leaderId,
+            targetIds: [userId],
+            participantIds: [...session.participantIds],
+            resumeState: session.started ? resumeState : null
+        });
+        return true;
+    }
+
+    static _handleSessionStatusRequest(senderId) {
+        const user = game.users?.get?.(senderId);
+        if (!game.user?.isGM || !user || user.isGM) return;
+        for (const [sceneId, session] of this.activeSessions.entries()) {
+            this._sendSessionStatusToUser(sceneId, session, senderId);
+        }
     }
 
     static _withSceneTargets(sceneId, data = {}) {
@@ -338,6 +384,46 @@ export class VNSocket {
         return this.emit("rejoin", data);
     }
 
+    static requestSessionStatus() {
+        if (game.user?.isGM) return false;
+        return this.emit("sessionStatusRequest", {});
+    }
+
+    static async recallPlayers(sceneId) {
+        if (!game.user?.isGM || !sceneId) return 0;
+        const session = this.activeSessions.get(sceneId);
+        if (!session || session.leaderId !== game.user.id) return 0;
+
+        const eligibleTargetIds = Array.isArray(session.eligibleTargetIds) ? session.eligibleTargetIds : session.targetIds;
+        const connectedTargetIds = eligibleTargetIds.filter(userId => {
+            const user = game.users?.get?.(userId);
+            return Boolean(user?.active && !user.isGM);
+        });
+
+        const restoredIds = [];
+        if (session.mode === PLAYER_MODES.VOTE) {
+            for (const userId of connectedTargetIds) {
+                if (session.targetIds.includes(userId)) continue;
+                if (this._restoreSessionParticipant(sceneId, userId)) restoredIds.push(userId);
+            }
+            for (const userId of restoredIds) {
+                await Promise.resolve(this.handlers.rejoin?.({ sceneId }, userId));
+            }
+        }
+
+        const resumeState = this.handlers.getSyncState?.(sceneId) || null;
+        this.emit("recall", {
+            scene: session.scene,
+            sceneId,
+            mode: session.mode,
+            leaderId: session.leaderId,
+            targetIds: connectedTargetIds,
+            participantIds: [...session.participantIds],
+            resumeState: session.started ? resumeState : null
+        });
+        return connectedTargetIds.length;
+    }
+
     static broadcastVoteState(sceneId, state = {}) {
         const data = this._withSceneTargets(sceneId, Object.assign({ sceneId }, state));
         this.emit("voteState", data);
@@ -367,30 +453,7 @@ export class VNSocket {
         });
         if (!connected || !game.user?.isGM || !user || user.isGM) return;
         for (const [sceneId, session] of this.activeSessions.entries()) {
-            if (session.leaderId !== game.user.id) continue;
-            const eligibleTargetIds = Array.isArray(session.eligibleTargetIds) ? session.eligibleTargetIds : session.targetIds;
-            if (!eligibleTargetIds.includes(user.id)) continue;
-
-            if (!session.targetIds.includes(user.id)) {
-                this.emit("rejoinOffer", {
-                    sceneId,
-                    sceneTitle: String(session.scene?.title || ""),
-                    leaderId: session.leaderId,
-                    targetIds: [user.id]
-                });
-                continue;
-            }
-
-            const resumeState = this.handlers.getSyncState?.(sceneId) || null;
-            this.emit("open", {
-                scene: session.scene,
-                sceneId,
-                mode: session.mode,
-                leaderId: session.leaderId,
-                targetIds: [user.id],
-                participantIds: session.participantIds,
-                resumeState: session.started ? resumeState : null
-            });
+            this._sendSessionStatusToUser(sceneId, session, user.id);
         }
     }
 }
