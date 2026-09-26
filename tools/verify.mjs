@@ -58,6 +58,40 @@ const editorLayoutCssSource = read("styles/editor-layout.css");
 const editorComponentsCssSource = read("styles/editor-components.css");
 const graphCssSource = read("styles/graph.css");
 const playerCssSource = read("styles/player.css");
+const exportExamplePath = "examples/fbl-vn-export.example.json";
+const exportFormatPath = "docs/EXPORT_FORMAT.md";
+if (!exists(exportExamplePath)) errors.push("Export structure example is missing");
+if (!exists(exportFormatPath)) errors.push("Export format documentation is missing");
+if (exists(exportExamplePath)) {
+  try {
+    const example = JSON.parse(read(exportExamplePath));
+    if (example.schemaVersion !== 12 || example.version !== 3) errors.push("Export example must use current schemaVersion 12 and storage version 3");
+    if (!Array.isArray(example.scenes) || !example.scenes.length) errors.push("Export example must contain at least one scene");
+    if (!Array.isArray(example.assets) || !Array.isArray(example.characters)) errors.push("Export example must show assets and characters arrays");
+    const exampleScene = example.scenes?.[0] || null;
+    const exampleFrames = Array.isArray(exampleScene?.frames) ? exampleScene.frames : [];
+    const choiceFrame = exampleFrames.find(frame => frame?.type === "choice") || null;
+    if (!exampleScene?.startFrame || !Array.isArray(exampleScene?.branches) || !Array.isArray(exampleScene?.counters) || !Array.isArray(exampleScene?.frameFolders)) {
+      errors.push("Export example scene must document branches, counters, folders and startFrame");
+    }
+    if (!exampleFrames.some(frame => Array.isArray(frame?.textBlocks) && frame.textBlocks.length)) errors.push("Export example must document frame textBlocks");
+    if (!exampleFrames.some(frame => Array.isArray(frame?.musicCues) && frame.musicCues.length) || !exampleFrames.some(frame => Array.isArray(frame?.sfxCues) && frame.sfxCues.length)) {
+      errors.push("Export example must document music and SFX cue structures");
+    }
+    if (!choiceFrame || !Array.isArray(choiceFrame.choices) || !choiceFrame.choices.length || !Array.isArray(choiceFrame.nextRouting?.conditions)) {
+      errors.push("Export example must document choices and compound next-routing conditions");
+    }
+  }
+  catch (error) {
+    errors.push(`Export structure example is not valid JSON: ${error.message}`);
+  }
+}
+if (exists(exportFormatPath)) {
+  const exportFormatSource = read(exportFormatPath);
+  if (!exportFormatSource.includes("schemaVersion: 12") || !exportFormatSource.includes("fbl-vn-export.example.json")) {
+    errors.push("Export format documentation must identify the current schema and example file");
+  }
+}
 if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-actions")) errors.push("Player dialogue must contain a fixed action row");
 if (!playerTemplateSource.includes("fbl-vn-choice-overlay")) errors.push("Choice buttons must render outside the dialogue box");
@@ -138,7 +172,11 @@ if (!socketSource.includes("eligibleTargetIds: [...targetIds]") || !socketSource
 if (!mainSource.includes("rejoin: (payload, senderId) => VNPlayerApp.handleParticipantRejoin(payload.sceneId, senderId)")) errors.push("Main socket routing must deliver explicit vote rejoin requests to the leader player");
 if (!playerSource.includes("VNPlayerApp.offerRejoin(this.scene, this.leaderId)") || !playerSource.includes("static requestRejoin(sceneId)") || !playerSource.includes("VNPlayerApp.rejoinOffers = new Map()") || !playerSource.includes("_onParticipantRejoin(userId)")) errors.push("Vote players must receive a persistent manual return control and the leader must restore their roster membership");
 if (!socketSource.includes('case "rejoinOffer":') || !socketSource.includes('type === "open" || type === "rejoinOffer"') || !socketSource.includes('this.emit("rejoinOffer"') || !mainSource.includes("rejoinOffer: payload => VNPlayerApp.handleRejoinOffer(payload)") || !playerSource.includes("static handleRejoinOffer(payload)")) errors.push("Explicit leavers who reconnect must recover a trusted manual-return offer without auto-opening the cutscene");
-if (!/\.fbl-vn-rejoin\s*\{/.test(playerCssSource)) errors.push("The persistent return-to-cutscene control must be styled outside the fullscreen player");
+if (!socketSource.includes('return this.emit("sessionStatusRequest", {})') || !socketSource.includes('case "sessionStatusRequest":') || !socketSource.includes("_handleSessionStatusRequest(senderId)") || !socketSource.includes("_sendSessionStatusToUser(sceneId, session, user.id)")) errors.push("Reloaded players must query the GM for active session status after socket registration so return offers cannot be lost");
+if (!playerSource.includes("const result = await this.close({ force: true })") || !playerSource.includes("VNPlayerApp._renderRejoinControl();")) errors.push("Voluntary vote-mode leave must render the return control again after the fullscreen player closes");
+if (!/\.fbl-vn-rejoin\s*\{[\s\S]*?z-index:\s*100100;/.test(playerCssSource)) errors.push("The persistent return-to-cutscene control must render above Foundry fullscreen and UI layers");
+if (!playerTemplateSource.includes('data-action="recallPlayers"') || !playerTemplateSource.includes("Вернуть игроков") || !playerSource.includes("static async _onRecallPlayers") || !playerSource.includes("static async recallScene(payload)") || !socketSource.includes("static async recallPlayers(sceneId)") || !socketSource.includes('this.emit("recall"') || !mainSource.includes("recall: payload => VNPlayerApp.recallScene(payload)")) errors.push("GM synchronized playback must expose a trusted non-disruptive recall path for eligible connected players");
+if (!playerSource.includes("if (existing && existing._disposed !== true)") || !playerSource.includes("return existing;")) errors.push("GM recall must not restart players who are already inside the cutscene");
 if (!socketSource.includes('this.emit("close", { sceneId, leaderId, targetIds })') || !socketSource.includes("const targetIds = this._eligibleTargetIdsForScene(sceneId)")) errors.push("GM close must reach locally departed eligible players so their return controls are removed");
 if (!playerSource.includes("voteState: app.mode === PLAYER_MODES.VOTE ? app._buildVoteStateFromLeaderVotes() : null") || !playerSource.includes("if (this.mode === PLAYER_MODES.VOTE && state.voteState) this._applyVoteState(state.voteState)")) errors.push("Vote reconnect must restore current quorum and remaining players' votes without restoring the disconnected player's stale vote");
 if (!playerTemplateSource.includes("Продолжить (ГМ)") || !playerSource.includes('isVoteOverride ? "Продолжить (ГМ)"')) errors.push("Vote UI must identify the GM priority Continue control");
@@ -253,8 +291,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.15") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.15")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.6.16") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.16")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
