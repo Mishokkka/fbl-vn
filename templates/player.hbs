@@ -99,6 +99,13 @@
       <button type="button" class="fbl-vn-show-content" data-action="showContent" title="Показать текст и персонажей" aria-label="Показать текст и персонажей" aria-hidden="true"><i class="fa-solid fa-eye"></i></button>
     {{/unless}}
 
+    {{#if canRecallPlayers}}
+      <button type="button" class="fbl-vn-recall" data-action="recallPlayers" title="Вернуть игроков в катсцену" aria-label="Вернуть игроков в катсцену">
+        <i class="fa-solid fa-users"></i>
+        <span>Вернуть игроков</span>
+      </button>
+    {{/if}}
+
     <div class="fbl-vn-volume-widget">
       {{#if volumePanelOpen}}
         <div class="fbl-vn-volume-panel">
