@@ -41,6 +41,8 @@ VNSocket.ready.clear();
 VNSocket.readyTargets.clear();
 VNSocket._socketMessageHandler = null;
 VNSocket._userConnectedHookId = null;
+VNSocket._clearSessionStatusRecovery();
+VNSocket._connectionState.clear();
 
 let trustedAdvanceCalls = 0;
 const handlers = {
@@ -261,8 +263,11 @@ const recalledRosterEvents = [];
 VNSocket.handlers.rejoin = (_data, senderId) => { recalledRosterEvents.push(senderId); };
 game.user = gm1;
 emitted.length = 0;
+player.active = false;
+VNSocket._connectionState.set(player.id, true);
 const recalledCount = await VNSocket.recallPlayers(recallSceneId);
-assert.equal(recalledCount, 2, "GM recall must target every connected eligible player");
+assert.equal(recalledCount, 2, "GM recall must target every connected eligible player even while Foundry's user.active flag is stale");
+player.active = true;
 assert.deepEqual(recalledRosterEvents, [player.id], "GM recall must restore only players who had explicitly left, without resetting active players");
 assert.equal(VNSocket.activeSessions.get(recallSceneId).targetIds.includes(player.id), true, "GM recall must restore departed vote players to synchronized targets");
 assert.equal(VNSocket.activeSessions.get(recallSceneId).participantIds.includes(player.id), true, "GM recall must restore departed vote players to the vote roster");
@@ -279,6 +284,36 @@ socketCallback(recallPayload.payload);
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(clientRecall?.sceneId, recallSceneId, "A player client must accept a trusted GM recall command");
 assert.equal(VNSocket.activeLeaders.get(recallSceneId), gm1.id, "Recall must restore leader trust on a fresh or reloaded client");
+
+const raceSceneId = "scene-recall-race";
+game.user = gm1;
+VNSocket._connectionState.set(player.id, true);
+VNSocket.activeSessions.set(raceSceneId, {
+  scene: { id: raceSceneId, title: "Recall race" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [],
+  participantIds: [],
+  eligibleTargetIds: [player.id],
+  started: true
+});
+VNSocket.activeTargets.set(raceSceneId, new Set());
+VNSocket.activeParticipants.set(raceSceneId, new Set());
+VNSocket.activeLeaders.set(raceSceneId, gm1.id);
+VNSocket.handlers.rejoin = async () => {
+  VNSocket.activeTargets.delete(raceSceneId);
+  VNSocket.activeParticipants.delete(raceSceneId);
+  VNSocket.activeLeaders.delete(raceSceneId);
+  VNSocket.activeSessions.delete(raceSceneId);
+};
+VNSocket.handlers.getSyncState = () => ({ currentFrameId: "must-not-send" });
+emitted.length = 0;
+assert.equal(await VNSocket.recallPlayers(raceSceneId), 0, "Recall must abort if the session is closed while roster restoration is awaiting local work");
+assert.equal(
+  emitted.some(entry => entry.payload?.type === "recall" && entry.payload?.data?.sceneId === raceSceneId),
+  false,
+  "A closed or replaced session must not emit a stale recall after awaited roster restoration"
+);
 
 VNSocket.activeSessions.delete(recallSceneId);
 VNSocket.activeTargets.delete(recallSceneId);
