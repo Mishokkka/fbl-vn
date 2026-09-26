@@ -208,6 +208,43 @@ assert.deepEqual(
   "Explicit rejoin must receive the current vote roster"
 );
 
+const rejoinRaceSceneId = "scene-rejoin-race";
+VNSocket.activeSessions.set(rejoinRaceSceneId, {
+  scene: { id: rejoinRaceSceneId, title: "Rejoin race" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [],
+  participantIds: [],
+  eligibleTargetIds: [player.id],
+  started: true
+});
+VNSocket.activeTargets.set(rejoinRaceSceneId, new Set());
+VNSocket.activeParticipants.set(rejoinRaceSceneId, new Set());
+VNSocket.activeLeaders.set(rejoinRaceSceneId, gm1.id);
+VNSocket.handlers.rejoin = async () => {
+  VNSocket.activeTargets.delete(rejoinRaceSceneId);
+  VNSocket.activeParticipants.delete(rejoinRaceSceneId);
+  VNSocket.activeLeaders.delete(rejoinRaceSceneId);
+  VNSocket.activeSessions.delete(rejoinRaceSceneId);
+};
+VNSocket.handlers.getSyncState = () => ({ currentFrameId: "stale-rejoin" });
+emitted.length = 0;
+await VNSocket._handleRejoinRequest({ sceneId: rejoinRaceSceneId }, player.id);
+assert.equal(
+  emitted.some(entry => entry.payload?.type === "open" && entry.payload?.data?.sceneId === rejoinRaceSceneId),
+  false,
+  "Explicit rejoin must not reopen a session that closed while local roster restoration was awaiting work"
+);
+assert.ok(
+  emitted.some(entry => entry.payload?.type === "close" && entry.payload?.data?.sceneId === rejoinRaceSceneId),
+  "A stale explicit rejoin must be terminated with a targeted close"
+);
+
+VNSocket.handlers.rejoin = (data, senderId) => { rejoinHandlerCall = { data, senderId }; };
+VNSocket.handlers.getSyncState = sceneId => sceneId === reconnectSceneId
+  ? { currentFrameId: "frame-current", currentTextIndex: 2, counterState: { c: 1 }, visualState: { background: "bg.webp" } }
+  : null;
+
 assert.equal(VNSocket._removeSessionParticipant(reconnectSceneId, player.id), true, "A returned voter must be able to leave again");
 assert.equal(VNSocket._removeSessionParticipant(reconnectSceneId, player2.id), true, "The leader must be able to remove the last explicit voter from a vote session");
 const emptyTargetPayload = VNSocket._withSceneTargets(reconnectSceneId, { sceneId: reconnectSceneId });
