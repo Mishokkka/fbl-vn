@@ -160,6 +160,19 @@ assert.ok(reconnectOffer, "Reconnect after an explicit leave must restore the ma
 assert.deepEqual(reconnectOffer.payload.data.targetIds, [player.id], "Rejoin offer must target only the departed eligible player");
 assert.equal(reconnectOffer.payload.data.sceneTitle, "Reconnect", "Rejoin offer must carry enough display context to rebuild the return button");
 
+game.user = player;
+emitted.length = 0;
+assert.equal(VNSocket.requestSessionStatus(), true, "A freshly bootstrapped player client must ask the GM for active-session status");
+const statusRequest = emitted.find(entry => entry.payload?.type === "sessionStatusRequest");
+assert.ok(statusRequest, "Session-status request must be emitted after client startup so reconnect offers cannot be lost to listener timing");
+game.user = gm1;
+emitted.length = 0;
+socketCallback(statusRequest.payload);
+await new Promise(resolve => setTimeout(resolve, 0));
+const statusOffer = emitted.find(entry => entry.payload?.type === "rejoinOffer" && entry.payload?.data?.sceneId === reconnectSceneId);
+assert.ok(statusOffer, "GM must resend a return offer when a departed eligible player asks for session status after reload");
+assert.deepEqual(statusOffer.payload.data.targetIds, [player.id], "Reload recovery offer must target only the requesting departed player");
+
 let clientRejoinOffer = null;
 game.user = player;
 VNSocket.activeLeaders.delete(reconnectSceneId);
@@ -228,6 +241,49 @@ VNSocket.close("scene-close-eligible");
 const eligibleClose = emitted.find(entry => entry.payload?.type === "close");
 assert.deepEqual(eligibleClose?.payload?.data?.targetIds, [player.id], "GM close must also reach players who left locally so their return button disappears");
 
+const recallSceneId = "scene-recall";
+VNSocket.activeSessions.set(recallSceneId, {
+  scene: { id: recallSceneId, title: "Recall" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [player2.id],
+  participantIds: [player2.id],
+  eligibleTargetIds: [player.id, player2.id],
+  started: true
+});
+VNSocket.activeTargets.set(recallSceneId, new Set([player2.id]));
+VNSocket.activeParticipants.set(recallSceneId, new Set([player2.id]));
+VNSocket.activeLeaders.set(recallSceneId, gm1.id);
+VNSocket.handlers.getSyncState = sceneId => sceneId === recallSceneId
+  ? { currentFrameId: "recall-current", currentTextIndex: 1, counterState: {}, visualState: {}, voteState: null }
+  : null;
+const recalledRosterEvents = [];
+VNSocket.handlers.rejoin = (_data, senderId) => { recalledRosterEvents.push(senderId); };
+game.user = gm1;
+emitted.length = 0;
+const recalledCount = await VNSocket.recallPlayers(recallSceneId);
+assert.equal(recalledCount, 2, "GM recall must target every connected eligible player");
+assert.deepEqual(recalledRosterEvents, [player.id], "GM recall must restore only players who had explicitly left, without resetting active players");
+assert.equal(VNSocket.activeSessions.get(recallSceneId).targetIds.includes(player.id), true, "GM recall must restore departed vote players to synchronized targets");
+assert.equal(VNSocket.activeSessions.get(recallSceneId).participantIds.includes(player.id), true, "GM recall must restore departed vote players to the vote roster");
+const recallPayload = emitted.find(entry => entry.payload?.type === "recall" && entry.payload?.data?.sceneId === recallSceneId);
+assert.ok(recallPayload, "GM recall must send a dedicated trusted recall command");
+assert.deepEqual([...recallPayload.payload.data.targetIds].sort(), [player.id, player2.id].sort(), "Recall command must target the connected eligible roster");
+assert.equal(recallPayload.payload.data.resumeState.currentFrameId, "recall-current", "Recall command must carry the current synchronized resume state");
+
+let clientRecall = null;
+game.user = player;
+VNSocket.activeLeaders.delete(recallSceneId);
+VNSocket.handlers.recall = data => { clientRecall = data; };
+socketCallback(recallPayload.payload);
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(clientRecall?.sceneId, recallSceneId, "A player client must accept a trusted GM recall command");
+assert.equal(VNSocket.activeLeaders.get(recallSceneId), gm1.id, "Recall must restore leader trust on a fresh or reloaded client");
+
+VNSocket.activeSessions.delete(recallSceneId);
+VNSocket.activeTargets.delete(recallSceneId);
+VNSocket.activeParticipants.delete(recallSceneId);
+VNSocket.activeLeaders.delete(recallSceneId);
 VNSocket.activeSessions.delete(reconnectSceneId);
 VNSocket.activeTargets.delete(reconnectSceneId);
 VNSocket.activeParticipants.delete(reconnectSceneId);
