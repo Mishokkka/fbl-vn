@@ -2085,6 +2085,70 @@ assert.strictEqual(
 assert.equal(VNPlayerApp.rejoinOffers.has("scene-recall-existing"), false, "GM recall must clear a stale return offer for a player who is already inside");
 VNPlayerApp.active.delete("scene-recall-existing");
 
+let synchronizedRecallRenders = 0;
+let synchronizedRecallResumes = 0;
+let synchronizedVoteState = null;
+const synchronizedRecallApp = {
+  _disposed: false,
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  networked: true,
+  participantIds: [playerUser.id],
+  loading: false,
+  started: true,
+  currentFrameId: "frame-root",
+  currentTextIndex: 0,
+  counterState: { counter: 1 },
+  visualState: { background: "old-bg.webp", portrait: "", portraitPosition: "left" },
+  async render() { synchronizedRecallRenders += 1; },
+  async preload() {},
+  async resume(state) {
+    synchronizedRecallResumes += 1;
+    this.currentFrameId = state.currentFrameId;
+    this.currentTextIndex = Number(state.currentTextIndex || 0);
+  },
+  _applyVoteState(state) { synchronizedVoteState = state; }
+};
+VNPlayerApp.active.set("scene-recall-sync", synchronizedRecallApp);
+await VNPlayerApp.recallScene({
+  sceneId: "scene-recall-sync",
+  scene: { id: "scene-recall-sync" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [playerUser.id],
+  participantIds: [playerUser.id, playerUser2.id],
+  resumeState: {
+    currentFrameId: "frame-root",
+    currentTextIndex: 0,
+    counterState: { counter: 2 },
+    visualState: { background: "new-bg.webp", portrait: "", portraitPosition: "left" },
+    voteState: { frameId: "frame-root", textIndex: 0, voters: [], choices: {}, total: 2, participantIds: [playerUser.id, playerUser2.id] }
+  }
+});
+assert.equal(synchronizedRecallResumes, 0, "Duplicate open recovery on the current step must not restart playback or replay frame audio");
+assert.equal(synchronizedRecallRenders, 1, "Duplicate open recovery must refresh changed non-playback state in place");
+assert.deepEqual(synchronizedRecallApp.counterState, { counter: 2 }, "In-place recovery must synchronize counter state");
+assert.equal(synchronizedRecallApp.visualState.background, "new-bg.webp", "In-place recovery must synchronize visual state");
+assert.deepEqual(synchronizedRecallApp.participantIds, [playerUser.id, playerUser2.id], "In-place recovery must synchronize the vote roster");
+assert.equal(synchronizedVoteState?.total, 2, "In-place recovery must apply the current vote state");
+await VNPlayerApp.recallScene({
+  sceneId: "scene-recall-sync",
+  scene: { id: "scene-recall-sync" },
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  targetIds: [playerUser.id],
+  participantIds: [playerUser.id, playerUser2.id],
+  resumeState: {
+    currentFrameId: "frame-nested",
+    currentTextIndex: 0,
+    counterState: { counter: 2 },
+    visualState: { background: "new-bg.webp", portrait: "", portraitPosition: "left" },
+    voteState: null
+  }
+});
+assert.equal(synchronizedRecallResumes, 1, "Reconnect recovery on a different step must resume to the GM's current synchronized frame");
+VNPlayerApp.active.delete("scene-recall-sync");
+
 const savedOpenSceneForRecall = VNPlayerApp.openScene;
 let recalledOpenPayload = null;
 VNPlayerApp.openScene = async payload => {
