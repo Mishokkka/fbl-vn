@@ -1,0 +1,368 @@
+{
+  "schemaVersion": 12,
+  "version": 3,
+  "scenes": [
+    {
+      "id": "scene-example",
+      "title": "Пример структуры экспорта",
+      "description": "Полный пример основных полей катсцены.",
+      "defaultMode": "vote",
+      "counters": [
+        {
+          "id": "counter-trust",
+          "name": "Доверие",
+          "initial": 0
+        }
+      ],
+      "branches": [
+        {
+          "id": "branch-main",
+          "name": "Основная ветка",
+          "sort": 0
+        },
+        {
+          "id": "branch-alt",
+          "name": "Альтернативная ветка",
+          "sort": 1000
+        }
+      ],
+      "startFrame": "frame-intro",
+      "frameFolders": [
+        {
+          "id": "folder-main",
+          "name": "Вступление",
+          "branchId": "branch-main",
+          "parentId": "",
+          "sort": 0,
+          "collapsed": false,
+          "color": "#b68a4a"
+        }
+      ],
+      "graphPositions": {
+        "frame-intro": {
+          "x": 40,
+          "y": 60
+        },
+        "frame-dialogue": {
+          "x": 360,
+          "y": 60
+        },
+        "frame-choice": {
+          "x": 680,
+          "y": 60
+        },
+        "frame-alt": {
+          "x": 1000,
+          "y": 240
+        }
+      },
+      "frames": [
+        {
+          "id": "frame-intro",
+          "type": "narration",
+          "title": "Вступление",
+          "branchId": "branch-main",
+          "folderId": "folder-main",
+          "sort": 0,
+          "isFinal": false,
+          "background": "modules/fbl-vn-cutscenes/example/background.webp",
+          "clearBackground": false,
+          "transition": "fade",
+          "characterId": "",
+          "portraitId": "",
+          "speaker": "",
+          "portrait": "",
+          "hidePortrait": true,
+          "portraitPosition": "left",
+          "showSpeakerName": true,
+          "additionalCharacters": [],
+          "vignetteMode": "screen",
+          "textPresentation": "center",
+          "text": "Пример текста первого кадра.",
+          "textBlocks": [
+            {
+              "id": "text-intro",
+              "text": "Пример текста первого кадра.",
+              "richText": "<p>Пример <strong>текста</strong> первого кадра.</p>",
+              "voice": "modules/fbl-vn-cutscenes/example/intro.ogg"
+            }
+          ],
+          "musicCues": [
+            {
+              "id": "audio-music-start",
+              "action": "play",
+              "channel": "music-main",
+              "src": "modules/fbl-vn-cutscenes/example/music.ogg",
+              "loop": true
+            }
+          ],
+          "sfxCues": [],
+          "effectCounterId": "",
+          "effectOperation": "",
+          "effectValue": 0,
+          "next": "frame-dialogue",
+          "nextRouting": {
+            "enabled": false,
+            "conditionLogic": "and",
+            "conditions": [],
+            "trueFrameId": "",
+            "falseFrameId": ""
+          },
+          "choices": []
+        },
+        {
+          "id": "frame-dialogue",
+          "type": "dialogue",
+          "title": "Реплика персонажа",
+          "branchId": "branch-main",
+          "folderId": "folder-main",
+          "sort": 1000,
+          "isFinal": false,
+          "background": "",
+          "clearBackground": false,
+          "transition": "none",
+          "characterId": "character-guide",
+          "portraitId": "portrait-guide-main",
+          "speaker": "Проводник",
+          "portrait": "modules/fbl-vn-cutscenes/example/guide.webp",
+          "hidePortrait": false,
+          "portraitPosition": "left",
+          "showSpeakerName": true,
+          "additionalCharacters": [
+            {
+              "id": "frame-character-companion",
+              "characterId": "character-companion",
+              "portraitId": "portrait-companion-main",
+              "name": "Спутник",
+              "portrait": "modules/fbl-vn-cutscenes/example/companion.webp",
+              "portraitPosition": "right",
+              "showName": true
+            }
+          ],
+          "vignetteMode": "none",
+          "textPresentation": "box",
+          "text": "Здесь показан обычный диалоговый кадр.",
+          "textBlocks": [
+            {
+              "id": "text-dialogue-1",
+              "text": "Здесь показан обычный диалоговый кадр.",
+              "richText": "<p>Здесь показан обычный диалоговый кадр.</p>",
+              "voice": ""
+            },
+            {
+              "id": "text-dialogue-2",
+              "text": "У одного кадра может быть несколько текстовых блоков.",
+              "richText": "<p>У одного кадра может быть несколько текстовых блоков.</p>",
+              "voice": "modules/fbl-vn-cutscenes/example/guide-2.ogg"
+            }
+          ],
+          "musicCues": [],
+          "sfxCues": [
+            {
+              "id": "audio-sfx-door",
+              "action": "play",
+              "channel": "door",
+              "src": "modules/fbl-vn-cutscenes/example/door.ogg",
+              "loop": false
+            }
+          ],
+          "effectCounterId": "counter-trust",
+          "effectOperation": "add",
+          "effectValue": 1,
+          "next": "frame-choice",
+          "nextRouting": {
+            "enabled": false,
+            "conditionLogic": "and",
+            "conditions": [],
+            "trueFrameId": "",
+            "falseFrameId": ""
+          },
+          "choices": []
+        },
+        {
+          "id": "frame-choice",
+          "type": "choice",
+          "title": "Выбор",
+          "branchId": "branch-main",
+          "folderId": "",
+          "sort": 2000,
+          "isFinal": false,
+          "background": "",
+          "clearBackground": false,
+          "transition": "none",
+          "characterId": "",
+          "portraitId": "",
+          "speaker": "",
+          "portrait": "",
+          "hidePortrait": true,
+          "portraitPosition": "left",
+          "showSpeakerName": true,
+          "additionalCharacters": [],
+          "vignetteMode": "auto",
+          "textPresentation": "box",
+          "text": "Как поступить?",
+          "textBlocks": [
+            {
+              "id": "text-choice",
+              "text": "Как поступить?",
+              "richText": "<p>Как поступить?</p>",
+              "voice": ""
+            }
+          ],
+          "musicCues": [],
+          "sfxCues": [],
+          "effectCounterId": "",
+          "effectOperation": "",
+          "effectValue": 0,
+          "next": "",
+          "nextRouting": {
+            "enabled": true,
+            "conditionLogic": "and",
+            "conditions": [
+              {
+                "id": "condition-routing-trust",
+                "counterId": "counter-trust",
+                "operator": "gte",
+                "value": 2
+              }
+            ],
+            "trueFrameId": "frame-alt",
+            "falseFrameId": ""
+          },
+          "choices": [
+            {
+              "id": "choice-continue",
+              "text": "Продолжить",
+              "next": "frame-alt",
+              "conditionLogic": "and",
+              "conditions": [],
+              "effectCounterId": "counter-trust",
+              "effectOperation": "add",
+              "effectValue": 1
+            },
+            {
+              "id": "choice-secret",
+              "text": "Спросить о тайном пути",
+              "next": "frame-alt",
+              "conditionLogic": "or",
+              "conditions": [
+                {
+                  "id": "condition-choice-trust",
+                  "counterId": "counter-trust",
+                  "operator": "gte",
+                  "value": 2
+                },
+                {
+                  "id": "condition-choice-low-trust",
+                  "counterId": "counter-trust",
+                  "operator": "lt",
+                  "value": -2
+                }
+              ],
+              "effectCounterId": "",
+              "effectOperation": "",
+              "effectValue": 0
+            }
+          ]
+        },
+        {
+          "id": "frame-alt",
+          "type": "narration",
+          "title": "Финал примера",
+          "branchId": "branch-alt",
+          "folderId": "",
+          "sort": 0,
+          "isFinal": true,
+          "background": "",
+          "clearBackground": true,
+          "transition": "dark",
+          "characterId": "",
+          "portraitId": "",
+          "speaker": "",
+          "portrait": "",
+          "hidePortrait": true,
+          "portraitPosition": "left",
+          "showSpeakerName": true,
+          "additionalCharacters": [],
+          "vignetteMode": "text",
+          "textPresentation": "center",
+          "text": "Финальный кадр завершает пример.",
+          "textBlocks": [
+            {
+              "id": "text-final",
+              "text": "Финальный кадр завершает пример.",
+              "richText": "<p>Финальный кадр завершает пример.</p>",
+              "voice": ""
+            }
+          ],
+          "musicCues": [
+            {
+              "id": "audio-music-stop",
+              "action": "stop-all",
+              "channel": "",
+              "src": "",
+              "loop": false
+            }
+          ],
+          "sfxCues": [],
+          "effectCounterId": "",
+          "effectOperation": "",
+          "effectValue": 0,
+          "next": "",
+          "nextRouting": {
+            "enabled": false,
+            "conditionLogic": "and",
+            "conditions": [],
+            "trueFrameId": "",
+            "falseFrameId": ""
+          },
+          "choices": []
+        }
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": "asset-background",
+      "type": "image",
+      "path": "modules/fbl-vn-cutscenes/example/background.webp",
+      "label": "Фон примера",
+      "favorite": true,
+      "lastUsed": 0
+    },
+    {
+      "id": "asset-music",
+      "type": "audio",
+      "path": "modules/fbl-vn-cutscenes/example/music.ogg",
+      "label": "Музыка примера",
+      "favorite": false,
+      "lastUsed": 0
+    }
+  ],
+  "characters": [
+    {
+      "id": "character-guide",
+      "name": "Проводник",
+      "defaultPosition": "left",
+      "portraits": [
+        {
+          "id": "portrait-guide-main",
+          "label": "Основной",
+          "path": "modules/fbl-vn-cutscenes/example/guide.webp"
+        }
+      ]
+    },
+    {
+      "id": "character-companion",
+      "name": "Спутник",
+      "defaultPosition": "right",
+      "portraits": [
+        {
+          "id": "portrait-companion-main",
+          "label": "Основной",
+          "path": "modules/fbl-vn-cutscenes/example/companion.webp"
+        }
+      ]
+    }
+  ]
+}
