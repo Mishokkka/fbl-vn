@@ -13,11 +13,7 @@ export class VNSocket {
         if (!this._userConnectedHookId) {
             this._userConnectedHookId = Hooks.on("userConnected", (user, connected) => this._onUserConnected(user, connected));
         }
-        if (!game.user?.isGM) {
-            const schedule = globalThis.setTimeout;
-            if (typeof schedule === "function") schedule(() => this.requestSessionStatus(), 0);
-            else this.requestSessionStatus();
-        }
+        if (!game.user?.isGM) this._scheduleSessionStatusRecovery();
     }
 
     static emit(type, data = {}) {
@@ -53,6 +49,9 @@ export class VNSocket {
                 if (!this._isTrustedGmCommand(type, data, senderId)) {
                     console.warn(`${MODULE_ID} | Ignored untrusted socket command: ${type}`, payload);
                     return;
+                }
+                if (type === "open" || type === "rejoinOffer" || type === "recall" || type === "close") {
+                    this._clearSessionStatusRecovery();
                 }
                 if ((type === "open" || type === "rejoinOffer" || type === "recall") && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
                 this._dispatchTrustedCommand(type, data, senderId);
@@ -221,6 +220,7 @@ export class VNSocket {
     static _handleSessionStatusRequest(senderId) {
         const user = game.users?.get?.(senderId);
         if (!game.user?.isGM || !user || user.isGM) return;
+        this._connectionState.set(senderId, true);
         for (const [sceneId, session] of this.activeSessions.entries()) {
             this._sendSessionStatusToUser(sceneId, session, senderId);
         }
@@ -389,20 +389,52 @@ export class VNSocket {
         return this.emit("sessionStatusRequest", {});
     }
 
+    static _scheduleSessionStatusRecovery() {
+        this._clearSessionStatusRecovery();
+        const schedule = globalThis.setTimeout;
+        if (typeof schedule !== "function") {
+            this.requestSessionStatus();
+            return;
+        }
+        for (const delay of [0, 750, 2500]) {
+            let timer = null;
+            timer = schedule(() => {
+                this._sessionStatusTimers.delete(timer);
+                this.requestSessionStatus();
+            }, delay);
+            this._sessionStatusTimers.add(timer);
+        }
+    }
+
+    static _clearSessionStatusRecovery() {
+        const cancel = globalThis.clearTimeout;
+        if (typeof cancel === "function") {
+            for (const timer of this._sessionStatusTimers) cancel(timer);
+        }
+        this._sessionStatusTimers.clear();
+    }
+
+    static _isUserConnected(userId) {
+        if (!userId) return false;
+        if (this._connectionState.has(userId)) return this._connectionState.get(userId) === true;
+        const user = game.users?.get?.(userId);
+        return Boolean(user?.active);
+    }
+
     static async recallPlayers(sceneId) {
         if (!game.user?.isGM || !sceneId) return 0;
         const session = this.activeSessions.get(sceneId);
         if (!session || session.leaderId !== game.user.id) return 0;
 
         const eligibleTargetIds = Array.isArray(session.eligibleTargetIds) ? session.eligibleTargetIds : session.targetIds;
-        const connectedTargetIds = eligibleTargetIds.filter(userId => {
+        const connectedEligibleIds = eligibleTargetIds.filter(userId => {
             const user = game.users?.get?.(userId);
-            return Boolean(user?.active && !user.isGM);
+            return Boolean(user && !user.isGM && this._isUserConnected(userId));
         });
 
         const restoredIds = [];
         if (session.mode === PLAYER_MODES.VOTE) {
-            for (const userId of connectedTargetIds) {
+            for (const userId of connectedEligibleIds) {
                 if (session.targetIds.includes(userId)) continue;
                 if (this._restoreSessionParticipant(sceneId, userId)) restoredIds.push(userId);
             }
@@ -411,17 +443,26 @@ export class VNSocket {
             }
         }
 
+        const currentSession = this.activeSessions.get(sceneId);
+        if (currentSession !== session || currentSession.leaderId !== game.user.id) return 0;
+
+        const targetIds = eligibleTargetIds.filter(userId => {
+            const user = game.users?.get?.(userId);
+            return Boolean(user && !user.isGM && currentSession.targetIds.includes(userId) && this._isUserConnected(userId));
+        });
+        if (!targetIds.length) return 0;
+
         const resumeState = this.handlers.getSyncState?.(sceneId) || null;
         this.emit("recall", {
-            scene: session.scene,
+            scene: currentSession.scene,
             sceneId,
-            mode: session.mode,
-            leaderId: session.leaderId,
-            targetIds: connectedTargetIds,
-            participantIds: [...session.participantIds],
-            resumeState: session.started ? resumeState : null
+            mode: currentSession.mode,
+            leaderId: currentSession.leaderId,
+            targetIds,
+            participantIds: [...currentSession.participantIds],
+            resumeState: currentSession.started ? resumeState : null
         });
-        return connectedTargetIds.length;
+        return targetIds.length;
     }
 
     static broadcastVoteState(sceneId, state = {}) {
@@ -448,9 +489,13 @@ export class VNSocket {
     }
 
     static _onUserConnected(user, connected) {
+        if (user?.id) this._connectionState.set(user.id, connected === true);
         Promise.resolve(this.handlers.userConnected?.(user, connected)).catch(error => {
             console.error(`${MODULE_ID} | userConnected handler failed.`, error);
         });
+        if (connected && user?.id === game.user?.id && !game.user?.isGM) {
+            this._scheduleSessionStatusRecovery();
+        }
         if (!connected || !game.user?.isGM || !user || user.isGM) return;
         for (const [sceneId, session] of this.activeSessions.entries()) {
             this._sendSessionStatusToUser(sceneId, session, user.id);
@@ -468,3 +513,5 @@ VNSocket.activeSessions = new Map();
 VNSocket._socketMessageHandler = null;
 VNSocket._userConnectedHookId = null;
 VNSocket._launchInProgress = false;
+VNSocket._sessionStatusTimers = new Set();
+VNSocket._connectionState = new Map();
