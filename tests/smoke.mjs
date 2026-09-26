@@ -2034,11 +2034,14 @@ assert.equal(voteRenders, 0, "Vote-state synchronization must patch the DOM with
 
 const savedSocketLeave = VNSocket.leave;
 const savedSocketRejoin = VNSocket.rejoin;
+const savedRenderRejoinControl = VNPlayerApp._renderRejoinControl;
 const savedVoteModeUser = game.user;
 game.user = playerUser;
 VNPlayerApp.rejoinOffers.clear();
 let localLeaveCall = null;
 let localRejoinCall = null;
+let rejoinControlRenders = 0;
+VNPlayerApp._renderRejoinControl = () => { rejoinControlRenders += 1; };
 VNSocket.leave = (sceneId, leaderId) => { localLeaveCall = { sceneId, leaderId }; return true; };
 VNSocket.rejoin = (sceneId, leaderId) => { localRejoinCall = { sceneId, leaderId }; return true; };
 const leavingPlayer = Object.create(VNPlayerApp.prototype);
@@ -2052,6 +2055,7 @@ leavingPlayer.close = async () => { localCloseCalls += 1; };
 await leavingPlayer.requestClose();
 assert.deepEqual(localLeaveCall, { sceneId: scene.id, leaderId: gm1.id }, "Closing vote mode locally must notify the GM leader that this player left");
 assert.equal(localCloseCalls, 1, "A vote participant must be able to close only their local cutscene");
+assert.ok(rejoinControlRenders >= 2, "Local close must render the return control again after the fullscreen player has actually closed");
 assert.equal(VNPlayerApp.rejoinOffers.get(scene.id)?.leaderId, gm1.id, "Local leave must create a return offer while the GM session may still be active");
 assert.equal(VNPlayerApp.requestRejoin(scene.id), true, "The persistent return control must be able to request rejoin");
 assert.deepEqual(localRejoinCall, { sceneId: scene.id, leaderId: gm1.id }, "Return request must target the original session leader");
@@ -2065,9 +2069,36 @@ assert.deepEqual(
   "A trusted GM rejoinOffer must rebuild the manual return state after the client reconnects"
 );
 VNPlayerApp.clearRejoinOffer("scene-restored-offer");
+VNPlayerApp._renderRejoinControl = savedRenderRejoinControl;
 VNSocket.leave = savedSocketLeave;
 VNSocket.rejoin = savedSocketRejoin;
 game.user = savedVoteModeUser;
+
+const activeRecallApp = { _disposed: false };
+VNPlayerApp.active.set("scene-recall-existing", activeRecallApp);
+VNPlayerApp.rejoinOffers.set("scene-recall-existing", { sceneId: "scene-recall-existing", sceneTitle: "Recall", leaderId: gm1.id });
+assert.strictEqual(
+  await VNPlayerApp.recallScene({ sceneId: "scene-recall-existing", scene: { id: "scene-recall-existing" } }),
+  activeRecallApp,
+  "GM recall must leave an already-open player app intact instead of restarting it"
+);
+assert.equal(VNPlayerApp.rejoinOffers.has("scene-recall-existing"), false, "GM recall must clear a stale return offer for a player who is already inside");
+VNPlayerApp.active.delete("scene-recall-existing");
+
+const savedOpenSceneForRecall = VNPlayerApp.openScene;
+let recalledOpenPayload = null;
+VNPlayerApp.openScene = async payload => {
+  recalledOpenPayload = payload;
+  return { recalled: true };
+};
+const recalledOpenResult = await VNPlayerApp.recallScene({
+  sceneId: "scene-recall-closed",
+  scene: { id: "scene-recall-closed", title: "Recall closed" },
+  leaderId: gm1.id
+});
+assert.deepEqual(recalledOpenResult, { recalled: true }, "GM recall must reopen a player who is no longer inside the cutscene");
+assert.equal(recalledOpenPayload?.sceneId, "scene-recall-closed", "GM recall must forward the synchronized payload to the normal open path");
+VNPlayerApp.openScene = savedOpenSceneForRecall;
 
 const reconnectVotePlayer = Object.create(VNPlayerApp.prototype);
 reconnectVotePlayer.mode = PLAYER_MODES.VOTE;
