@@ -1420,7 +1420,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const hasCachedEntries = this._lastFrameTargetSceneId === this.selectedSceneId && Array.isArray(this._lastFrameTargetEntries);
         const scene = hasCachedEntries
             ? null
-            : (this._lastPreparedScene?.id === this.selectedSceneId ? this._lastPreparedScene : this.selectedScene);
+            : (this._lastPreparedScene && this._lastPreparedScene.id === this.selectedSceneId ? this._lastPreparedScene : this.selectedScene);
         const entries = hasCachedEntries ? this._lastFrameTargetEntries : this._frameTargetEntries(scene);
         const byId = new Map(entries.map(entry => [entry.id, entry.label]));
         const labelCounts = new Map();
@@ -1492,7 +1492,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const hasCachedEntries = this._lastFrameTargetSceneId === this.selectedSceneId && Array.isArray(this._lastFrameTargetEntries);
         const scene = hasCachedEntries
             ? null
-            : (this._lastPreparedScene?.id === this.selectedSceneId ? this._lastPreparedScene : this.selectedScene);
+            : (this._lastPreparedScene && this._lastPreparedScene.id === this.selectedSceneId ? this._lastPreparedScene : this.selectedScene);
         const entries = hasCachedEntries ? this._lastFrameTargetEntries : this._frameTargetEntries(scene);
         const entry = entries.find(item => item.id === frameId);
         if (!entry) return false;
