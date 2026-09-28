@@ -1299,6 +1299,23 @@ await new Promise(resolve => setTimeout(resolve, 15));
 assert.equal(fadingScore.audio.paused, true, "Crossfade must retire the outgoing track after its fade");
 assert.ok(incomingScore.gain >= 0.99, "Crossfade must bring the incoming track to full gain");
 
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "interrupt-crossfade", src: "old.ogg", loop: true })],
+  sfxCues: []
+});
+const interruptedOutgoing = audio.music.get("interrupt-crossfade");
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "interrupt-crossfade", src: "new.ogg", loop: true, crossFadeMs: 40 })],
+  sfxCues: []
+});
+const interruptedIncoming = audio.music.get("interrupt-crossfade");
+await new Promise(resolve => setTimeout(resolve, 4));
+await audio.stopChannel("music", "interrupt-crossfade", 4);
+await new Promise(resolve => setTimeout(resolve, 8));
+assert.equal(interruptedOutgoing.audio.paused, true, "Stopping during crossfade must also retire the outgoing overlap");
+assert.equal(interruptedIncoming.audio.paused, true, "Stopping during crossfade must retire the incoming channel owner");
+assert.equal(audio.music.has("interrupt-crossfade"), false, "Stopping during crossfade must clear the logical channel");
+
 audio.destroy();
 
 const transitionBoundaryPlayer = Object.create(VNPlayerApp.prototype);
