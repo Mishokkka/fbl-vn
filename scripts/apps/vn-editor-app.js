@@ -3342,7 +3342,7 @@ VNEditorApp.DEFAULT_OPTIONS = {
         duplicateAudioCue: queuedEditorAction(VNEditorApp._onDuplicateAudioCue),
         moveAudioCue: queuedEditorAction(VNEditorApp._onMoveAudioCue),
         previewAudioCue: queuedEditorAction(VNEditorApp._onPreviewAudioCue),
-        stopAudioPreview: VNEditorApp._onStopAudioPreview,
+        stopAudioPreview: queuedEditorAction(VNEditorApp._onStopAudioPreview),
         addNextRoutingCondition: queuedEditorAction(VNEditorApp._onAddNextRoutingCondition),
         deleteNextRoutingCondition: queuedEditorAction(VNEditorApp._onDeleteNextRoutingCondition),
         addChoice: queuedEditorAction(VNEditorApp._onAddChoice),
