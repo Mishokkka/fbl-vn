@@ -154,9 +154,21 @@ export class VNAudioController {
             entry.playsStarted += 1;
             entry.audio.currentTime = 0;
             await entry.audio.play();
+            if (entry.stopped || this._destroyed || bank.get(entry.channel) !== entry) {
+                try {
+                    entry.audio.pause();
+                    entry.audio.currentTime = 0;
+                }
+                catch (_error) {
+                    // Playback was already detached while play() was pending.
+                }
+                return;
+            }
             if (incomingFadeMs > 0) void this._fadeEntry(entry, 1, incomingFadeMs);
         }
         catch (error) {
+            const stillOwned = !entry.stopped && !this._destroyed && bank.get(entry.channel) === entry;
+            if (!stillOwned) return;
             this._retireEntry(entry);
             console.warn(`${MODULE_ID} | ${entry.kind === "music" ? "Music" : "SFX"} playback failed or was blocked: ${entry.path}`, error);
         }
@@ -191,8 +203,19 @@ export class VNAudioController {
                 entry.audio.currentTime = 0;
                 entry.playsStarted += 1;
                 await entry.audio.play();
+                if (entry.stopped || this._destroyed || bank.get(entry.channel) !== entry) {
+                    try {
+                        entry.audio.pause();
+                        entry.audio.currentTime = 0;
+                    }
+                    catch (_error) {
+                        // Playback was already detached while play() was pending.
+                    }
+                }
             }
             catch (error) {
+                const stillOwned = !entry.stopped && !this._destroyed && bank.get(entry.channel) === entry;
+                if (!stillOwned) return;
                 bank.delete(entry.channel);
                 this._retireEntry(entry);
                 console.warn(`${MODULE_ID} | Repeated ${entry.kind} playback failed: ${entry.path}`, error);
@@ -214,14 +237,26 @@ export class VNAudioController {
     async playVoice(path) {
         if (!path || this._destroyed) return;
         this.stopVoice();
+        const voice = new Audio(path);
         this.voicePath = path;
-        this.voice = new Audio(path);
-        this.voice.loop = false;
-        this.voice.volume = this.getVoiceVolume();
+        this.voice = voice;
+        voice.loop = false;
+        voice.volume = this.getVoiceVolume();
         try {
-            await this.voice.play();
+            await voice.play();
+            if (this._destroyed || this.voice !== voice) {
+                try {
+                    voice.pause();
+                    voice.currentTime = 0;
+                }
+                catch (_error) {
+                    // Voice was already detached while play() was pending.
+                }
+            }
         }
         catch (error) {
+            if (this._destroyed || this.voice !== voice) return;
+            this.stopVoice();
             console.warn(`${MODULE_ID} | Voice playback failed or was blocked.`, error);
         }
     }
