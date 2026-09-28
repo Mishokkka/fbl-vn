@@ -1339,6 +1339,30 @@ assert.equal(externalResumeCalls, 1, "External Foundry audio must resume exactly
 delete game.audio;
 foundry.audio.AudioHelper.playing = undefined;
 
+let resolveExitFade;
+let exitAudioDestroyed = 0;
+const exitFadePlayer = Object.create(VNPlayerApp.prototype);
+exitFadePlayer._closing = false;
+exitFadePlayer._disposed = false;
+exitFadePlayer.scene = { id: "scene-exit-fade" };
+exitFadePlayer.audio = {
+  fadeOutAll() { return new Promise(resolve => { resolveExitFade = resolve; }); },
+  destroy() { exitAudioDestroyed += 1; }
+};
+exitFadePlayer._preloader = { cancel() {} };
+exitFadePlayer._cancelTypingAnimation = () => {};
+exitFadePlayer._preloadProgressRaf = null;
+exitFadePlayer._flushVolumeSettings = async () => {};
+exitFadePlayer._keyboardElement = null;
+exitFadePlayer._resizeBound = false;
+VNPlayerApp.active.set(exitFadePlayer.scene.id, exitFadePlayer);
+const exitCloseResult = await exitFadePlayer.close({ force: true, fadeOutMs: 750 });
+assert.strictEqual(exitCloseResult, exitFadePlayer, "Cutscene ApplicationV2 must close without waiting for the full audio tail");
+assert.equal(exitAudioDestroyed, 0, "Audio controller must stay alive while the non-blocking exit fade is still running");
+resolveExitFade();
+await exitFadePlayer._audioShutdownPromise;
+assert.equal(exitAudioDestroyed, 1, "Audio controller must be destroyed after the exit fade completes");
+
 const transitionBoundaryPlayer = Object.create(VNPlayerApp.prototype);
 transitionBoundaryPlayer.currentFrameId = "bad-transition";
 transitionBoundaryPlayer.currentTextIndex = 0;
