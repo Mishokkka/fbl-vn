@@ -1,5 +1,16 @@
 import { AUDIO_ACTIONS, MODULE_ID, SETTINGS } from "../utils/constants.js";
 
+function clampMs(value, max = 60000) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    return Math.max(0, Math.min(max, number));
+}
+
+function clampRepeatCount(value) {
+    const number = Math.floor(Number(value));
+    return Number.isFinite(number) ? Math.max(1, Math.min(20, number)) : 1;
+}
+
 export class VNAudioController {
     constructor() {
         this.music = new Map();
@@ -9,67 +20,193 @@ export class VNAudioController {
         this._externalPaused = false;
         this._externalSnapshots = [];
         this._volumeOverrides = new Map();
+        this._pending = new Map();
+        this._retiring = new Set();
+        this._frameGeneration = 0;
+        this._destroyed = false;
     }
 
     async applyFrame(frame) {
-        if (!frame) return;
-        await this._applyCues("music", frame.musicCues);
-        await this._applyCues("sfx", frame.sfxCues);
+        if (!frame || this._destroyed) return;
+        this._frameGeneration += 1;
+        this._cancelStaleFrameTasks();
+        await this._applyCues("music", frame.musicCues, this._frameGeneration);
+        await this._applyCues("sfx", frame.sfxCues, this._frameGeneration);
     }
 
-    async _applyCues(kind, cues) {
+    async applyCue(kind, cue, { generation = this._frameGeneration } = {}) {
+        if (!cue || this._destroyed) return;
+        if (cue.action === AUDIO_ACTIONS.STOP_ALL) {
+            await this.stopAll(kind, cue.fadeOutMs);
+            return;
+        }
+        if (cue.action === AUDIO_ACTIONS.STOP) {
+            await this.stopChannel(kind, cue.channel, cue.fadeOutMs);
+            return;
+        }
+        if (cue.action === AUDIO_ACTIONS.PLAY && cue.channel && cue.src) {
+            return this.playChannel(kind, cue.channel, cue.src, cue.loop === true, {
+                repeatCount: cue.repeatCount,
+                repeatDelayMs: cue.repeatDelayMs,
+                startDelayMs: cue.startDelayMs,
+                fadeInMs: cue.fadeInMs,
+                crossFadeMs: cue.crossFadeMs,
+                continueRepeats: cue.continueRepeats === true,
+                generation
+            });
+        }
+    }
+
+    async _applyCues(kind, cues, generation) {
         for (const cue of Array.isArray(cues) ? cues : []) {
-            if (cue.action === AUDIO_ACTIONS.STOP_ALL) {
-                this.stopAll(kind);
-                continue;
-            }
-            if (cue.action === AUDIO_ACTIONS.STOP) {
-                this.stopChannel(kind, cue.channel);
-                continue;
-            }
-            if (cue.action === AUDIO_ACTIONS.PLAY && cue.channel && cue.src) {
-                await this.playChannel(kind, cue.channel, cue.src, cue.loop === true);
-            }
+            await this.applyCue(kind, cue, { generation });
         }
     }
 
-    async playChannel(kind, channel, path, loop = false) {
+    async playChannel(kind, channel, path, loop = false, options = {}) {
         const key = String(channel || "").trim();
-        if (!key || !path) return;
-        const bank = this._bank(kind);
-        this.stopChannel(kind, key);
+        if (!key || !path || this._destroyed) return null;
+        const normalized = {
+            repeatCount: loop === true ? 1 : clampRepeatCount(options.repeatCount),
+            repeatDelayMs: loop === true ? 0 : clampMs(options.repeatDelayMs),
+            startDelayMs: clampMs(options.startDelayMs),
+            fadeInMs: clampMs(options.fadeInMs),
+            crossFadeMs: clampMs(options.crossFadeMs),
+            continueRepeats: loop === true ? false : options.continueRepeats === true,
+            generation: Number.isFinite(Number(options.generation)) ? Number(options.generation) : this._frameGeneration
+        };
 
-        const audio = new Audio(path);
-        const entry = { audio, path, loop: loop === true };
-        bank.set(key, entry);
-        audio.loop = entry.loop;
-        audio.volume = kind === "music" ? this.getMusicVolume() : this.getSfxVolume();
+        const pendingKey = this._entryKey(kind, key);
+        this._cancelPending(pendingKey);
 
-        if (!entry.loop) {
-            audio.addEventListener("ended", () => {
-                if (bank.get(key) === entry) bank.delete(key);
-            }, { once: true });
+        const entry = this._createEntry(kind, key, path, loop === true, normalized);
+        if (normalized.startDelayMs > 0) {
+            entry.delayTimer = setTimeout(() => {
+                entry.delayTimer = null;
+                if (this._pending.get(pendingKey) !== entry || this._destroyed) return;
+                this._pending.delete(pendingKey);
+                if (!entry.continueRepeats && entry.generation !== this._frameGeneration) return;
+                void this._startEntry(entry);
+            }, normalized.startDelayMs);
+            this._pending.set(pendingKey, entry);
+            return entry;
         }
+
+        await this._startEntry(entry);
+        return entry;
+    }
+
+    _createEntry(kind, channel, path, loop, options) {
+        const audio = new Audio(path);
+        const entry = {
+            kind,
+            channel,
+            audio,
+            path,
+            loop,
+            repeatCount: options.repeatCount,
+            repeatDelayMs: options.repeatDelayMs,
+            fadeInMs: options.fadeInMs,
+            crossFadeMs: options.crossFadeMs,
+            continueRepeats: options.continueRepeats,
+            generation: options.generation,
+            playsStarted: 0,
+            gain: 1,
+            delayTimer: null,
+            repeatTimer: null,
+            fadeRaf: null,
+            stopped: false,
+            endedHandler: null
+        };
+        audio.loop = loop;
+        entry.endedHandler = () => this._onEntryEnded(entry);
+        if (!loop) audio.addEventListener("ended", entry.endedHandler);
+        return entry;
+    }
+
+    async _startEntry(entry) {
+        if (!entry || entry.stopped || this._destroyed) return;
+        const bank = this._bank(entry.kind);
+        const previous = bank.get(entry.channel) || null;
+        const crossFadeMs = previous && previous !== entry ? entry.crossFadeMs : 0;
+
+        if (previous && previous !== entry) {
+            if (crossFadeMs > 0) {
+                bank.delete(entry.channel);
+                this._retiring.add(previous);
+                void this._fadeEntry(previous, 0, crossFadeMs).then(() => this._retireEntry(previous));
+            }
+            else {
+                this._retireEntry(previous);
+            }
+        }
+
+        bank.set(entry.channel, entry);
+        const incomingFadeMs = crossFadeMs > 0 ? crossFadeMs : (entry.fadeInMs > 0 ? entry.fadeInMs : (!previous && entry.crossFadeMs > 0 ? entry.crossFadeMs : 0));
+        entry.gain = incomingFadeMs > 0 ? 0 : 1;
+        this._applyEntryVolume(entry);
 
         try {
-            await audio.play();
+            entry.playsStarted += 1;
+            entry.audio.currentTime = 0;
+            await entry.audio.play();
+            if (incomingFadeMs > 0) void this._fadeEntry(entry, 1, incomingFadeMs);
         }
         catch (error) {
-            if (bank.get(key) === entry) bank.delete(key);
-            console.warn(`${MODULE_ID} | ${kind === "music" ? "Music" : "SFX"} playback failed or was blocked: ${path}`, error);
+            this._retireEntry(entry);
+            console.warn(`${MODULE_ID} | ${entry.kind === "music" ? "Music" : "SFX"} playback failed or was blocked: ${entry.path}`, error);
         }
     }
 
-    async playMusic(path, channel = "music-1", loop = true) {
-        return this.playChannel("music", channel, path, loop);
+    _onEntryEnded(entry) {
+        if (!entry || entry.stopped || entry.loop || this._destroyed) return;
+        const bank = this._bank(entry.kind);
+        if (bank.get(entry.channel) !== entry) return;
+        if (entry.playsStarted >= entry.repeatCount) {
+            bank.delete(entry.channel);
+            this._retireEntry(entry);
+            return;
+        }
+        if (!entry.continueRepeats && entry.generation !== this._frameGeneration) {
+            bank.delete(entry.channel);
+            this._retireEntry(entry);
+            return;
+        }
+
+        const replay = async () => {
+            entry.repeatTimer = null;
+            if (entry.stopped || this._destroyed || bank.get(entry.channel) !== entry) return;
+            if (!entry.continueRepeats && entry.generation !== this._frameGeneration) {
+                bank.delete(entry.channel);
+                this._retireEntry(entry);
+                return;
+            }
+            try {
+                entry.audio.currentTime = 0;
+                entry.playsStarted += 1;
+                await entry.audio.play();
+            }
+            catch (error) {
+                bank.delete(entry.channel);
+                this._retireEntry(entry);
+                console.warn(`${MODULE_ID} | Repeated ${entry.kind} playback failed: ${entry.path}`, error);
+            }
+        };
+
+        if (entry.repeatDelayMs > 0) entry.repeatTimer = setTimeout(() => void replay(), entry.repeatDelayMs);
+        else void replay();
     }
 
-    playSfx(path, channel = "sfx-1", loop = false) {
-        return this.playChannel("sfx", channel, path, loop);
+    async playMusic(path, channel = "music-1", loop = true, options = {}) {
+        return this.playChannel("music", channel, path, loop, options);
+    }
+
+    playSfx(path, channel = "sfx-1", loop = false, options = {}) {
+        return this.playChannel("sfx", channel, path, loop, options);
     }
 
     async playVoice(path) {
-        if (!path) return;
+        if (!path || this._destroyed) return;
         this.stopVoice();
         this.voicePath = path;
         this.voice = new Audio(path);
@@ -109,13 +246,24 @@ export class VNAudioController {
     }
 
     refreshVolumes() {
-        for (const entry of this.music.values()) entry.audio.volume = this.getMusicVolume();
-        for (const entry of this.sfx.values()) entry.audio.volume = this.getSfxVolume();
+        for (const entry of this.music.values()) this._applyEntryVolume(entry);
+        for (const entry of this.sfx.values()) this._applyEntryVolume(entry);
+        for (const entry of this._retiring) this._applyEntryVolume(entry);
         if (this.voice) this.voice.volume = this.getVoiceVolume();
+    }
+
+    _applyEntryVolume(entry) {
+        if (!entry?.audio) return;
+        const base = entry.kind === "music" ? this.getMusicVolume() : this.getSfxVolume();
+        entry.audio.volume = Math.max(0, Math.min(1, base * Math.max(0, Math.min(1, Number(entry.gain ?? 1)))));
     }
 
     _bank(kind) {
         return kind === "sfx" ? this.sfx : this.music;
+    }
+
+    _entryKey(kind, channel) {
+        return `${kind}:${String(channel || "").trim()}`;
     }
 
     _volume(coreSetting, fallback, moduleSetting, type) {
@@ -136,6 +284,93 @@ export class VNAudioController {
             return fallback;
         }
         return fallback;
+    }
+
+    _cancelPending(key) {
+        const pending = this._pending.get(key);
+        if (!pending) return;
+        if (pending.delayTimer) clearTimeout(pending.delayTimer);
+        pending.delayTimer = null;
+        pending.stopped = true;
+        this._pending.delete(key);
+        this._detachEntry(pending);
+    }
+
+    _cancelStaleFrameTasks() {
+        for (const [key, entry] of [...this._pending.entries()]) {
+            if (entry.continueRepeats || entry.generation === this._frameGeneration) continue;
+            this._cancelPending(key);
+        }
+        for (const bank of [this.music, this.sfx]) {
+            for (const entry of bank.values()) {
+                if (!entry.repeatTimer || entry.continueRepeats || entry.generation === this._frameGeneration) continue;
+                clearTimeout(entry.repeatTimer);
+                entry.repeatTimer = null;
+            }
+        }
+    }
+
+    _detachEntry(entry) {
+        if (!entry) return;
+        if (entry.endedHandler && entry.audio?.removeEventListener) entry.audio.removeEventListener("ended", entry.endedHandler);
+        entry.endedHandler = null;
+    }
+
+    _retireEntry(entry) {
+        if (!entry || entry.stopped) return;
+        entry.stopped = true;
+        if (entry.delayTimer) clearTimeout(entry.delayTimer);
+        if (entry.repeatTimer) clearTimeout(entry.repeatTimer);
+        if (entry.fadeRaf !== null && entry.fadeRaf !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(entry.fadeRaf);
+        entry.delayTimer = null;
+        entry.repeatTimer = null;
+        entry.fadeRaf = null;
+        this._detachEntry(entry);
+        try {
+            entry.audio.pause();
+            entry.audio.currentTime = 0;
+        }
+        catch (_error) {
+            // Audio may already be detached.
+        }
+        const bank = this._bank(entry.kind);
+        if (bank.get(entry.channel) === entry) bank.delete(entry.channel);
+        this._retiring.delete(entry);
+    }
+
+    _fadeEntry(entry, targetGain, durationMs) {
+        const duration = clampMs(durationMs);
+        const target = Math.max(0, Math.min(1, Number(targetGain)));
+        if (!entry || entry.stopped || duration <= 0) {
+            if (entry && !entry.stopped) {
+                entry.gain = target;
+                this._applyEntryVolume(entry);
+            }
+            return Promise.resolve();
+        }
+
+        const startGain = Math.max(0, Math.min(1, Number(entry.gain ?? 1)));
+        const startedAt = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+        const raf = typeof requestAnimationFrame === "function"
+            ? requestAnimationFrame
+            : callback => setTimeout(() => callback(Date.now()), 16);
+
+        return new Promise(resolve => {
+            const step = now => {
+                if (entry.stopped) return resolve();
+                const elapsed = Math.max(0, Number(now) - startedAt);
+                const progress = Math.min(1, elapsed / duration);
+                entry.gain = startGain + ((target - startGain) * progress);
+                this._applyEntryVolume(entry);
+                if (progress >= 1) {
+                    entry.fadeRaf = null;
+                    resolve();
+                    return;
+                }
+                entry.fadeRaf = raf(step);
+            };
+            entry.fadeRaf = raf(step);
+        });
     }
 
     pauseExternalAudio() {
@@ -193,35 +428,39 @@ export class VNAudioController {
         for (const snapshot of snapshots) snapshot.resume?.();
     }
 
-    stopChannel(kind, channel) {
+    async stopChannel(kind, channel, fadeOutMs = 0) {
         const key = String(channel || "").trim();
         if (!key) return;
+        this._cancelPending(this._entryKey(kind, key));
         const bank = this._bank(kind);
         const entry = bank.get(key);
         if (!entry) return;
-        try {
-            entry.audio.pause();
-            entry.audio.currentTime = 0;
-        }
-        catch (_error) {
-            // Nothing else to clean up.
-        }
         bank.delete(key);
+        const duration = clampMs(fadeOutMs);
+        if (duration > 0) {
+            this._retiring.add(entry);
+            await this._fadeEntry(entry, 0, duration);
+        }
+        this._retireEntry(entry);
     }
 
-    stopAll(kind) {
+    async stopAll(kind, fadeOutMs = 0) {
+        const prefix = `${kind}:`;
+        for (const key of [...this._pending.keys()]) {
+            if (key.startsWith(prefix)) this._cancelPending(key);
+        }
         const bank = this._bank(kind);
-        for (const channel of [...bank.keys()]) this.stopChannel(kind, channel);
+        await Promise.all([...bank.keys()].map(channel => this.stopChannel(kind, channel, fadeOutMs)));
     }
 
-    stopMusic(channel = "") {
-        if (channel) this.stopChannel("music", channel);
-        else this.stopAll("music");
+    stopMusic(channel = "", fadeOutMs = 0) {
+        if (channel) return this.stopChannel("music", channel, fadeOutMs);
+        return this.stopAll("music", fadeOutMs);
     }
 
-    stopSfx(channel = "") {
-        if (channel) this.stopChannel("sfx", channel);
-        else this.stopAll("sfx");
+    stopSfx(channel = "", fadeOutMs = 0) {
+        if (channel) return this.stopChannel("sfx", channel, fadeOutMs);
+        return this.stopAll("sfx", fadeOutMs);
     }
 
     stopVoice() {
@@ -232,9 +471,19 @@ export class VNAudioController {
         this.voicePath = "";
     }
 
+    async fadeOutAll(durationMs = 0) {
+        const duration = clampMs(durationMs, 10000);
+        await Promise.all([this.stopAll("music", duration), this.stopAll("sfx", duration)]);
+        this.stopVoice();
+    }
+
     destroy() {
-        this.stopAll("music");
-        this.stopAll("sfx");
+        this._destroyed = true;
+        for (const key of [...this._pending.keys()]) this._cancelPending(key);
+        for (const entry of [...this.music.values(), ...this.sfx.values(), ...this._retiring]) this._retireEntry(entry);
+        this.music.clear();
+        this.sfx.clear();
+        this._retiring.clear();
         this.stopVoice();
         this.restoreExternalAudio();
     }
