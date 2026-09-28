@@ -892,7 +892,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!before || !after) return;
         const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
         if (before.title !== after.title) this._markRenderParts(["scenes", "sceneHead"]);
-        if (before.defaultMode !== after.defaultMode || before.startFrame !== after.startFrame) this._markRenderParts(["sceneHead"]);
+        if (before.defaultMode !== after.defaultMode || before.startFrame !== after.startFrame || Number(before.audioExitFadeMs || 0) !== Number(after.audioExitFadeMs || 0)) this._markRenderParts(["sceneHead"]);
         if (!same(before.counters || [], after.counters || [])) this._markRenderParts(["frames", "framePanel"]);
         const beforeFrame = (before.frames || []).find(frame => frame.id === frameId) || null;
         const afterFrame = (after.frames || []).find(frame => frame.id === frameId) || null;
@@ -1004,17 +1004,32 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const src = row.querySelector("[data-audio-src]");
             const loop = row.querySelector("[data-audio-loop]");
             const picker = row.querySelector("[data-audio-picker]");
+            const playFields = [...row.querySelectorAll("[data-audio-play-field]")];
+            const stopFields = [...row.querySelectorAll("[data-audio-stop-field]")];
+            const repeatFields = [...row.querySelectorAll(".fbl-vn-audio-repeat-field")];
             if (!action) continue;
+            const setFieldEnabled = (element, enabled) => {
+                element.hidden = !enabled;
+                for (const input of element.querySelectorAll?.("input, select, button") || []) input.disabled = !enabled;
+            };
             const sync = () => {
                 const isPlay = action.value === AUDIO_ACTIONS.PLAY;
                 const isStop = action.value === AUDIO_ACTIONS.STOP;
+                const isStopAll = action.value === AUDIO_ACTIONS.STOP_ALL;
                 if (channel) channel.disabled = !(isPlay || isStop);
                 if (src) src.disabled = !isPlay;
                 if (loop) loop.disabled = !isPlay;
                 if (picker) picker.disabled = !isPlay;
-                row.classList.toggle("is-stop-all", action.value === AUDIO_ACTIONS.STOP_ALL);
+                for (const field of playFields) setFieldEnabled(field, isPlay);
+                for (const field of stopFields) setFieldEnabled(field, isStop || isStopAll);
+                const repeatsEnabled = isPlay && loop?.checked !== true;
+                for (const field of repeatFields) setFieldEnabled(field, repeatsEnabled);
+                row.classList.toggle("is-stop-all", isStopAll);
+                row.classList.toggle("is-stop", isStop);
+                row.classList.toggle("is-play", isPlay);
             };
             action.addEventListener("change", sync);
+            loop?.addEventListener("change", sync);
             sync();
         }
     }
