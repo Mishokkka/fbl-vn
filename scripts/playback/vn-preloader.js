@@ -6,11 +6,10 @@ const PRELOAD_TIMEOUT_MS = 5000;
 const STARTUP_WINDOW_DEPTH = 2;
 const STARTUP_WINDOW_MAX_FRAMES = 12;
 const STARTUP_CONCURRENCY = 6;
-const BACKGROUND_CONCURRENCY = 1;
 const NEARBY_WARM_DEPTH = 2;
 const NEARBY_WARM_MAX_FRAMES = 12;
 const FAR_WARM_DEFAULT_DEPTH = 10;
-const FAR_WARM_MAX_FRAMES = 48;
+const FAR_WARM_MAX_FRAMES = 12;
 
 function uniquePaths(paths) {
     return [...new Set((Array.isArray(paths) ? paths : []).filter(path => typeof path === "string" && path))];
@@ -193,7 +192,6 @@ export class VNPreloadController {
         this.loaded = new Set();
         this.inflight = new Map();
         this.cancelled = false;
-        this.backgroundPromise = null;
         this.warmGeneration = 0;
     }
 
@@ -260,16 +258,6 @@ export class VNPreloadController {
         });
     }
 
-    startBackgroundImages() {
-        if (this.backgroundPromise) return this.backgroundPromise;
-        const paths = VNPreloader.collectBackgroundImagePaths(this.scene);
-        this.backgroundPromise = this.ensurePaths(paths, { concurrency: BACKGROUND_CONCURRENCY })
-            .catch(error => {
-                console.warn("fbl-vn-cutscenes | Background image preload failed.", error);
-                return [];
-            });
-        return this.backgroundPromise;
-    }
 
     cancel() {
         this.cancelled = true;
