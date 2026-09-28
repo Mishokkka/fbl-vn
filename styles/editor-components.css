@@ -1024,7 +1024,7 @@ button.fbl-vn-validation-item.warning i {
     gap: 6px;
   }
 
-  .fbl-vn-editor .fbl-vn-audio-cue-actions {
+  .fbl-vn-editor .fbl-vn-audio-cue > .fbl-vn-audio-cue-actions {
     grid-column: 3;
     grid-row: auto;
     justify-self: end;
