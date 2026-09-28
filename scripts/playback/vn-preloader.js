@@ -302,6 +302,10 @@ export class VNPreloadController {
 
         const promise = VNPreloader._withTimeout(VNPreloader.preloadPath(path), PRELOAD_TIMEOUT_MS, path)
             .then(resource => {
+                if (this.cancelled) {
+                    if (VNPreloader.isAudioPath(path) && resource && typeof resource === "object") this._releaseAudioWarmer(resource);
+                    return { path, ok: false, cancelled: true };
+                }
                 if (VNPreloader.isAudioPath(path) && resource && typeof resource === "object") {
                     this._retainAudioWarmer(path, resource);
                 }
