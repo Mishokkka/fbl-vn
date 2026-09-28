@@ -1,6 +1,6 @@
 # Формат экспорта FBL Visual Novel Cutscenes
 
-Актуальная версия формата данных: `schemaVersion: 12`.
+Актуальная версия формата данных: `schemaVersion: 13`.
 
 Готовый полный пример находится рядом: `examples/fbl-vn-export.example.json`. Он намеренно отформатирован с отступами для чтения, хотя обычный экспорт из модуля записывается компактным JSON без лишних пробелов и переносов строк.
 
@@ -14,6 +14,7 @@
   "title": "Название",
   "description": "",
   "defaultMode": "vote",
+  "audioExitFadeMs": 750,
   "counters": [],
   "branches": [],
   "startFrame": "frame-start",
@@ -27,7 +28,7 @@
 
 ```json
 {
-  "schemaVersion": 12,
+  "schemaVersion": 13,
   "version": 3,
   "scenes": [],
   "assets": [],
@@ -45,6 +46,7 @@
 - `title` — название.
 - `description` — описание.
 - `defaultMode` — `individual`, `gm` или `vote`.
+- `audioExitFadeMs` — длительность плавного затухания музыки и SFX при завершении/закрытии катсцены. Хранится в миллисекундах; редактор показывает секунды.
 - `counters[]` — счётчики сцены.
 - `branches[]` — редакторские ветки.
 - `startFrame` — ID стартового кадра.
@@ -169,11 +171,68 @@
   "action": "play",
   "channel": "music-main",
   "src": "path/to/music.ogg",
-  "loop": true
+  "loop": true,
+  "repeatCount": 1,
+  "repeatDelayMs": 0,
+  "startDelayMs": 0,
+  "fadeInMs": 1200,
+  "fadeOutMs": 0,
+  "crossFadeMs": 0,
+  "continueRepeats": false
 }
 ```
 
 `action`: `play`, `stop`, `stop-all`.
+
+Поля времени хранятся в миллисекундах, хотя редактор показывает их в секундах.
+
+- `startDelayMs` — задержка перед запуском `play`.
+- `fadeInMs` — плавное появление нового звука.
+- `crossFadeMs` — при `play` в уже занятом канале одновременно гасит прежний звук и поднимает новый. Если канал пуст, работает как fade-in.
+- `repeatCount` — общее число проигрываний одноразового звука: `1` означает один запуск. Диапазон текущей схемы: 1–20.
+- `repeatDelayMs` — пауза между конечными повторами.
+- `continueRepeats` — разрешает начинать следующие конечные повторы после перехода в другой кадр. По умолчанию `false`; уже начатое проигрывание может естественно закончиться.
+- `fadeOutMs` — применяется к `stop` и `stop-all`.
+
+При `loop: true` конечные повторы не используются: sanitizer приводит `repeatCount` к 1, `repeatDelayMs` к 0 и `continueRepeats` к `false`.
+
+Пример плавной замены музыки:
+
+```json
+{
+  "id": "audio-danger",
+  "action": "play",
+  "channel": "music-main",
+  "src": "path/to/danger.ogg",
+  "loop": true,
+  "repeatCount": 1,
+  "repeatDelayMs": 0,
+  "startDelayMs": 0,
+  "fadeInMs": 0,
+  "fadeOutMs": 0,
+  "crossFadeMs": 2000,
+  "continueRepeats": false
+}
+```
+
+Пример плавной остановки:
+
+```json
+{
+  "id": "audio-stop",
+  "action": "stop",
+  "channel": "music-main",
+  "src": "",
+  "loop": false,
+  "repeatCount": 1,
+  "repeatDelayMs": 0,
+  "startDelayMs": 0,
+  "fadeInMs": 0,
+  "fadeOutMs": 1500,
+  "crossFadeMs": 0,
+  "continueRepeats": false
+}
+```
 
 ## Условный переход кадра
 
@@ -253,6 +312,6 @@ Asset library не является обязательной для воспро
 
 ID должны быть уникальны внутри соответствующего набора и ссылки должны указывать на существующие ID. При ручной генерации удобно использовать читаемые ID вроде `frame-intro`, `choice-left`, `counter-trust`; модулю не требуется конкретный формат случайной строки.
 
-При импорте данные проходят sanitizer и миграции. Некорректные enum-значения могут быть заменены безопасными значениями по умолчанию, а часть отсутствующих ID может быть создана автоматически. Для предсказуемого результата лучше формировать файл сразу в текущей структуре.
+При импорте данные проходят sanitizer и миграции. Экспорты schema v12 автоматически мигрируют в v13: старые audio cues получают нулевые timing-параметры и один playback, а старые сцены сохраняют прежнее мгновенное завершение аудио через `audioExitFadeMs: 0`. Некорректные enum-значения могут быть заменены безопасными значениями по умолчанию, а часть отсутствующих ID может быть создана автоматически. Для предсказуемого результата лучше формировать файл сразу в текущей структуре.
 
 Полный рабочий пример всех основных сущностей: `examples/fbl-vn-export.example.json`.
