@@ -10,6 +10,7 @@ const NEARBY_WARM_DEPTH = 2;
 const NEARBY_WARM_MAX_FRAMES = 12;
 const FAR_WARM_DEFAULT_DEPTH = 10;
 const FAR_WARM_MAX_FRAMES = 12;
+const AUDIO_WARMER_LIMIT = 32;
 
 function uniquePaths(paths) {
     return [...new Set((Array.isArray(paths) ? paths : []).filter(path => typeof path === "string" && path))];
@@ -174,7 +175,7 @@ export class VNPreloader {
                 cleanup();
                 callback();
             };
-            const success = () => settle(() => resolve(path));
+            const success = () => settle(() => resolve(audio));
             const failure = () => settle(() => reject(new Error(`Audio load failed: ${path}`)));
             audio.preload = "auto";
             audio.addEventListener("canplaythrough", success, { once: true });
@@ -191,6 +192,7 @@ export class VNPreloadController {
         this.scene = scene;
         this.loaded = new Set();
         this.inflight = new Map();
+        this.audioWarmers = new Map();
         this.cancelled = false;
         this.warmGeneration = 0;
     }
@@ -262,6 +264,35 @@ export class VNPreloadController {
     cancel() {
         this.cancelled = true;
         this.warmGeneration += 1;
+        for (const audio of this.audioWarmers.values()) this._releaseAudioWarmer(audio);
+        this.audioWarmers.clear();
+    }
+
+    _retainAudioWarmer(path, audio) {
+        if (!path || !audio) return;
+        const previous = this.audioWarmers.get(path);
+        if (previous && previous !== audio) this._releaseAudioWarmer(previous);
+        this.audioWarmers.delete(path);
+        this.audioWarmers.set(path, audio);
+        while (this.audioWarmers.size > AUDIO_WARMER_LIMIT) {
+            const oldest = this.audioWarmers.entries().next().value;
+            if (!oldest) break;
+            this.audioWarmers.delete(oldest[0]);
+            this._releaseAudioWarmer(oldest[1]);
+        }
+    }
+
+    _releaseAudioWarmer(audio) {
+        if (!audio) return;
+        try {
+            audio.pause?.();
+            if (typeof audio.removeAttribute === "function") audio.removeAttribute("src");
+            else if ("src" in audio) audio.src = "";
+            audio.load?.();
+        }
+        catch (_error) {
+            // The browser may have already released the speculative media element.
+        }
     }
 
     async _ensurePath(path) {
@@ -270,7 +301,10 @@ export class VNPreloadController {
         if (this.inflight.has(path)) return this.inflight.get(path);
 
         const promise = VNPreloader._withTimeout(VNPreloader.preloadPath(path), PRELOAD_TIMEOUT_MS, path)
-            .then(() => {
+            .then(resource => {
+                if (VNPreloader.isAudioPath(path) && resource && typeof resource === "object") {
+                    this._retainAudioWarmer(path, resource);
+                }
                 const result = { path, ok: true };
                 this.loaded.add(path);
                 return result;
