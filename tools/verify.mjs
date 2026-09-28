@@ -113,6 +113,8 @@ if (exists(exportFormatPath)) {
 if (!playerTemplateSource.includes("fbl-vn-dialogue-scroll")) errors.push("Player dialogue must contain a dedicated scroll region");
 if (!playerTemplateSource.includes("fbl-vn-dialogue-actions")) errors.push("Player dialogue must contain a fixed action row");
 if (!playerTemplateSource.includes("fbl-vn-choice-overlay")) errors.push("Choice buttons must render outside the dialogue box");
+if (!playerTemplateSource.includes('fbl-vn-choice-overlay {{#if isCenteredText}}is-centered-text{{/if}}')) errors.push("Centered-text choice overlays must expose a dedicated bottom-anchored class");
+if (!/\.fbl-vn-choice-overlay\.is-centered-text\s*\{[\s\S]*?place-items:\s*end center;[\s\S]*?padding-bottom:\s*14px;/.test(playerCssSource) || !/\.fbl-vn-choice-overlay\.is-centered-text \.fbl-vn-player-choice-list\s*\{[\s\S]*?max-height:\s*42vh;/.test(playerCssSource)) errors.push("Centered-text choices must anchor at the bottom and grow upward without occupying the text center");
 if (!/--vn-dialogue-height:\s*240px/.test(playerCssSource)) errors.push("Player dialogue must define a stable desktop height");
 if (!/\.fbl-vn-portrait\s*\{[\s\S]*?bottom:\s*var\(--vn-dialogue-height\)/.test(playerCssSource)) errors.push("Portrait bottom must align to dialogue top");
 if (!/\.fbl-vn-dialogue-scroll\s*\{[\s\S]*?overflow-y:\s*auto/.test(playerCssSource)) errors.push("Dialogue scroll region must retain vertical scrolling");
