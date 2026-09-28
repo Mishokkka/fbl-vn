@@ -1050,6 +1050,7 @@ assert.equal(compoundUsage.get(secondRouteCounter.id).nextRoutings, 1);
 assert.equal(getFrameReferences(scene, "frame-root").some(ref => ref.type === "counter-true" && ref.frameId === "frame-nested"), true, "Conditional outcomes must be reported as frame references");
 
 const legacyScene = createScene();
+delete legacyScene.audioExitFadeMs;
 const legacyYes = createFrame("dialogue");
 legacyYes.id = "legacy-yes";
 legacyYes.branchId = legacyScene.branches[0].id;
