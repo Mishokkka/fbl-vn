@@ -17,10 +17,14 @@ jobs:
       - name: Static verification
         run: node tools/verify.mjs
       - name: Main smoke suite
+        if: always()
         run: node tests/smoke.mjs
       - name: Boot smoke
+        if: always()
         run: node tests/boot-smoke.mjs
       - name: Runtime init smoke
+        if: always()
         run: node tests/runtime-init-smoke.mjs
       - name: Socket transport smoke
+        if: always()
         run: node tests/socket-transport-smoke.mjs
