@@ -116,6 +116,7 @@ export class VNAudioController {
             repeatTimer: null,
             awaitingRepeat: false,
             fadeRaf: null,
+            fadeGeneration: 0,
             stopped: false,
             endedHandler: null
         };
@@ -326,6 +327,7 @@ export class VNAudioController {
         entry.stopped = true;
         if (entry.delayTimer) clearTimeout(entry.delayTimer);
         if (entry.repeatTimer) clearTimeout(entry.repeatTimer);
+        entry.fadeGeneration += 1;
         if (entry.fadeRaf !== null && entry.fadeRaf !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(entry.fadeRaf);
         entry.delayTimer = null;
         entry.repeatTimer = null;
@@ -359,10 +361,11 @@ export class VNAudioController {
         const raf = typeof requestAnimationFrame === "function"
             ? requestAnimationFrame
             : callback => setTimeout(() => callback(Date.now()), 16);
+        const fadeGeneration = ++entry.fadeGeneration;
 
         return new Promise(resolve => {
             const step = now => {
-                if (entry.stopped) return resolve();
+                if (entry.stopped || entry.fadeGeneration !== fadeGeneration) return resolve();
                 const elapsed = Math.max(0, Number(now) - startedAt);
                 const progress = Math.min(1, elapsed / duration);
                 entry.gain = startGain + ((target - startGain) * progress);
@@ -438,15 +441,23 @@ export class VNAudioController {
         if (!key) return;
         this._cancelPending(this._entryKey(kind, key));
         const bank = this._bank(kind);
-        const entry = bank.get(key);
-        if (!entry) return;
-        bank.delete(key);
+        const active = bank.get(key) || null;
+        if (active) bank.delete(key);
+        const entries = new Set([
+            ...(active ? [active] : []),
+            ...[...this._retiring].filter(entry => entry.kind === kind && entry.channel === key)
+        ]);
+        if (!entries.size) return;
+
         const duration = clampMs(fadeOutMs);
-        if (duration > 0) {
-            this._retiring.add(entry);
-            await this._fadeEntry(entry, 0, duration);
-        }
-        this._retireEntry(entry);
+        await Promise.all([...entries].map(async entry => {
+            if (!entry || entry.stopped) return;
+            if (duration > 0) {
+                this._retiring.add(entry);
+                await this._fadeEntry(entry, 0, duration);
+            }
+            this._retireEntry(entry);
+        }));
     }
 
     async stopAll(kind, fadeOutMs = 0) {
@@ -455,7 +466,11 @@ export class VNAudioController {
             if (key.startsWith(prefix)) this._cancelPending(key);
         }
         const bank = this._bank(kind);
-        await Promise.all([...bank.keys()].map(channel => this.stopChannel(kind, channel, fadeOutMs)));
+        const channels = new Set([
+            ...bank.keys(),
+            ...[...this._retiring].filter(entry => entry.kind === kind).map(entry => entry.channel)
+        ]);
+        await Promise.all([...channels].map(channel => this.stopChannel(kind, channel, fadeOutMs)));
     }
 
     stopMusic(channel = "", fadeOutMs = 0) {
