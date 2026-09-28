@@ -18,7 +18,6 @@ export class VNAudioController {
         this.voice = null;
         this.voicePath = "";
         this._externalPaused = false;
-        this._externalSnapshots = [];
         this._volumeOverrides = new Map();
         this._pending = new Map();
         this._retiring = new Set();
@@ -411,11 +410,14 @@ export class VNAudioController {
     pauseExternalAudio() {
         if (this._externalPaused) return;
         this._externalPaused = true;
-        this._externalSnapshots = [];
-        this._pauseFoundrySounds();
+        if (!VNAudioController._externalPauseOwners.size) {
+            VNAudioController._externalSnapshots = this._pauseFoundrySounds();
+        }
+        VNAudioController._externalPauseOwners.add(this);
     }
 
     _pauseFoundrySounds() {
+        const snapshots = [];
         const sounds = this._collectSoundObjects(game.audio?.playing)
             .concat(this._collectSoundObjects(foundry.audio?.AudioHelper?.playing));
         const seen = new Set();
@@ -426,7 +428,7 @@ export class VNAudioController {
             if (sound.playing !== true || typeof sound.pause !== "function") continue;
             try {
                 sound.pause();
-                this._externalSnapshots.push({
+                snapshots.push({
                     type: "sound",
                     resume: () => {
                         try {
@@ -445,6 +447,7 @@ export class VNAudioController {
                 console.warn(`${MODULE_ID} | Failed to pause Foundry sound.`, error);
             }
         }
+        return snapshots;
     }
 
     _collectSoundObjects(source) {
@@ -458,8 +461,10 @@ export class VNAudioController {
 
     restoreExternalAudio() {
         if (!this._externalPaused) return;
-        const snapshots = this._externalSnapshots.splice(0);
         this._externalPaused = false;
+        VNAudioController._externalPauseOwners.delete(this);
+        if (VNAudioController._externalPauseOwners.size) return;
+        const snapshots = VNAudioController._externalSnapshots.splice(0);
         for (const snapshot of snapshots) snapshot.resume?.();
     }
 
@@ -535,3 +540,6 @@ export class VNAudioController {
         this.restoreExternalAudio();
     }
 }
+
+VNAudioController._externalPauseOwners = new Set();
+VNAudioController._externalSnapshots = [];
