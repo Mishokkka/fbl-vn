@@ -37,11 +37,11 @@ export class VNAudioController {
     async applyCue(kind, cue, { generation = this._frameGeneration } = {}) {
         if (!cue || this._destroyed) return;
         if (cue.action === AUDIO_ACTIONS.STOP_ALL) {
-            await this.stopAll(kind, cue.fadeOutMs);
+            void this.stopAll(kind, cue.fadeOutMs);
             return;
         }
         if (cue.action === AUDIO_ACTIONS.STOP) {
-            await this.stopChannel(kind, cue.channel, cue.fadeOutMs);
+            void this.stopChannel(kind, cue.channel, cue.fadeOutMs);
             return;
         }
         if (cue.action === AUDIO_ACTIONS.PLAY && cue.channel && cue.src) {
