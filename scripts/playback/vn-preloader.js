@@ -7,6 +7,10 @@ const STARTUP_WINDOW_DEPTH = 2;
 const STARTUP_WINDOW_MAX_FRAMES = 12;
 const STARTUP_CONCURRENCY = 6;
 const BACKGROUND_CONCURRENCY = 1;
+const NEARBY_WARM_DEPTH = 2;
+const NEARBY_WARM_MAX_FRAMES = 12;
+const FAR_WARM_DEFAULT_DEPTH = 10;
+const FAR_WARM_MAX_FRAMES = 48;
 
 function uniquePaths(paths) {
     return [...new Set((Array.isArray(paths) ? paths : []).filter(path => typeof path === "string" && path))];
@@ -221,11 +225,34 @@ export class VNPreloadController {
         return this.ensurePaths(VNPreloader.collectFrameEntryPaths(frame, textIndex), options);
     }
 
-    warmWindow(startFrameId, { depth = STARTUP_WINDOW_DEPTH, maxFrames = STARTUP_WINDOW_MAX_FRAMES, concurrency = STARTUP_CONCURRENCY } = {}) {
+    warmWindow(startFrameId, { depth = STARTUP_WINDOW_DEPTH, maxFrames = STARTUP_WINDOW_MAX_FRAMES, concurrency = STARTUP_CONCURRENCY, fullFrameAssets = false } = {}) {
         const frame = (Array.isArray(this.scene?.frames) ? this.scene.frames : []).find(item => item?.id === startFrameId) || null;
-        const paths = new Set(VNPreloader.collectStartupWindowPaths(this.scene, startFrameId, { depth, maxFrames }));
+        const collected = fullFrameAssets
+            ? VNPreloader.collectWindowPaths(this.scene, startFrameId, { depth, maxFrames })
+            : VNPreloader.collectStartupWindowPaths(this.scene, startFrameId, { depth, maxFrames });
+        const paths = new Set(collected);
         for (const path of VNPreloader.collectFramePaths(frame)) paths.add(path);
         return this.ensurePaths([...paths], { concurrency });
+    }
+
+    async warmAhead(startFrameId, { depth = FAR_WARM_DEFAULT_DEPTH, maxFrames = FAR_WARM_MAX_FRAMES } = {}) {
+        const safeDepth = Math.max(NEARBY_WARM_DEPTH, Math.floor(Number(depth) || FAR_WARM_DEFAULT_DEPTH));
+        const safeMaxFrames = Math.max(NEARBY_WARM_MAX_FRAMES, Math.floor(Number(maxFrames) || FAR_WARM_MAX_FRAMES));
+
+        await this.warmWindow(startFrameId, {
+            depth: NEARBY_WARM_DEPTH,
+            maxFrames: NEARBY_WARM_MAX_FRAMES,
+            concurrency: 2,
+            fullFrameAssets: true
+        });
+        if (this.cancelled || safeDepth <= NEARBY_WARM_DEPTH) return [];
+
+        return this.warmWindow(startFrameId, {
+            depth: safeDepth,
+            maxFrames: safeMaxFrames,
+            concurrency: 1,
+            fullFrameAssets: true
+        });
     }
 
     startBackgroundImages() {
