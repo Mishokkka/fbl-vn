@@ -1318,6 +1318,27 @@ assert.equal(audio.music.has("interrupt-crossfade"), false, "Stopping during cro
 
 audio.destroy();
 
+let externalPauseCalls = 0;
+let externalResumeCalls = 0;
+const externalSound = {
+  playing: true,
+  pause() { externalPauseCalls += 1; this.playing = false; },
+  play() { externalResumeCalls += 1; this.playing = true; return Promise.resolve(); }
+};
+game.audio = { playing: [externalSound] };
+foundry.audio.AudioHelper.playing = [];
+const audioLeaseA = new VNAudioController();
+const audioLeaseB = new VNAudioController();
+audioLeaseA.pauseExternalAudio();
+audioLeaseB.pauseExternalAudio();
+assert.equal(externalPauseCalls, 1, "Multiple VN audio controllers must share one external-audio pause snapshot");
+audioLeaseA.destroy();
+assert.equal(externalResumeCalls, 0, "External Foundry audio must stay paused while another VN audio controller still owns the pause");
+audioLeaseB.destroy();
+assert.equal(externalResumeCalls, 1, "External Foundry audio must resume exactly once after the final VN pause owner releases");
+delete game.audio;
+foundry.audio.AudioHelper.playing = undefined;
+
 const transitionBoundaryPlayer = Object.create(VNPlayerApp.prototype);
 transitionBoundaryPlayer.currentFrameId = "bad-transition";
 transitionBoundaryPlayer.currentTextIndex = 0;
