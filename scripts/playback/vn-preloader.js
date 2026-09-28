@@ -194,9 +194,10 @@ export class VNPreloadController {
         this.inflight = new Map();
         this.cancelled = false;
         this.backgroundPromise = null;
+        this.warmGeneration = 0;
     }
 
-    async ensurePaths(paths, { concurrency = STARTUP_CONCURRENCY, onProgress = null } = {}) {
+    async ensurePaths(paths, { concurrency = STARTUP_CONCURRENCY, onProgress = null, shouldContinue = null } = {}) {
         const assetPaths = uniquePaths(paths);
         if (!assetPaths.length) return [];
         let done = 0;
@@ -204,7 +205,7 @@ export class VNPreloadController {
         const results = new Array(assetPaths.length);
         const workerCount = Math.min(Math.max(1, Number(concurrency) || 1), assetPaths.length);
         const worker = async () => {
-            while (!this.cancelled && cursor < assetPaths.length) {
+            while (!this.cancelled && cursor < assetPaths.length && (!shouldContinue || shouldContinue())) {
                 const index = cursor++;
                 const path = assetPaths[index];
                 const result = await this._ensurePath(path);
@@ -225,33 +226,37 @@ export class VNPreloadController {
         return this.ensurePaths(VNPreloader.collectFrameEntryPaths(frame, textIndex), options);
     }
 
-    warmWindow(startFrameId, { depth = STARTUP_WINDOW_DEPTH, maxFrames = STARTUP_WINDOW_MAX_FRAMES, concurrency = STARTUP_CONCURRENCY, fullFrameAssets = false } = {}) {
+    warmWindow(startFrameId, { depth = STARTUP_WINDOW_DEPTH, maxFrames = STARTUP_WINDOW_MAX_FRAMES, concurrency = STARTUP_CONCURRENCY, fullFrameAssets = false, shouldContinue = null } = {}) {
         const frame = (Array.isArray(this.scene?.frames) ? this.scene.frames : []).find(item => item?.id === startFrameId) || null;
         const collected = fullFrameAssets
             ? VNPreloader.collectWindowPaths(this.scene, startFrameId, { depth, maxFrames })
             : VNPreloader.collectStartupWindowPaths(this.scene, startFrameId, { depth, maxFrames });
         const paths = new Set(collected);
         for (const path of VNPreloader.collectFramePaths(frame)) paths.add(path);
-        return this.ensurePaths([...paths], { concurrency });
+        return this.ensurePaths([...paths], { concurrency, shouldContinue });
     }
 
     async warmAhead(startFrameId, { depth = FAR_WARM_DEFAULT_DEPTH, maxFrames = FAR_WARM_MAX_FRAMES } = {}) {
         const safeDepth = Math.max(NEARBY_WARM_DEPTH, Math.floor(Number(depth) || FAR_WARM_DEFAULT_DEPTH));
         const safeMaxFrames = Math.max(NEARBY_WARM_MAX_FRAMES, Math.floor(Number(maxFrames) || FAR_WARM_MAX_FRAMES));
+        const generation = ++this.warmGeneration;
+        const current = () => !this.cancelled && generation === this.warmGeneration;
 
         await this.warmWindow(startFrameId, {
             depth: NEARBY_WARM_DEPTH,
             maxFrames: NEARBY_WARM_MAX_FRAMES,
             concurrency: 2,
-            fullFrameAssets: false
+            fullFrameAssets: false,
+            shouldContinue: current
         });
-        if (this.cancelled || safeDepth <= NEARBY_WARM_DEPTH) return [];
+        if (!current() || safeDepth <= NEARBY_WARM_DEPTH) return [];
 
         return this.warmWindow(startFrameId, {
             depth: safeDepth,
             maxFrames: safeMaxFrames,
             concurrency: 1,
-            fullFrameAssets: true
+            fullFrameAssets: true,
+            shouldContinue: current
         });
     }
 
@@ -268,6 +273,7 @@ export class VNPreloadController {
 
     cancel() {
         this.cancelled = true;
+        this.warmGeneration += 1;
     }
 
     async _ensurePath(path) {
