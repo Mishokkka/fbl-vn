@@ -85,7 +85,7 @@
   grid-area: scene;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) minmax(190px, 280px) minmax(190px, 320px);
+  grid-template-columns: minmax(190px, 1fr) minmax(170px, 240px) minmax(190px, 300px) minmax(150px, 190px);
   gap: 10px;
   align-items: end;
   padding: 10px 12px;
