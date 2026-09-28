@@ -3019,7 +3019,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const cue = (frame[key] || []).find(item => item.id === target.dataset.audioCueId);
         if (!cue) return;
         if (!this._audioPreview) this._audioPreview = new VNAudioController();
-        await this._audioPreview.applyCue(kind, cue, { generation: 0 });
+        void this._audioPreview.applyCue(kind, cue, { generation: 0 }).catch(error => {
+            console.warn(`${MODULE_ID} | Audio cue preview failed.`, error);
+        });
     }
 
     static _onStopAudioPreview(event, target) {
