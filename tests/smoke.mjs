@@ -56,13 +56,14 @@ globalThis.Audio = class {
     this.currentTime = 0;
     this.loop = false;
     this.volume = 1;
+    this.playCount = 0;
     this._listeners = new Map();
   }
   addEventListener(type, listener) { this._listeners.set(type, listener); }
   removeEventListener(type, listener) {
     if (this._listeners.get(type) === listener) this._listeners.delete(type);
   }
-  async play() { this.paused = false; }
+  async play() { this.paused = false; this.playCount += 1; }
   pause() { this.paused = true; }
   load() {}
   emit(type) { this._listeners.get(type)?.(); }
@@ -80,11 +81,14 @@ const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
 const { VNPreloadController, VNPreloader } = await import("../scripts/playback/vn-preloader.js");
 const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createCounterCondition, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, isChoiceAvailable, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
+const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, DATA_SCHEMA_VERSION, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId, serializeJson } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
+assert.equal(DATA_SCHEMA_VERSION, 13, "Audio timing release must use schema v13");
+assert.equal(game.settings.settings.has(`${MODULE_ID}.${SETTINGS.PRELOAD_AHEAD_DEPTH}`), true, "Long-range preload depth must be registered as a world setting");
+assert.equal(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_AHEAD_DEPTH), 10, "Long-range preload depth must default to ten graph steps");
 
 const compactJson = serializeJson({ alpha: 1, nested: { beta: [2, 3] } });
 assert.equal(compactJson.includes("\n"), false, "JSON export serialization must be compact by default");
@@ -106,6 +110,7 @@ characterManager._captureExpandedCharacters();
 assert.deepEqual([...characterManager.expandedCharacterIds], ["character-a", "character-b"], "Expanded character cards must be captured before a manager rerender");
 
 const scene = createScene();
+assert.equal(scene.audioExitFadeMs, 750, "New scenes must default to a short exit audio fade");
 scene.title = "Smoke";
 const branchId = scene.branches[0].id;
 scene.frameFolders = [
@@ -274,6 +279,25 @@ assert.equal(preloadCalls.includes("voice-3.ogg"), true, "Nearby warming must fi
 assert.equal(preloadCalls.includes("next-voice-1.ogg"), true, "Nearby warming must include the entry voice of an upcoming frame");
 assert.equal(preloadCalls.includes("next-voice-2.ogg"), false, "Nearby warming must not sweep every long voice from future frames");
 
+const deepWarmScene = createScene();
+const deepBranchId = deepWarmScene.branches[0].id;
+deepWarmScene.frames = Array.from({ length: 12 }, (_, index) => {
+  const frame = createFrame("dialogue");
+  frame.id = `deep-warm-${index}`;
+  frame.branchId = deepBranchId;
+  frame.background = `deep-warm-${index}.webp`;
+  frame.textBlocks[0].voice = `deep-warm-${index}.ogg`;
+  frame.next = index < 11 ? `deep-warm-${index + 1}` : "";
+  frame.isFinal = index === 11;
+  return frame;
+});
+deepWarmScene.startFrame = "deep-warm-0";
+preloadCalls.length = 0;
+const deepWarmController = new VNPreloadController(deepWarmScene);
+await deepWarmController.warmAhead("deep-warm-0", { depth: 10, maxFrames: 48 });
+assert.equal(preloadCalls.includes("deep-warm-10.ogg"), true, "Long-range warming must preload audio ten graph steps ahead");
+assert.equal(preloadCalls.includes("deep-warm-11.ogg"), false, "Configured warm depth must remain bounded instead of sweeping the entire scene");
+
 let transientAttempts = 0;
 VNPreloader.preloadPath = async path => {
   if (path !== "transient.webp") return path;
@@ -302,7 +326,7 @@ assert.equal(criticalResults[0].ok, true, "Critical frame assets must receive on
 assert.equal(criticalAttempts, 2, "Critical frame preload must retry a transient failure exactly once");
 VNPreloader.preloadPath = savedPreloadPath;
 
-await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const sceneSummaries = VNSceneStore.sceneSummaries;
 assert.equal(sceneSummaries.length, 1, "Scene summaries must expose one lightweight row per stored scene");
@@ -328,7 +352,7 @@ const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
 assert.ok(VNSceneStore.revision > revisionBeforeQueuedMutations, "Store revision must advance when persisted data changes");
-await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const noOpEditor = Object.create(VNEditorApp.prototype);
 noOpEditor._pendingRenderParts = new Set();
@@ -1030,7 +1054,7 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 12);
+assert.equal(migrated.schemaVersion, 13);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
@@ -1060,6 +1084,16 @@ assert.equal(migratedFrame.musicCues[0].src, "legacy-music.ogg");
 assert.equal(migratedFrame.musicCues[0].loop, true);
 assert.equal(migratedFrame.sfxCues.length, 1, "Legacy SFX must migrate into one channel cue");
 assert.equal(migratedFrame.sfxCues[0].src, "legacy-bell.wav");
+assert.equal(migrated.scenes[0].audioExitFadeMs, 0, "Migrated scenes must preserve the old immediate close behavior unless the author opts into an exit fade");
+for (const cue of [...migratedFrame.musicCues, ...migratedFrame.sfxCues]) {
+  assert.equal(cue.repeatCount, 1, "Schema v13 migration must default legacy cues to one playback");
+  assert.equal(cue.repeatDelayMs, 0);
+  assert.equal(cue.startDelayMs, 0);
+  assert.equal(cue.fadeInMs, 0);
+  assert.equal(cue.fadeOutMs, 0);
+  assert.equal(cue.crossFadeMs, 0);
+  assert.equal(cue.continueRepeats, false);
+}
 assert.equal("musicMode" in migratedFrame, false, "Legacy music mode must be removed after migration");
 assert.equal("music" in migratedFrame, false, "Legacy music path must be removed after migration");
 assert.equal("sfx" in migratedFrame, false, "Legacy SFX path must be removed after migration");
@@ -1112,9 +1146,9 @@ assert.equal(migratedChoiceCondition.conditionLogic, COUNTER_CONDITION_LOGIC.ALL
 assert.equal("conditionCounterId" in migratedChoiceCondition, false, "Schema v12 must remove legacy choice condition fields");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 12, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 13, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
-for (const invalidSchemaVersion of [-1, 7.5, 13]) {
+for (const invalidSchemaVersion of [-1, 7.5, 14]) {
   assert.throws(
     () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
     /unsupported schemaVersion/,
@@ -1122,7 +1156,7 @@ for (const invalidSchemaVersion of [-1, 7.5, 13]) {
   );
 }
 assert.throws(
-  () => VNSceneStore._sanitizeData({ schemaVersion: 13, version: 3, scenes: [], assets: [], characters: [] }),
+  () => VNSceneStore._sanitizeData({ schemaVersion: 14, version: 3, scenes: [], assets: [], characters: [] }),
   /unsupported schemaVersion/,
   "The scene store must not silently downgrade future-schema data to an empty current-schema save"
 );
@@ -1144,6 +1178,29 @@ assert.equal(new Set(sanitizedAudioFrame.sfxCues.map(cue => cue.id)).size, sanit
 assert.equal(sanitizedAudioFrame.musicCues.every(cue => cue && typeof cue === "object" && !Array.isArray(cue)), true, "Malformed primitive or array music cues must normalize into cue objects");
 assert.equal(sanitizedAudioFrame.musicCues[0].id, "duplicate-audio", "The first valid unique cue ID should be preserved");
 assert.notEqual(sanitizedAudioFrame.musicCues[1].id, "duplicate-audio", "A duplicate cue ID must be regenerated");
+const advancedCue = createAudioCue("sfx", {
+  channel: "steps",
+  src: "steps.ogg",
+  repeatCount: 3,
+  repeatDelayMs: 250,
+  startDelayMs: 150,
+  fadeInMs: 100,
+  crossFadeMs: 300,
+  continueRepeats: true
+});
+assert.equal(advancedCue.repeatCount, 3);
+assert.equal(advancedCue.repeatDelayMs, 250);
+assert.equal(advancedCue.startDelayMs, 150);
+assert.equal(advancedCue.fadeInMs, 100);
+assert.equal(advancedCue.crossFadeMs, 300);
+assert.equal(advancedCue.continueRepeats, true);
+const loopRepeatConflict = sanitizeFrame({
+  ...createFrame("dialogue"),
+  sfxCues: [createAudioCue("sfx", { channel: "rain", src: "rain.ogg", loop: true, repeatCount: 4, repeatDelayMs: 500, continueRepeats: true })]
+});
+assert.equal(loopRepeatConflict.sfxCues[0].repeatCount, 1, "Looped audio must ignore finite repeat counts");
+assert.equal(loopRepeatConflict.sfxCues[0].repeatDelayMs, 0, "Looped audio must ignore repeat delays");
+assert.equal(loopRepeatConflict.sfxCues[0].continueRepeats, false, "Looped audio persists by channel and does not need repeat continuation");
 
 const audio = new VNAudioController();
 await audio.applyFrame({
@@ -1180,6 +1237,49 @@ await audio.applyFrame({
 });
 assert.equal(audio.music.size, 0, "Stop-all must clear every music channel");
 assert.equal(audio.sfx.size, 0, "Stop-all must clear every SFX channel");
+
+await audio.applyFrame({
+  musicCues: [],
+  sfxCues: [createAudioCue("sfx", { channel: "knock", src: "knock.wav", repeatCount: 3, repeatDelayMs: 1 })]
+});
+const repeatedKnock = audio.sfx.get("knock");
+assert.equal(repeatedKnock.audio.playCount, 1, "Finite SFX repeats must start with one immediate playback");
+repeatedKnock.audio.emit("ended");
+await new Promise(resolve => setTimeout(resolve, 4));
+assert.equal(repeatedKnock.audio.playCount, 2, "Finite SFX must replay after its configured delay");
+repeatedKnock.audio.emit("ended");
+await new Promise(resolve => setTimeout(resolve, 4));
+assert.equal(repeatedKnock.audio.playCount, 3, "Finite SFX must honor the requested repeat count");
+repeatedKnock.audio.emit("ended");
+await new Promise(resolve => setTimeout(resolve, 1));
+assert.equal(audio.sfx.has("knock"), false, "Finite repeat channels must retire after the final playback");
+
+await audio.applyFrame({
+  musicCues: [],
+  sfxCues: [createAudioCue("sfx", { channel: "bounded", src: "bounded.wav", repeatCount: 3, repeatDelayMs: 20 })]
+});
+const boundedRepeat = audio.sfx.get("bounded");
+boundedRepeat.audio.emit("ended");
+await audio.applyFrame({ musicCues: [], sfxCues: [] });
+await new Promise(resolve => setTimeout(resolve, 25));
+assert.equal(boundedRepeat.audio.playCount, 1, "Leaving a frame must cancel future finite repeats by default");
+assert.equal(audio.sfx.has("bounded"), false, "Cancelled waiting repeats must not leave stale channel entries");
+
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "score-crossfade", src: "calm.ogg", loop: true })],
+  sfxCues: []
+});
+const fadingScore = audio.music.get("score-crossfade");
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "score-crossfade", src: "danger.ogg", loop: true, crossFadeMs: 4 })],
+  sfxCues: []
+});
+const incomingScore = audio.music.get("score-crossfade");
+assert.equal(incomingScore.path, "danger.ogg", "Crossfade must make the incoming track the logical channel owner immediately");
+await new Promise(resolve => setTimeout(resolve, 15));
+assert.equal(fadingScore.audio.paused, true, "Crossfade must retire the outgoing track after its fade");
+assert.ok(incomingScore.gain >= 0.99, "Crossfade must bring the incoming track to full gain");
+
 audio.destroy();
 
 const transitionBoundaryPlayer = Object.create(VNPlayerApp.prototype);
