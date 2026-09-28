@@ -117,6 +117,7 @@ export class VNAudioController {
             awaitingRepeat: false,
             fadeRaf: null,
             fadeGeneration: 0,
+            fadeResolve: null,
             stopped: false,
             endedHandler: null
         };
@@ -136,7 +137,9 @@ export class VNAudioController {
             if (crossFadeMs > 0) {
                 bank.delete(entry.channel);
                 this._retiring.add(previous);
-                void this._fadeEntry(previous, 0, crossFadeMs).then(() => this._retireEntry(previous));
+                void this._fadeEntry(previous, 0, crossFadeMs).then(completed => {
+                    if (completed) this._retireEntry(previous);
+                });
             }
             else {
                 this._retireEntry(previous);
@@ -328,6 +331,11 @@ export class VNAudioController {
         if (entry.delayTimer) clearTimeout(entry.delayTimer);
         if (entry.repeatTimer) clearTimeout(entry.repeatTimer);
         entry.fadeGeneration += 1;
+        if (entry.fadeResolve) {
+            const resolveFade = entry.fadeResolve;
+            entry.fadeResolve = null;
+            resolveFade(false);
+        }
         if (entry.fadeRaf !== null && entry.fadeRaf !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(entry.fadeRaf);
         entry.delayTimer = null;
         entry.repeatTimer = null;
@@ -352,27 +360,46 @@ export class VNAudioController {
             if (entry && !entry.stopped) {
                 entry.gain = target;
                 this._applyEntryVolume(entry);
+                return Promise.resolve(true);
             }
-            return Promise.resolve();
+            return Promise.resolve(false);
+        }
+
+        if (entry.fadeResolve) {
+            const resolvePrevious = entry.fadeResolve;
+            entry.fadeResolve = null;
+            resolvePrevious(false);
+        }
+        if (entry.fadeRaf !== null && entry.fadeRaf !== undefined && typeof cancelAnimationFrame === "function") {
+            cancelAnimationFrame(entry.fadeRaf);
+            entry.fadeRaf = null;
         }
 
         const startGain = Math.max(0, Math.min(1, Number(entry.gain ?? 1)));
-        const startedAt = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+        const nowValue = () => (typeof performance !== "undefined" && performance.now ? performance.now() : Date.now());
+        const startedAt = nowValue();
         const raf = typeof requestAnimationFrame === "function"
             ? requestAnimationFrame
-            : callback => setTimeout(() => callback(Date.now()), 16);
+            : callback => setTimeout(() => callback(nowValue()), 16);
         const fadeGeneration = ++entry.fadeGeneration;
 
         return new Promise(resolve => {
+            entry.fadeResolve = resolve;
+            const finish = completed => {
+                if (entry.fadeGeneration === fadeGeneration) {
+                    entry.fadeRaf = null;
+                    entry.fadeResolve = null;
+                }
+                resolve(completed);
+            };
             const step = now => {
-                if (entry.stopped || entry.fadeGeneration !== fadeGeneration) return resolve();
+                if (entry.stopped || entry.fadeGeneration !== fadeGeneration) return finish(false);
                 const elapsed = Math.max(0, Number(now) - startedAt);
                 const progress = Math.min(1, elapsed / duration);
                 entry.gain = startGain + ((target - startGain) * progress);
                 this._applyEntryVolume(entry);
                 if (progress >= 1) {
-                    entry.fadeRaf = null;
-                    resolve();
+                    finish(true);
                     return;
                 }
                 entry.fadeRaf = raf(step);
