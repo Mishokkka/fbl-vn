@@ -301,7 +301,7 @@ export class VNAudioController {
 
     _cancelStaleFrameTasks() {
         for (const [key, entry] of [...this._pending.entries()]) {
-            if (entry.continueRepeats || entry.generation === this._frameGeneration) continue;
+            if (entry.generation === this._frameGeneration) continue;
             this._cancelPending(key);
         }
         for (const bank of [this.music, this.sfx]) {
