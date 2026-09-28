@@ -243,7 +243,7 @@ export class VNPreloadController {
             depth: NEARBY_WARM_DEPTH,
             maxFrames: NEARBY_WARM_MAX_FRAMES,
             concurrency: 2,
-            fullFrameAssets: true
+            fullFrameAssets: false
         });
         if (this.cancelled || safeDepth <= NEARBY_WARM_DEPTH) return [];
 
