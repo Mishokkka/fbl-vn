@@ -639,7 +639,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
         }
         if (cue.action !== AUDIO_ACTIONS.PLAY || !cue.src) return;
-        const persistent = kind === "music" || cue.loop === true;
+        const persistent = cue.loop === true;
         if (!persistent) {
             bank.delete(channel);
             return;
