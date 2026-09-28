@@ -79,7 +79,7 @@ const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
 const { VNPreloadController, VNPreloader } = await import("../scripts/playback/vn-preloader.js");
-const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createCounterCondition, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, isChoiceAvailable, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createCounterCondition, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, isChoiceAvailable, resolveFrameNextRouting, sanitizeFrame, sanitizeScene, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
 const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, DATA_SCHEMA_VERSION, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
@@ -111,6 +111,9 @@ assert.deepEqual([...characterManager.expandedCharacterIds], ["character-a", "ch
 
 const scene = createScene();
 assert.equal(scene.audioExitFadeMs, 750, "New scenes must default to a short exit audio fade");
+const standaloneLegacyScene = createScene();
+delete standaloneLegacyScene.audioExitFadeMs;
+assert.equal(sanitizeScene(standaloneLegacyScene).audioExitFadeMs, 0, "Standalone legacy scene imports without schema metadata must preserve immediate audio shutdown");
 scene.title = "Smoke";
 const branchId = scene.branches[0].id;
 scene.frameFolders = [
