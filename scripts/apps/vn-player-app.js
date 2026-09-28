@@ -459,7 +459,6 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.loading = false;
         await this.render();
         if (this._disposed) return results;
-        this._backgroundPreloadPromise = this._preloader.startBackgroundImages();
         VNSocket.signalReady(this.scene.id, this.leaderId);
         if (VNPlayerApp.pendingStarts.has(this.scene.id)) {
             VNPlayerApp.pendingStarts.delete(this.scene.id);
@@ -501,7 +500,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         catch (_error) {
             depth = 10;
         }
-        const maxFrames = Math.max(48, depth * 5);
+        const maxFrames = Math.max(12, depth + 2);
         void this._preloader.warmAhead(frame.id, { depth, maxFrames }).catch(error => {
             console.warn(`${MODULE_ID} | Background asset preload failed.`, error);
         });
