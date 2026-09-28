@@ -1,6 +1,7 @@
 import { VNSceneStore } from "../data/scene-store.js";
 import { clearFrameReferences, createAudioCue, createChoice, createCounterCondition, createFrame, createFrameCharacter, createFrameFolder, createSampleScene, createScene, createSceneBranch, createTextBlock, frameDisplayName, getFrameReferences, getFrameTextBlocks, sanitizeFolderColor, sanitizeFrame, sanitizeScene, validateScene } from "../data/schema.js";
 import { VNSocket } from "../playback/vn-socket.js";
+import { VNAudioController } from "../playback/vn-audio.js";
 import { VNPlayerApp } from "./vn-player-app.js";
 import { VNAssetPickerApp } from "./asset-picker-app.js";
 import { VNCharacterManagerApp } from "./vn-character-manager-app.js";
@@ -60,6 +61,13 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._frameLinkResizeObserver = null;
         this._frameLinkDrawRaf = null;
         this._frameLinkDrawRoot = null;
+        this._audioPreview = new VNAudioController();
+    }
+
+    async close(options = {}) {
+        this._audioPreview?.destroy();
+        this._audioPreview = null;
+        return super.close(options);
     }
 
     _enqueueEditorAction(operation) {
@@ -252,7 +260,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                     [PLAYER_MODES.VOTE, "Голосование игроков"]
                 ], scene ? scene.defaultMode : undefined),
                 startFrameTarget: this._frameTargetDisplayFromIndex(renderIndex, scene ? scene.startFrame : "", ""),
-                startFrameInvalid: renderIndex.errorKeys.has("::scene.startFrame")
+                startFrameInvalid: renderIndex.errorKeys.has("::scene.startFrame"),
+                audioExitFadeSeconds: this._msToSeconds(scene ? scene.audioExitFadeMs : 750)
             };
         }
         if (partId === "framePanel") {
@@ -276,6 +285,10 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 ], frame ? frame.type : undefined),
                 selectedMusicCues,
                 selectedSfxCues,
+                incomingAudioState: this._audioStateBeforeFrame(scene, frame),
+                currentAudioChanges: this._audioChangesForFrame(frame),
+                hasIncomingAudioState: this._audioStateBeforeFrame(scene, frame).length > 0,
+                hasCurrentAudioChanges: this._audioChangesForFrame(frame).length > 0,
                 musicChannelOptions: this._audioChannelOptions(scene, "music"),
                 sfxChannelOptions: this._audioChannelOptions(scene, "sfx"),
                 positionOptions: this._options([
@@ -587,12 +600,98 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             isPlay: cue.action === AUDIO_ACTIONS.PLAY,
             isStop: cue.action === AUDIO_ACTIONS.STOP,
             isStopAll: cue.action === AUDIO_ACTIONS.STOP_ALL,
+            repeatCount: Number(cue.repeatCount || 1),
+            repeatDelaySeconds: this._msToSeconds(cue.repeatDelayMs),
+            startDelaySeconds: this._msToSeconds(cue.startDelayMs),
+            fadeInSeconds: this._msToSeconds(cue.fadeInMs),
+            fadeOutSeconds: this._msToSeconds(cue.fadeOutMs),
+            crossFadeSeconds: this._msToSeconds(cue.crossFadeMs),
             actionOptions: this._options([
                 [AUDIO_ACTIONS.PLAY, "Запустить / заменить канал"],
                 [AUDIO_ACTIONS.STOP, "Остановить канал"],
                 [AUDIO_ACTIONS.STOP_ALL, "Остановить всё"]
             ], cue.action || AUDIO_ACTIONS.PLAY)
         }));
+    }
+
+    _msToSeconds(value) {
+        const number = Math.max(0, Number(value || 0));
+        return Number((number / 1000).toFixed(2));
+    }
+
+    _secondsToMs(value) {
+        const number = Number(value || 0);
+        return Number.isFinite(number) ? Math.max(0, Math.min(60000, Math.round(number * 1000))) : 0;
+    }
+
+    _applyAudioStateCue(bank, cue, kind) {
+        if (!cue) return;
+        const channel = String(cue.channel || "").trim();
+        if (cue.action === AUDIO_ACTIONS.STOP_ALL) {
+            bank.clear();
+            return;
+        }
+        if (!channel) return;
+        if (cue.action === AUDIO_ACTIONS.STOP) {
+            bank.delete(channel);
+            return;
+        }
+        if (cue.action !== AUDIO_ACTIONS.PLAY || !cue.src) return;
+        const persistent = kind === "music" || cue.loop === true;
+        if (!persistent) {
+            bank.delete(channel);
+            return;
+        }
+        bank.set(channel, { kind, channel, src: cue.src, loop: cue.loop === true });
+    }
+
+    _audioStateBeforeFrame(scene, targetFrame) {
+        if (!scene || !targetFrame) return [];
+        const music = new Map();
+        const sfx = new Map();
+        const branchFrames = (scene.frames || []).filter(frame => (frame.branchId || "") === (targetFrame.branchId || ""));
+        const targetIndex = branchFrames.findIndex(frame => frame.id === targetFrame.id);
+        if (targetIndex < 0) return [];
+        for (let index = 0; index < targetIndex; index += 1) {
+            const frame = branchFrames[index];
+            for (const cue of frame.musicCues || []) this._applyAudioStateCue(music, cue, "music");
+            for (const cue of frame.sfxCues || []) this._applyAudioStateCue(sfx, cue, "sfx");
+        }
+        return [...music.values(), ...sfx.values()]
+            .sort((left, right) => `${left.kind}:${left.channel}`.localeCompare(`${right.kind}:${right.channel}`))
+            .map(entry => ({
+                ...entry,
+                kindLabel: entry.kind === "music" ? "Музыка" : "SFX",
+                fileLabel: this._labelFromPath(entry.src, entry.src)
+            }));
+    }
+
+    _audioChangesForFrame(frame) {
+        if (!frame) return [];
+        const result = [];
+        for (const [kind, cues] of [["music", frame.musicCues], ["sfx", frame.sfxCues]]) {
+            for (const cue of Array.isArray(cues) ? cues : []) {
+                const kindLabel = kind === "music" ? "Музыка" : "SFX";
+                if (cue.action === AUDIO_ACTIONS.STOP_ALL) {
+                    result.push({ kindLabel, description: "остановить все каналы" });
+                    continue;
+                }
+                const channel = cue.channel || "без канала";
+                if (cue.action === AUDIO_ACTIONS.STOP) {
+                    result.push({ kindLabel, description: `${channel}: остановить${Number(cue.fadeOutMs || 0) > 0 ? ` с fade ${this._msToSeconds(cue.fadeOutMs)} с` : ""}` });
+                    continue;
+                }
+                const file = this._labelFromPath(cue.src, cue.src || "без файла");
+                const extras = [];
+                if (Number(cue.startDelayMs || 0) > 0) extras.push(`delay ${this._msToSeconds(cue.startDelayMs)} с`);
+                if (Number(cue.crossFadeMs || 0) > 0) extras.push(`crossfade ${this._msToSeconds(cue.crossFadeMs)} с`);
+                else if (Number(cue.fadeInMs || 0) > 0) extras.push(`fade in ${this._msToSeconds(cue.fadeInMs)} с`);
+                if (cue.loop === true) extras.push("цикл");
+                else if (Number(cue.repeatCount || 1) > 1) extras.push(`×${Number(cue.repeatCount)}`);
+                result.push({ kindLabel, description: `${channel} → ${file}${extras.length ? ` (${extras.join(", ")})` : ""}` });
+            }
+        }
+        return result;
     }
 
     _audioChannelOptions(scene, kind) {
@@ -1990,9 +2089,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const sceneTitle = this.element.querySelector("[name='scene.title']");
         const sceneMode = this.element.querySelector("[name='scene.defaultMode']");
         const sceneStart = this.element.querySelector("[name='scene.startFrame']");
+        const sceneAudioExitFade = this.element.querySelector("[name='scene.audioExitFadeSeconds']");
         const nextTitle = sceneTitle ? (sceneTitle.value || "Без названия") : originalScene.title;
         const nextMode = sceneMode ? (sceneMode.value || PLAYER_MODES.INDIVIDUAL) : originalScene.defaultMode;
         const nextStartFrame = sceneStart ? (sceneStart.value || originalScene.startFrame) : originalScene.startFrame;
+        const nextAudioExitFadeMs = sceneAudioExitFade ? Math.min(10000, this._secondsToMs(sceneAudioExitFade.value)) : Number(originalScene.audioExitFadeMs || 0);
 
         const originalFrame = (originalScene.frames || []).find(item => item.id === this.selectedFrameId) || null;
         let cleanFrame = originalFrame;
@@ -2070,7 +2171,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const frameChanged = Boolean(originalFrame && cleanFrame && !this._sameData(originalFrame, cleanFrame));
         const metadataChanged = nextTitle !== originalScene.title
             || nextMode !== originalScene.defaultMode
-            || nextStartFrame !== originalScene.startFrame;
+            || nextStartFrame !== originalScene.startFrame
+            || nextAudioExitFadeMs !== Number(originalScene.audioExitFadeMs || 0);
         if (!frameChanged && !metadataChanged) {
             const currentFrame = (originalScene.frames || []).find(item => item.id === this.selectedFrameId) || null;
             if (currentFrame?.branchId) this._activateBranchForSelection(currentFrame.branchId);
@@ -2081,6 +2183,7 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         scene.title = nextTitle;
         scene.defaultMode = nextMode;
         scene.startFrame = nextStartFrame;
+        scene.audioExitFadeMs = nextAudioExitFadeMs;
         if (originalFrame && cleanFrame) {
             const frameIndex = scene.frames.findIndex(item => item.id === originalFrame.id);
             if (frameIndex >= 0) scene.frames[frameIndex] = cleanFrame;
@@ -2133,7 +2236,14 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             action: this._readRowValue(row, "[data-audio-action]", AUDIO_ACTIONS.PLAY),
             channel: this._readRowValue(row, "[data-audio-channel]", ""),
             src: this._readRowValue(row, "[data-audio-src]", ""),
-            loop: Boolean(row.querySelector("[data-audio-loop]")?.checked)
+            loop: Boolean(row.querySelector("[data-audio-loop]")?.checked),
+            repeatCount: Number(this._readRowValue(row, "[data-audio-repeat-count]", "1") || 1),
+            repeatDelayMs: this._secondsToMs(this._readRowValue(row, "[data-audio-repeat-delay]", "0")),
+            startDelayMs: this._secondsToMs(this._readRowValue(row, "[data-audio-start-delay]", "0")),
+            fadeInMs: this._secondsToMs(this._readRowValue(row, "[data-audio-fade-in]", "0")),
+            fadeOutMs: this._secondsToMs(this._readRowValue(row, "[data-audio-fade-out]", "0")),
+            crossFadeMs: this._secondsToMs(this._readRowValue(row, "[data-audio-cross-fade]", "0")),
+            continueRepeats: Boolean(row.querySelector("[data-audio-continue-repeats]")?.checked)
         }));
     }
 
@@ -2882,6 +2992,25 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._renderEditorParts(["frames", "framePanel"]);
     }
 
+    static async _onPreviewAudioCue(event, target) {
+        event.preventDefault();
+        const scene = await this._commitFromForm({ persist: false });
+        const frame = scene?.frames?.find(item => item.id === this.selectedFrameId) || null;
+        if (!frame) return;
+        const kind = target.dataset.audioKind === "sfx" ? "sfx" : "music";
+        const key = kind === "sfx" ? "sfxCues" : "musicCues";
+        const cue = (frame[key] || []).find(item => item.id === target.dataset.audioCueId);
+        if (!cue) return;
+        if (!this._audioPreview) this._audioPreview = new VNAudioController();
+        await this._audioPreview.applyCue(kind, cue, { generation: 0 });
+    }
+
+    static _onStopAudioPreview(event, target) {
+        event.preventDefault();
+        this._audioPreview?.destroy();
+        this._audioPreview = new VNAudioController();
+    }
+
     static async _onAddNextRoutingCondition(event, target) {
         event.preventDefault();
         const scene = await this._commitFromForm({ persist: false });
@@ -3197,6 +3326,8 @@ VNEditorApp.DEFAULT_OPTIONS = {
         deleteAudioCue: queuedEditorAction(VNEditorApp._onDeleteAudioCue),
         duplicateAudioCue: queuedEditorAction(VNEditorApp._onDuplicateAudioCue),
         moveAudioCue: queuedEditorAction(VNEditorApp._onMoveAudioCue),
+        previewAudioCue: queuedEditorAction(VNEditorApp._onPreviewAudioCue),
+        stopAudioPreview: VNEditorApp._onStopAudioPreview,
         addNextRoutingCondition: queuedEditorAction(VNEditorApp._onAddNextRoutingCondition),
         deleteNextRoutingCondition: queuedEditorAction(VNEditorApp._onDeleteNextRoutingCondition),
         addChoice: queuedEditorAction(VNEditorApp._onAddChoice),
