@@ -1464,8 +1464,10 @@ assert.equal(transitionBoundaryContext.frameCharacters[1].portraitSrc, "companio
 assert.equal(transitionBoundaryContext.frameCharacters[1].showName, true, "Additional character names must obey their per-character visibility flag");
 transitionBoundaryPlayer.scene.frames[0].textPresentation = TEXT_PRESENTATIONS.CENTER;
 const centeredCharacterContext = await transitionBoundaryPlayer._prepareContext({});
-assert.equal(centeredCharacterContext.frameCharacters[0].showName, false, "Centered text must suppress the primary character name");
-assert.equal(centeredCharacterContext.frameCharacters[1].showName, false, "Centered text must suppress additional character names");
+assert.equal(centeredCharacterContext.frameCharacters.some(character => character.showName), false, "Centered text must suppress every visible character name");
+const centeredCompanion = centeredCharacterContext.frameCharacters.find(character => character.id === "companion");
+assert.ok(centeredCompanion, "Centered text must keep an additional character that still has a portrait");
+assert.equal(centeredCompanion.showName, false, "Centered text must suppress additional character names");
 
 const visualStatePlayer = Object.create(VNPlayerApp.prototype);
 visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portrait.png", portraitPosition: "center" };
