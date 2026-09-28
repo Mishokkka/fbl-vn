@@ -309,7 +309,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         VNPlayerApp.pendingStarts.delete(sceneId);
         VNPlayerApp.pendingAdvances.delete(sceneId);
         const app = VNPlayerApp.active.get(sceneId);
-        if (app) return app.close({ force: true });
+        if (app) return app.close({ force: true, fadeOutMs: Number(app.scene?.audioExitFadeMs || 0) });
     }
 
     static offerRejoin(scene, leaderId) {
@@ -493,8 +493,17 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _warmUpcomingAssets(frame) {
         if (!frame?.id || this._disposed || !this._preloader) return;
-        void this._preloader.warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 2 }).catch(error => {
-            console.warn(`${MODULE_ID} | Nearby asset preload failed.`, error);
+        let depth = 10;
+        try {
+            const configured = Number(game.settings?.get?.(MODULE_ID, SETTINGS.PRELOAD_AHEAD_DEPTH));
+            if (Number.isFinite(configured)) depth = Math.max(2, Math.min(20, Math.floor(configured)));
+        }
+        catch (_error) {
+            depth = 10;
+        }
+        const maxFrames = Math.max(48, depth * 5);
+        void this._preloader.warmAhead(frame.id, { depth, maxFrames }).catch(error => {
+            console.warn(`${MODULE_ID} | Background asset preload failed.`, error);
         });
     }
 
@@ -633,7 +642,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             bank.set(channel, {
                 channel,
                 src: cue.src,
-                loop: cue.loop === true
+                loop: cue.loop === true,
+                fadeInMs: 0,
+                crossFadeMs: 0,
+                repeatCount: cue.repeatCount || 1,
+                repeatDelayMs: cue.repeatDelayMs || 0,
+                continueRepeats: cue.continueRepeats === true
             });
         }
     }
@@ -656,10 +670,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             : getInitialCounterState(this.scene);
 
         for (const cue of music.values()) {
-            await this.audio.playChannel("music", cue.channel, cue.src, cue.loop);
+            await this.audio.playChannel("music", cue.channel, cue.src, cue.loop, cue);
         }
         for (const cue of sfx.values()) {
-            await this.audio.playChannel("sfx", cue.channel, cue.src, true);
+            await this.audio.playChannel("sfx", cue.channel, cue.src, true, cue);
         }
     }
 
@@ -783,7 +797,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this.mode === PLAYER_MODES.VOTE && this.networked && !this._isLeader()) {
             VNPlayerApp.offerRejoin(this.scene, this.leaderId);
             VNSocket.leave(this.scene.id, this.leaderId);
-            const result = await this.close({ force: true });
+            const result = await this.close({ force: true, fadeOutMs: Number(this.scene?.audioExitFadeMs || 0) });
             VNPlayerApp._renderRejoinControl();
             return result;
         }
@@ -1645,10 +1659,21 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._finishing = true;
         const synchronized = this.networked && (this.mode === PLAYER_MODES.GM || this.mode === PLAYER_MODES.VOTE);
         if (synchronized && this._isLeader()) VNSocket.close(this.scene.id);
-        await this.close({ force: true });
+        await this.close({ force: true, fadeOutMs: Number(this.scene?.audioExitFadeMs || 0) });
     }
 
     async close(options = {}) {
+        if (this._closing) return;
+        this._closing = true;
+        const fadeOutMs = Math.max(0, Math.min(10000, Number(options.fadeOutMs || 0)));
+        if (fadeOutMs > 0 && !this._disposed) {
+            try {
+                await this.audio.fadeOutAll(fadeOutMs);
+            }
+            catch (error) {
+                console.warn(`${MODULE_ID} | Scene exit audio fade failed.`, error);
+            }
+        }
         this._disposed = true;
         this._preloader?.cancel();
         this._cancelTypingAnimation();
