@@ -1085,6 +1085,14 @@ assert.equal(migratedFrame.musicCues[0].loop, true);
 assert.equal(migratedFrame.sfxCues.length, 1, "Legacy SFX must migrate into one channel cue");
 assert.equal(migratedFrame.sfxCues[0].src, "legacy-bell.wav");
 assert.equal(migrated.scenes[0].audioExitFadeMs, 0, "Migrated scenes must preserve the old immediate close behavior unless the author opts into an exit fade");
+const schema12Scene = createScene();
+delete schema12Scene.audioExitFadeMs;
+schema12Scene.frames[0].musicCues = [{ id: "v12-audio", action: AUDIO_ACTIONS.PLAY, channel: "music-v12", src: "v12.ogg", loop: true }];
+const schema12Migrated = migrateData({ schemaVersion: 12, version: 3, scenes: [schema12Scene], assets: [], characters: [] });
+assert.equal(schema12Migrated.schemaVersion, 13, "Schema v12 exports must migrate explicitly to schema v13");
+assert.equal(schema12Migrated.scenes[0].audioExitFadeMs, 0, "Schema v12 scenes must retain immediate audio shutdown by default");
+assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].crossFadeMs, 0, "Schema v12 cues must gain zeroed timing fields");
+assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].repeatCount, 1, "Schema v12 cues must gain one-play repeat defaults");
 for (const cue of [...migratedFrame.musicCues, ...migratedFrame.sfxCues]) {
   assert.equal(cue.repeatCount, 1, "Schema v13 migration must default legacy cues to one playback");
   assert.equal(cue.repeatDelayMs, 0);
