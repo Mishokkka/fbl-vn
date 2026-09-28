@@ -271,6 +271,8 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const selectedTextBlocks = this._buildTextBlockViews(frame);
             const selectedMusicCues = this._buildAudioCueViews(frame?.musicCues, "music");
             const selectedSfxCues = this._buildAudioCueViews(frame?.sfxCues, "sfx");
+            const incomingAudioState = this._audioStateBeforeFrame(scene, frame);
+            const currentAudioChanges = this._audioChangesForFrame(frame);
             const selectedFolderId = frame && frame.branchId === state.activeBranchId ? frame.folderId || "" : "";
             const nextRouting = frame?.nextRouting || {};
             return {
@@ -285,10 +287,10 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 ], frame ? frame.type : undefined),
                 selectedMusicCues,
                 selectedSfxCues,
-                incomingAudioState: this._audioStateBeforeFrame(scene, frame),
-                currentAudioChanges: this._audioChangesForFrame(frame),
-                hasIncomingAudioState: this._audioStateBeforeFrame(scene, frame).length > 0,
-                hasCurrentAudioChanges: this._audioChangesForFrame(frame).length > 0,
+                incomingAudioState,
+                currentAudioChanges,
+                hasIncomingAudioState: incomingAudioState.length > 0,
+                hasCurrentAudioChanges: currentAudioChanges.length > 0,
                 musicChannelOptions: this._audioChannelOptions(scene, "music"),
                 sfxChannelOptions: this._audioChannelOptions(scene, "sfx"),
                 positionOptions: this._options([
