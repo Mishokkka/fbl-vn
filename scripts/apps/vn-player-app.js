@@ -1666,14 +1666,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this._closing) return;
         this._closing = true;
         const fadeOutMs = Math.max(0, Math.min(10000, Number(options.fadeOutMs || 0)));
-        if (fadeOutMs > 0 && !this._disposed) {
-            try {
-                await this.audio.fadeOutAll(fadeOutMs);
-            }
-            catch (error) {
+        const audioShutdown = fadeOutMs > 0
+            ? this.audio.fadeOutAll(fadeOutMs).catch(error => {
                 console.warn(`${MODULE_ID} | Scene exit audio fade failed.`, error);
-            }
-        }
+            })
+            : Promise.resolve();
+
         this._disposed = true;
         this._preloader?.cancel();
         this._cancelTypingAnimation();
@@ -1688,11 +1686,30 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             window.removeEventListener("resize", this._onWindowResize);
             this._resizeBound = false;
         }
-        this.audio.destroy();
         VNPlayerApp.active.delete(this.scene.id);
         VNPlayerApp.pendingStarts.delete(this.scene.id);
         VNPlayerApp.pendingAdvances.delete(this.scene.id);
-        return super.close(options);
+
+        let closeResult;
+        try {
+            closeResult = await super.close(options);
+        }
+        catch (error) {
+            this.audio.destroy();
+            throw error;
+        }
+
+        if (fadeOutMs > 0) {
+            this._audioShutdownPromise = audioShutdown.finally(() => {
+                this.audio.destroy();
+                this._audioShutdownPromise = null;
+            });
+            void this._audioShutdownPromise;
+        }
+        else {
+            this.audio.destroy();
+        }
+        return closeResult;
     }
 
     static _onNext(event, target) {
