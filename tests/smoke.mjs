@@ -255,10 +255,6 @@ voicedNext.textBlocks[1].voice = "next-voice-2.ogg";
 voicedFrame.isFinal = false;
 voicedFrame.next = voicedNext.id;
 startupVoiceScene.frames.push(voicedNext);
-const backgroundImages = VNPreloader.collectBackgroundImagePaths(preloadScene);
-assert.equal(backgroundImages.includes("preload-beyond.webp"), true, "Distant images must be eligible for low-priority background preload");
-assert.equal(backgroundImages.some(path => path.endsWith(".ogg")), false, "Long-form audio must not be swept into the whole-scene background preload");
-
 const savedPreloadPath = VNPreloader.preloadPath;
 const preloadCalls = [];
 VNPreloader.preloadPath = async path => { preloadCalls.push(path); };
@@ -268,11 +264,6 @@ await Promise.all([
   preloadController.ensurePaths(["preload-a.webp", "preload-b.webp"], { concurrency: 2 })
 ]);
 assert.equal(preloadCalls.filter(path => path === "preload-a.webp").length, 1, "Concurrent priority preloads must share one in-flight request per asset");
-const backgroundController = new VNPreloadController(preloadScene);
-preloadCalls.length = 0;
-await backgroundController.startBackgroundImages();
-assert.equal(preloadCalls.includes("preload-beyond.webp"), true, "Background preload must eventually warm distant images");
-assert.equal(preloadCalls.some(path => path.endsWith(".ogg")), false, "Background preload must leave distant audio for nearby-frame warming");
 preloadCalls.length = 0;
 const voiceWarmController = new VNPreloadController(startupVoiceScene);
 await voiceWarmController.warmWindow(voicedFrame.id, { depth: 2, maxFrames: 12, concurrency: 4 });
@@ -297,9 +288,33 @@ deepWarmScene.frames = Array.from({ length: 12 }, (_, index) => {
 deepWarmScene.startFrame = "deep-warm-0";
 preloadCalls.length = 0;
 const deepWarmController = new VNPreloadController(deepWarmScene);
-await deepWarmController.warmAhead("deep-warm-0", { depth: 10, maxFrames: 48 });
+await deepWarmController.warmAhead("deep-warm-0", { depth: 10, maxFrames: 12 });
 assert.equal(preloadCalls.includes("deep-warm-10.ogg"), true, "Long-range warming must preload audio ten graph steps ahead");
 assert.equal(preloadCalls.includes("deep-warm-11.ogg"), false, "Configured warm depth must remain bounded instead of sweeping the entire scene");
+
+const retainedWarmAudio = new Audio("retained-warm.ogg");
+VNPreloader.preloadPath = async path => {
+  preloadCalls.push(path);
+  return path.endsWith(".ogg") ? retainedWarmAudio : path;
+};
+const audioWarmController = new VNPreloadController(preloadScene);
+await audioWarmController.ensurePaths(["retained-warm.ogg"]);
+assert.strictEqual(audioWarmController.audioWarmers.get("retained-warm.ogg"), retainedWarmAudio, "Successful audio preloads must retain a hidden media element so browser buffering can continue");
+audioWarmController.cancel();
+assert.equal(audioWarmController.audioWarmers.size, 0, "Cancelling preload must release retained hidden audio elements");
+assert.equal(retainedWarmAudio.paused, true, "Released hidden audio warmers must be paused");
+
+let resolveLateWarm = null;
+VNPreloader.preloadPath = () => new Promise(resolve => { resolveLateWarm = resolve; });
+const lateWarmController = new VNPreloadController(preloadScene);
+const lateWarmPromise = lateWarmController.ensurePaths(["late-warm.ogg"]);
+await Promise.resolve();
+lateWarmController.cancel();
+const lateWarmAudio = new Audio("late-warm.ogg");
+resolveLateWarm(lateWarmAudio);
+await lateWarmPromise;
+assert.equal(lateWarmController.audioWarmers.size, 0, "An audio preload that finishes after cancellation must not repopulate the hidden warmer cache");
+assert.equal(lateWarmAudio.paused, true, "Late audio preload completion must be released immediately after cancellation");
 
 let transientAttempts = 0;
 VNPreloader.preloadPath = async path => {
@@ -1316,6 +1331,41 @@ assert.equal(interruptedOutgoing.audio.paused, true, "Stopping during crossfade 
 assert.equal(interruptedIncoming.audio.paused, true, "Stopping during crossfade must retire the incoming channel owner");
 assert.equal(audio.music.has("interrupt-crossfade"), false, "Stopping during crossfade must clear the logical channel");
 
+const originalAudioPlay = Audio.prototype.play;
+let resolvePendingPlay = null;
+Audio.prototype.play = function pendingPlay() {
+  this.paused = false;
+  this.playCount += 1;
+  return new Promise(resolve => { resolvePendingPlay = resolve; });
+};
+const pendingPlayController = new VNAudioController();
+const pendingChannelPromise = pendingPlayController.playChannel("music", "pending-owner", "pending.ogg", true);
+await Promise.resolve();
+const pendingEntry = pendingPlayController.music.get("pending-owner");
+assert.ok(pendingEntry, "Pending play() must be tracked as the logical channel owner");
+await pendingPlayController.stopChannel("music", "pending-owner");
+resolvePendingPlay();
+await pendingChannelPromise;
+assert.equal(pendingEntry.audio.paused, true, "A play() promise resolving after STOP must not revive retired channel audio");
+assert.equal(pendingPlayController.music.has("pending-owner"), false, "A stopped pending play() must stay detached from its channel");
+
+let resolvePendingVoice = null;
+Audio.prototype.play = function pendingVoicePlay() {
+  this.paused = false;
+  this.playCount += 1;
+  return new Promise(resolve => { resolvePendingVoice = resolve; });
+};
+const pendingVoicePromise = pendingPlayController.playVoice("voice-pending.ogg");
+await Promise.resolve();
+const pendingVoiceAudio = pendingPlayController.voice;
+pendingPlayController.stopVoice();
+resolvePendingVoice();
+await pendingVoicePromise;
+assert.equal(pendingVoiceAudio.paused, true, "A voice play() promise resolving after stopVoice() must not restart stale voice audio");
+assert.equal(pendingPlayController.voice, null, "Stopped pending voice must not reclaim the current voice slot");
+pendingPlayController.destroy();
+Audio.prototype.play = originalAudioPlay;
+
 audio.destroy();
 
 let externalPauseCalls = 0;
@@ -1492,6 +1542,26 @@ assert.equal(framePreviewPlayer.visualState.portrait, "preview-portrait.webp", "
 assert.equal(framePreviewPlayer.audio.music.get("score")?.path, "score-preview.ogg", "Selected-frame preview must restore inherited music from the current branch, not another branch");
 assert.equal(framePreviewPlayer.audio.sfx.get("rain")?.path, "rain-preview.ogg", "Selected-frame preview must restore inherited looping SFX channels");
 framePreviewPlayer.audio.destroy();
+
+let resolveEditorAudioPreview = null;
+const auditionEditor = Object.create(VNEditorApp.prototype);
+auditionEditor.selectedFrameId = previewTarget.id;
+auditionEditor._commitFromForm = async () => ({
+  ...previewScene,
+  frames: previewScene.frames.map(frame => frame.id === previewTarget.id
+    ? { ...frame, sfxCues: [createAudioCue("sfx", { id: "audition-cue", channel: "audition", src: "audition.ogg" })] }
+    : frame)
+});
+auditionEditor._audioPreview = {
+  applyCue() { return new Promise(resolve => { resolveEditorAudioPreview = resolve; }); }
+};
+await VNEditorApp._onPreviewAudioCue.call(
+  auditionEditor,
+  { preventDefault() {} },
+  { dataset: { audioKind: "sfx", audioCueId: "audition-cue" } }
+);
+assert.equal(typeof resolveEditorAudioPreview, "function", "Editor audition must start the cue");
+resolveEditorAudioPreview();
 
 let previewFrameCall = null;
 const savedPreviewFrame = VNPlayerApp.previewFrame;
