@@ -65,7 +65,7 @@ if (!exists(exportFormatPath)) errors.push("Export format documentation is missi
 if (exists(exportExamplePath)) {
   try {
     const example = JSON.parse(read(exportExamplePath));
-    if (example.schemaVersion !== 12 || example.version !== 3) errors.push("Export example must use current schemaVersion 12 and storage version 3");
+    if (example.schemaVersion !== 13 || example.version !== 3) errors.push("Export example must use current schemaVersion 13 and storage version 3");
     if (!Array.isArray(example.scenes) || !example.scenes.length) errors.push("Export example must contain at least one scene");
     if (!Array.isArray(example.assets) || !Array.isArray(example.characters)) errors.push("Export example must show assets and characters arrays");
     const exampleScene = example.scenes?.[0] || null;
@@ -92,6 +92,13 @@ if (exists(exportExamplePath)) {
     const secretTrust = secretChoice?.conditions?.find(condition => condition?.counterId === "counter-trust" && condition?.operator === "gte");
     if (!routingTrust || trustBeforeChoice < Number(routingTrust.value || 0)) errors.push("Export example conditional routing must be reachable from its documented counter progression");
     if (!secretTrust || trustBeforeChoice < Number(secretTrust.value || 0)) errors.push("Export example conditional choice must be reachable from its documented counter progression");
+    if (!Number.isFinite(Number(exampleScene?.audioExitFadeMs))) errors.push("Export example scene must document audioExitFadeMs");
+    const exampleAudioCues = exampleFrames.flatMap(frame => [...(frame?.musicCues || []), ...(frame?.sfxCues || [])]);
+    for (const cue of exampleAudioCues) {
+      for (const field of ["repeatCount", "repeatDelayMs", "startDelayMs", "fadeInMs", "fadeOutMs", "crossFadeMs", "continueRepeats"]) {
+        if (!(field in cue)) errors.push(`Export example audio cue is missing schema v13 field: ${field}`);
+      }
+    }
   }
   catch (error) {
     errors.push(`Export structure example is not valid JSON: ${error.message}`);
@@ -99,7 +106,7 @@ if (exists(exportExamplePath)) {
 }
 if (exists(exportFormatPath)) {
   const exportFormatSource = read(exportFormatPath);
-  if (!exportFormatSource.includes("schemaVersion: 12") || !exportFormatSource.includes("fbl-vn-export.example.json")) {
+  if (!exportFormatSource.includes("schemaVersion: 13") || !exportFormatSource.includes("fbl-vn-export.example.json")) {
     errors.push("Export format documentation must identify the current schema and example file");
   }
 }
@@ -235,14 +242,18 @@ const editorGridRule = editorLayoutCssSource.match(/(?:^|\n)\.fbl-vn-editor\s*\{
 if (/height:\s*100%;/.test(editorGridRule)) errors.push("Editor grid must not claim 100% of the framed ApplicationV2 height");
 if (!/\.fbl-vn-character-manager\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/.test(characterCssSource)) errors.push("Character manager must constrain its grid so the preset list can scroll");
 if (!/\.fbl-vn-character-list\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/.test(characterCssSource)) errors.push("Character preset list must retain vertical scrolling");
-if (!constantsSource.includes("DATA_SCHEMA_VERSION = 12")) errors.push("Data schema version must be 12");
+if (!constantsSource.includes("DATA_SCHEMA_VERSION = 13")) errors.push("Data schema version must be 13");
 if (!migrationSource.includes("function migrateToV11")) errors.push("Schema v11 migration is missing");
 if (!migrationSource.includes("function migrateToV12") || !migrationSource.includes("schemaVersion < 12")) errors.push("Schema v12 compound-condition migration is missing");
+if (!migrationSource.includes("function migrateToV13") || !migrationSource.includes("schemaVersion < 13") || !migrationSource.includes("audioExitFadeMs")) errors.push("Schema v13 audio timing migration is missing");
 if (!playerSource.includes("splitTextGraphemes(plainText).length > 900") || !playerSource.includes("splitTextGraphemes(child.data)")) errors.push("Typewriter must count and reveal Unicode grapheme clusters");
 if (!read("scripts/utils/rich-text.js").includes("export function splitTextGraphemes")) errors.push("Shared grapheme segmentation helper is missing");
 if (!schemaSource.includes("export function collectFrameAssetPaths") || !schemaSource.includes("export function collectFrameEntryAssetPaths")) errors.push("Schema must expose full-frame and frame-entry asset collection for progressive preload");
 if (!preloaderSource.includes("collectWindowFrameIds") || !preloaderSource.includes("collectWindowPaths") || !preloaderSource.includes("collectStartupWindowPaths")) errors.push("Preloader must build bounded startup and nearby-frame windows");
 if (!preloaderSource.includes("STARTUP_WINDOW_DEPTH = 2") || !preloaderSource.includes("STARTUP_WINDOW_MAX_FRAMES = 12")) errors.push("Startup preload window must remain bounded");
+if (!preloaderSource.includes("FAR_WARM_DEFAULT_DEPTH = 10") || !preloaderSource.includes("FAR_WARM_MAX_FRAMES = 48") || !preloaderSource.includes("async warmAhead")) errors.push("Preloader must support low-priority deep warming beyond the startup window");
+if (!preloaderSource.includes("this.warmGeneration = 0") || !preloaderSource.includes("const generation = ++this.warmGeneration") || !preloaderSource.includes("generation === this.warmGeneration")) errors.push("Deep preload must reprioritize when playback advances");
+if (!constantsSource.includes('PRELOAD_AHEAD_DEPTH: "preloadAheadDepth"') || !sceneStoreSource.includes("SETTINGS.PRELOAD_AHEAD_DEPTH") || !sceneStoreSource.includes("default: 10")) errors.push("Long-range preload depth must be configurable as a world setting with default 10");
 if (!preloaderSource.includes("BACKGROUND_CONCURRENCY = 1") || !preloaderSource.includes("collectBackgroundImagePaths")) errors.push("Whole-scene background preload must be image-only and leave network headroom");
 if (!preloaderSource.includes("this.inflight = new Map()") || !preloaderSource.includes("if (this.inflight.has(path)) return this.inflight.get(path)")) errors.push("Preloader must deduplicate concurrent asset requests");
 if (preloaderSource.includes("this.failed = new Map()") || preloaderSource.includes("this.failed.has(path)") || preloaderSource.includes("this.failed.set(path")) errors.push("Transient preload failures must not be cached permanently");
@@ -254,7 +265,15 @@ if (!playerSource.includes("while (this._pendingRemoteFrames.length && !this._di
 if (!playerSource.includes("const failedPaths = results.filter") || !playerSource.includes("await this._preloader.ensurePaths(failedPaths")) errors.push("Critical asset preload must immediately retry transient failures once");
 if (!playerSource.includes("VNPreloader.collectStartupWindowPaths(this.scene") || !playerSource.includes("this._preloader.startBackgroundImages()")) errors.push("Player startup must wait only for entry assets in the critical window and then background-load images");
 if (!playerSource.includes("await this._ensureFrameAssets(frame, nextTextIndex);") || !playerSource.includes("await this._ensureTextBlockAssets(frame, index);") || !playerSource.includes("this._warmUpcomingAssets(frame);")) errors.push("Frame and text transitions must prioritize only immediately required assets while warming nearby content");
-if (!playerSource.includes("warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 2 })")) errors.push("Speculative nearby preload must leave browser network headroom for critical requests");
+if (!playerSource.includes("this._preloader.warmAhead(frame.id") || !playerSource.includes("SETTINGS.PRELOAD_AHEAD_DEPTH") || !playerSource.includes("Math.max(48, depth * 5)")) errors.push("Player must use configurable deep warming while preserving bounded startup preload");
+if (!schemaSource.includes("repeatCount") || !schemaSource.includes("repeatDelayMs") || !schemaSource.includes("startDelayMs") || !schemaSource.includes("fadeInMs") || !schemaSource.includes("fadeOutMs") || !schemaSource.includes("crossFadeMs") || !schemaSource.includes("continueRepeats")) errors.push("Schema v13 audio cues must expose repeat, delay, fade, crossfade and continuation fields");
+const audioControllerSource = read("scripts/playback/vn-audio.js");
+if (!audioControllerSource.includes("_retiring = new Set()") || !audioControllerSource.includes("_frameGeneration = 0") || !audioControllerSource.includes("_fadeEntry(entry") || !audioControllerSource.includes("_onEntryEnded(entry)")) errors.push("Audio controller must support overlapping crossfades and generation-bound finite repeats");
+if (!audioControllerSource.includes("entry.kind === \"music\" ? this.getMusicVolume() : this.getSfxVolume()") || !audioControllerSource.includes("base * Math.max(0, Math.min(1, Number(entry.gain")) errors.push("Audio fades must multiply channel gain over the current Foundry/VN volume");
+if (!audioControllerSource.includes("async fadeOutAll") || !playerSource.includes("audioExitFadeMs") || !playerSource.includes("await this.audio.fadeOutAll(fadeOutMs)")) errors.push("Scene exit must support configurable audio fade-out");
+if (!editorFrameTemplateSource.includes('data-action="previewAudioCue"') || !editorFrameTemplateSource.includes('data-action="stopAudioPreview"') || !editorFrameTemplateSource.includes("data-audio-repeat-count") || !editorFrameTemplateSource.includes("data-audio-cross-fade") || !editorFrameTemplateSource.includes("На входе в кадр")) errors.push("Editor must expose inline audition, advanced audio timing controls, and inherited audio state");
+if (!editorSource.includes("_audioStateBeforeFrame") || !editorSource.includes("_audioChangesForFrame") || !editorSource.includes("_onPreviewAudioCue") || !editorSource.includes("_secondsToMs")) errors.push("Editor logic must build audio state summaries and persist second-based timing inputs");
+if (!read("templates/editor-scene-head.hbs").includes('name="scene.audioExitFadeSeconds"')) errors.push("Scene editor must expose exit audio fade control");
 const preloadInnerBlock = playerSource.match(/async _preloadInner\([\s\S]*?\n\s*async _ensureCriticalPaths/)?.[0] || "";
 const preloadRenderIndex = preloadInnerBlock.indexOf("await this.render();");
 const preloadReadyIndex = preloadInnerBlock.indexOf("VNSocket.signalReady(this.scene.id, this.leaderId)");
@@ -307,8 +326,8 @@ for (const action of branchActions) {
 for (const required of ["addBranch", "renameBranch", "duplicateBranch", "deleteBranch"]) {
   if (!branchActions.has(required)) errors.push(`Missing branch panel action: ${required}`);
 }
-if (manifest.version !== "1.6.16") errors.push(`Unexpected release version: ${manifest.version}`);
-if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.6.16")) errors.push("README release heading is out of sync with manifest");
+if (manifest.version !== "1.7.0") errors.push(`Unexpected release version: ${manifest.version}`);
+if (!read("README.md").startsWith("# FBL Visual Novel Cutscenes 1.7.0")) errors.push("README release heading is out of sync with manifest");
 for (const forbidden of [
   "_applyCharacterPreset(event.currentTarget",
   "_applyCharacterPortrait(event.currentTarget",
