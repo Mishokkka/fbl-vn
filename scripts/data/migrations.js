@@ -59,6 +59,10 @@ export function migrateData(source) {
         migrateToV12(data);
         schemaVersion = 12;
     }
+    if (schemaVersion < 13) {
+        migrateToV13(data);
+        schemaVersion = 13;
+    }
     data.schemaVersion = DATA_SCHEMA_VERSION;
     return data;
 }
@@ -409,6 +413,32 @@ function migrateToV12(data) {
                 delete choice.conditionCounterId;
                 delete choice.conditionOperator;
                 delete choice.conditionValue;
+            }
+        }
+    }
+}
+
+
+function migrateToV13(data) {
+    data.scenes = Array.isArray(data.scenes) ? data.scenes : [];
+    for (const scene of data.scenes) {
+        if (!scene || typeof scene !== "object") continue;
+        if (scene.audioExitFadeMs === undefined) scene.audioExitFadeMs = 0;
+        scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
+        for (const frame of scene.frames) {
+            if (!frame || typeof frame !== "object") continue;
+            for (const key of ["musicCues", "sfxCues"]) {
+                frame[key] = Array.isArray(frame[key]) ? frame[key] : [];
+                for (const cue of frame[key]) {
+                    if (!cue || typeof cue !== "object" || Array.isArray(cue)) continue;
+                    if (cue.repeatCount === undefined) cue.repeatCount = 1;
+                    if (cue.repeatDelayMs === undefined) cue.repeatDelayMs = 0;
+                    if (cue.startDelayMs === undefined) cue.startDelayMs = 0;
+                    if (cue.fadeInMs === undefined) cue.fadeInMs = 0;
+                    if (cue.fadeOutMs === undefined) cue.fadeOutMs = 0;
+                    if (cue.crossFadeMs === undefined) cue.crossFadeMs = 0;
+                    if (cue.continueRepeats === undefined) cue.continueRepeats = false;
+                }
             }
         }
     }
