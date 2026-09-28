@@ -114,6 +114,7 @@ export class VNAudioController {
             gain: 1,
             delayTimer: null,
             repeatTimer: null,
+            awaitingRepeat: false,
             fadeRaf: null,
             stopped: false,
             endedHandler: null
@@ -173,8 +174,10 @@ export class VNAudioController {
             return;
         }
 
+        entry.awaitingRepeat = true;
         const replay = async () => {
             entry.repeatTimer = null;
+            entry.awaitingRepeat = false;
             if (entry.stopped || this._destroyed || bank.get(entry.channel) !== entry) return;
             if (!entry.continueRepeats && entry.generation !== this._frameGeneration) {
                 bank.delete(entry.channel);
@@ -302,10 +305,12 @@ export class VNAudioController {
             this._cancelPending(key);
         }
         for (const bank of [this.music, this.sfx]) {
-            for (const entry of bank.values()) {
+            for (const entry of [...bank.values()]) {
                 if (!entry.repeatTimer || entry.continueRepeats || entry.generation === this._frameGeneration) continue;
                 clearTimeout(entry.repeatTimer);
                 entry.repeatTimer = null;
+                entry.awaitingRepeat = false;
+                this._retireEntry(entry);
             }
         }
     }
