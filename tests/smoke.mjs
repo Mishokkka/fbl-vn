@@ -1274,6 +1274,14 @@ assert.equal(boundedRepeat.audio.playCount, 1, "Leaving a frame must cancel futu
 assert.equal(audio.sfx.has("bounded"), false, "Cancelled waiting repeats must not leave stale channel entries");
 
 await audio.applyFrame({
+  musicCues: [],
+  sfxCues: [createAudioCue("sfx", { channel: "delayed", src: "delayed.wav", startDelayMs: 20, repeatCount: 2, continueRepeats: true })]
+});
+await audio.applyFrame({ musicCues: [], sfxCues: [] });
+await new Promise(resolve => setTimeout(resolve, 25));
+assert.equal(audio.sfx.has("delayed"), false, "An initial delayed cue must remain bound to the frame where it was scheduled even when later repeats may continue");
+
+await audio.applyFrame({
   musicCues: [createAudioCue("music", { channel: "score-crossfade", src: "calm.ogg", loop: true })],
   sfxCues: []
 });
