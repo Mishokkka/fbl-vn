@@ -250,7 +250,7 @@ export function sanitizeScene(scene) {
     clean.title || (clean.title = "Без названия");
     clean.description || (clean.description = "");
     clean.defaultMode = Object.values(PLAYER_MODES).includes(clean.defaultMode) ? clean.defaultMode : PLAYER_MODES.INDIVIDUAL;
-    clean.audioExitFadeMs = Math.max(0, Math.min(10000, normalizeNumber(clean.audioExitFadeMs, 750)));
+    clean.audioExitFadeMs = Math.max(0, Math.min(10000, normalizeNumber(clean.audioExitFadeMs, 0)));
     clean.counters = Array.isArray(clean.counters) ? clean.counters.map(sanitizeSceneCounter) : [];
     clean.branches = Array.isArray(clean.branches) ? clean.branches.map(sanitizeSceneBranch) : [];
     if (!clean.branches.length) clean.branches.push(createSceneBranch("Основная ветка"));
