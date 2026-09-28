@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 12,
+  "schemaVersion": 13,
   "version": 3,
   "scenes": [
     {
@@ -102,7 +102,14 @@
               "action": "play",
               "channel": "music-main",
               "src": "modules/fbl-vn-cutscenes/example/music.ogg",
-              "loop": true
+              "loop": true,
+              "repeatCount": 1,
+              "repeatDelayMs": 0,
+              "startDelayMs": 0,
+              "fadeInMs": 1200,
+              "fadeOutMs": 0,
+              "crossFadeMs": 0,
+              "continueRepeats": false
             }
           ],
           "sfxCues": [],
@@ -172,7 +179,14 @@
               "action": "play",
               "channel": "door",
               "src": "modules/fbl-vn-cutscenes/example/door.ogg",
-              "loop": false
+              "loop": false,
+              "repeatCount": 2,
+              "repeatDelayMs": 300,
+              "startDelayMs": 200,
+              "fadeInMs": 80,
+              "fadeOutMs": 0,
+              "crossFadeMs": 0,
+              "continueRepeats": false
             }
           ],
           "effectCounterId": "counter-trust",
@@ -310,7 +324,14 @@
               "action": "stop-all",
               "channel": "",
               "src": "",
-              "loop": false
+              "loop": false,
+              "repeatCount": 1,
+              "repeatDelayMs": 0,
+              "startDelayMs": 0,
+              "fadeInMs": 0,
+              "fadeOutMs": 1200,
+              "crossFadeMs": 0,
+              "continueRepeats": false
             }
           ],
           "sfxCues": [],
@@ -327,7 +348,8 @@
           },
           "choices": []
         }
-      ]
+      ],
+      "audioExitFadeMs": 750
     }
   ],
   "assets": [
