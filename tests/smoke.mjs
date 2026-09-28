@@ -749,7 +749,8 @@ editor._enableCharacterControls({
     if (selector === "[data-character-select]") return characterSelect;
     if (selector === "[data-character-portrait-select]") return portraitSelect;
     return null;
-  }
+  },
+  querySelectorAll() { return []; }
 });
 characterSelect.listener({ currentTarget: characterSelect });
 characterSelect.value = "character-b";
