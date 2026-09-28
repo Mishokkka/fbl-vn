@@ -1056,6 +1056,7 @@ legacyYes.branchId = legacyScene.branches[0].id;
 legacyScene.frames.push(legacyYes);
 const legacySource = legacyScene.frames[0];
 delete legacySource.textPresentation;
+delete legacySource.vignetteMode;
 for (const block of legacySource.textBlocks || []) delete block.richText;
 delete legacySource.musicCues;
 delete legacySource.sfxCues;
