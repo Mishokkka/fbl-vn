@@ -293,6 +293,7 @@ if (!playerSource.includes("payload.resumeState.visualState?.background") || !pl
 if (!playerTemplateSource.includes("Подготовка стартовых ассетов")) errors.push("Loading UI must describe the bounded startup preload rather than the whole scene");
 if (!socketSource.includes("options?.reenter === true") || !socketSource.includes("data.reenter = true")) errors.push("Socket advance payload must preserve explicit frame re-entry");
 if (!socketSource.includes("[0, 750, 2500, 6000, 12000]")) errors.push("Player session recovery must retry across a longer simultaneous reconnect window");
+if (!socketSource.includes("dispatch.then(success =>") || !socketSource.includes("else if (!game.user?.isGM) this._scheduleSessionStatusRecovery()")) errors.push("Reconnect retry timers must remain active until the local recovery handler succeeds");
 if (!socketSource.includes("currentTargets.filter(id => this._isUserConnected(id))") || !socketSource.includes("this._isUserConnected(user.id)")) errors.push("Launch readiness and target discovery must use the explicit connection-state fallback instead of trusting stale user.active alone");
 if (!socketSource.includes("if (session.started && !resumeState)")) errors.push("Started-session recovery must wait for a usable GM resume snapshot instead of opening a stuck client");
 if (!mainSource.includes("reenter: payload.reenter === true")) errors.push("Socket handler must forward the frame re-entry flag to the player");
