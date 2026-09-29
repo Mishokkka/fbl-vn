@@ -50,11 +50,16 @@ export class VNSocket {
                     console.warn(`${MODULE_ID} | Ignored untrusted socket command: ${type}`, payload);
                     return;
                 }
-                if (type === "open" || type === "rejoinOffer" || type === "recall" || type === "close") {
-                    this._clearSessionStatusRecovery();
+                const recoveryCommand = type === "open" || type === "rejoinOffer" || type === "recall";
+                if (type === "close") this._clearSessionStatusRecovery();
+                if (recoveryCommand && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
+                const dispatch = this._dispatchTrustedCommand(type, data, senderId);
+                if (recoveryCommand) {
+                    void dispatch.then(success => {
+                        if (success) this._clearSessionStatusRecovery();
+                        else if (!game.user?.isGM) this._scheduleSessionStatusRecovery();
+                    });
                 }
-                if ((type === "open" || type === "rejoinOffer" || type === "recall") && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
-                this._dispatchTrustedCommand(type, data, senderId);
                 if (type === "close" && data.sceneId) this.activeLeaders.delete(data.sceneId);
                 break;
             }
@@ -87,10 +92,19 @@ export class VNSocket {
 
     static _dispatchTrustedCommand(type, data, senderId) {
         const handler = this.handlers[type];
-        if (typeof handler !== "function") return;
-        Promise.resolve(handler(data, senderId)).catch(error => {
+        if (typeof handler !== "function") return Promise.resolve(true);
+        try {
+            return Promise.resolve(handler(data, senderId))
+                .then(() => true)
+                .catch(error => {
+                    console.error(`${MODULE_ID} | Socket handler failed: ${type}`, error);
+                    return false;
+                });
+        }
+        catch (error) {
             console.error(`${MODULE_ID} | Socket handler failed: ${type}`, error);
-        });
+            return Promise.resolve(false);
+        }
     }
 
     static _isTrustedGmCommand(type, data, senderId) {
