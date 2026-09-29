@@ -248,6 +248,31 @@ assert.equal(raceScheduleCalls, 1, "The newest failed recovery dispatch must sch
 resolveOlderRecovery();
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(raceClearCalls, 0, "An older successful dispatch must not clear recovery required by a newer failure");
+
+let resolvePrePendingRecovery = null;
+const prePendingRecovery = new Promise(resolve => { resolvePrePendingRecovery = resolve; });
+const savedPendingMarker = VNSocket._markSessionStatusPending;
+let pendingMarkerCalls = 0;
+VNSocket._markSessionStatusPending = () => { pendingMarkerCalls += 1; };
+VNSocket.handlers.open = () => prePendingRecovery;
+socketCallback({
+  type: "open",
+  timestamp: Date.now(),
+  senderId: gm1.id,
+  data: { sceneId: "scene-dispatch-race", targetIds: [player.id], marker: "pre-pending" }
+});
+socketCallback({
+  type: "sessionStatusPending",
+  timestamp: Date.now(),
+  senderId: gm1.id,
+  data: { sceneId: "scene-dispatch-race", targetIds: [player.id] }
+});
+assert.equal(pendingMarkerCalls, 1, "A trusted pending-session response must keep recovery alive");
+resolvePrePendingRecovery();
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(raceClearCalls, 0, "A pre-pending successful dispatch must not clear recovery after a newer pending-session response");
+VNSocket._markSessionStatusPending = savedPendingMarker;
+
 VNSocket.handlers.open = savedRaceOpenHandler;
 VNSocket._scheduleSessionStatusRecovery = savedRaceScheduleRecovery;
 VNSocket._clearSessionStatusRecovery = savedRaceClearRecovery;
