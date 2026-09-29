@@ -211,6 +211,10 @@ export class VNSocket {
         }
 
         const resumeState = this.handlers.getSyncState?.(sceneId) || null;
+        if (session.started && !resumeState) {
+            console.warn(`${MODULE_ID} | Session status for ${sceneId} is not ready yet; waiting for the next recovery request.`);
+            return false;
+        }
         this.emit("open", {
             scene: session.scene,
             sceneId,
@@ -266,7 +270,7 @@ export class VNSocket {
 
     static getTargetUserIds() {
         return game.users
-            .filter(user => user.active && !user.isGM && user.id !== game.user.id)
+            .filter(user => !user.isGM && user.id !== game.user.id && this._isUserConnected(user.id))
             .map(user => user.id);
     }
 
@@ -331,7 +335,7 @@ export class VNSocket {
                 const currentTargets = Array.isArray(currentSession.targetIds) ? currentSession.targetIds : [];
                 if (!currentTargets.length) break;
                 const ready = this.ready.get(scene.id) ?? new Set();
-                const connectedTargets = currentTargets.filter(id => game.users?.get?.(id)?.active);
+                const connectedTargets = currentTargets.filter(id => this._isUserConnected(id));
                 if (connectedTargets.every(id => ready.has(id))) break;
                 await wait(250);
             }
@@ -402,7 +406,7 @@ export class VNSocket {
             this.requestSessionStatus();
             return;
         }
-        for (const delay of [0, 750, 2500]) {
+        for (const delay of [0, 750, 2500, 6000, 12000]) {
             let timer = null;
             timer = schedule(() => {
                 this._sessionStatusTimers.delete(timer);
