@@ -2483,19 +2483,38 @@ const savedStartupPreload = VNPlayerApp.prototype.preload;
 const savedStartupClose = VNPlayerApp.prototype.close;
 let startupFailureCloses = 0;
 try {
-  VNPlayerApp.prototype.render = async function () { return this; };
-  VNPlayerApp.prototype.preload = async function () { throw new Error("startup-preload-failure"); };
   VNPlayerApp.prototype.close = async function () {
     startupFailureCloses += 1;
     this._disposed = true;
     VNPlayerApp.active.delete(this.scene.id);
   };
+
+  VNPlayerApp.prototype.render = async function () { throw new Error("startup-render-failure"); };
+  VNPlayerApp.prototype.preload = async function () { throw new Error("preload-must-not-run-after-render-failure"); };
+  await assert.rejects(
+    () => VNPlayerApp.openScene({ scene: { ...scene, id: "scene-startup-render-failure" }, networked: false }),
+    /startup-render-failure/,
+    "An initial player render failure must still reject to the caller"
+  );
+  assert.equal(startupFailureCloses, 1, "An initial player render failure must close the registered player app");
+  assert.equal(VNPlayerApp.active.has("scene-startup-render-failure"), false, "A failed initial render must not leave a stale active player");
+
+  await assert.rejects(
+    () => VNPlayerApp.previewFrame({ ...scene, id: "scene-preview-render-failure" }, "frame-root"),
+    /startup-render-failure/,
+    "An initial frame-preview render failure must still reject to the caller"
+  );
+  assert.equal(startupFailureCloses, 2, "An initial frame-preview render failure must close the registered preview app");
+  assert.equal(VNPlayerApp.active.has("scene-preview-render-failure"), false, "A failed preview render must not leave a stale active player");
+
+  VNPlayerApp.prototype.render = async function () { return this; };
+  VNPlayerApp.prototype.preload = async function () { throw new Error("startup-preload-failure"); };
   await assert.rejects(
     () => VNPlayerApp.openScene({ scene: { ...scene, id: "scene-startup-failure" }, networked: false }),
     /startup-preload-failure/,
     "A startup preload failure must still reject to the caller"
   );
-  assert.equal(startupFailureCloses, 1, "A startup preload failure must close the rendered player app");
+  assert.equal(startupFailureCloses, 3, "A startup preload failure must close the rendered player app");
   assert.equal(VNPlayerApp.active.has("scene-startup-failure"), false, "A failed startup must not leave a stale active player");
 }
 finally {
