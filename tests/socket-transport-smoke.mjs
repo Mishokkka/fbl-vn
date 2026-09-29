@@ -67,6 +67,12 @@ assert.deepEqual(
   "Non-vote synchronized modes must retain the GM in their participant metadata"
 );
 
+player.active = false;
+VNSocket._connectionState.set(player.id, true);
+assert.equal(VNSocket.getTargetUserIds().includes(player.id), true, "Initial target discovery must trust the explicit connection hook when Foundry user.active is temporarily stale");
+player.active = true;
+VNSocket._connectionState.delete(player.id);
+
 assert.equal(VNSocket.emit("advance", { sceneId: "scene-auth" }), true);
 assert.equal(emitted.length, 1);
 assert.equal(emitted[0].name, SOCKET_NAME);
@@ -137,6 +143,13 @@ assert.deepEqual(reopen.payload.data.targetIds, [player.id], "Reconnect reopen m
 assert.equal(reopen.payload.data.resumeState.currentFrameId, "frame-current", "Reconnect must resume at the GM's current synchronized frame");
 assert.deepEqual(reopen.payload.data.participantIds, [player.id, player2.id], "Reconnect must restore the current player-only vote roster");
 
+const savedReconnectSyncState = VNSocket.handlers.getSyncState;
+VNSocket.handlers.getSyncState = () => null;
+emitted.length = 0;
+assert.equal(VNSocket._sendSessionStatusToUser(reconnectSceneId, reconnectSession, player.id), false, "A started session must not reopen a player without a usable synchronized resume snapshot");
+assert.equal(emitted.some(entry => entry.payload?.type === "open"), false, "Missing GM resume state must leave recovery retries alive instead of opening a stuck waiting screen");
+VNSocket.handlers.getSyncState = savedReconnectSyncState;
+
 let leaveHandlerCall = null;
 VNSocket.handlers.leave = (data, senderId) => { leaveHandlerCall = { data, senderId }; };
 const leavePayload = {
@@ -163,6 +176,22 @@ assert.deepEqual(reconnectOffer.payload.data.targetIds, [player.id], "Rejoin off
 assert.equal(reconnectOffer.payload.data.sceneTitle, "Reconnect", "Rejoin offer must carry enough display context to rebuild the return button");
 
 game.user = player;
+VNSocket._clearSessionStatusRecovery();
+const savedSetTimeout = globalThis.setTimeout;
+const savedClearTimeout = globalThis.clearTimeout;
+const recoveryDelays = [];
+globalThis.setTimeout = (_callback, delay) => {
+  const token = { delay };
+  recoveryDelays.push(delay);
+  return token;
+};
+globalThis.clearTimeout = () => {};
+VNSocket._scheduleSessionStatusRecovery();
+assert.deepEqual(recoveryDelays, [0, 750, 2500, 6000, 12000], "Player reload recovery must keep retrying long enough to survive a slower simultaneous GM/server reconnect");
+VNSocket._sessionStatusTimers.clear();
+globalThis.setTimeout = savedSetTimeout;
+globalThis.clearTimeout = savedClearTimeout;
+
 emitted.length = 0;
 assert.equal(VNSocket.requestSessionStatus(), true, "A freshly bootstrapped player client must ask the GM for active-session status");
 const statusRequest = emitted.find(entry => entry.payload?.type === "sessionStatusRequest");
