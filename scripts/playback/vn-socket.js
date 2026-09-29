@@ -100,7 +100,7 @@ export class VNSocket {
                 break;
             case "sessionStatusRequest":
                 if (!game.user?.isGM) return;
-                this._handleSessionStatusRequest(data, senderId);
+                this._handleSessionStatusRequest(senderId);
                 break;
             default:
                 console.warn(`${MODULE_ID} | Unknown socket payload`, payload);
@@ -263,7 +263,7 @@ export class VNSocket {
         return true;
     }
 
-    static _handleSessionStatusRequest(_data, senderId) {
+    static _handleSessionStatusRequest(senderId) {
         const user = game.users?.get?.(senderId);
         if (!game.user?.isGM || !user || user.isGM) return;
         this._connectionState.set(senderId, true);
