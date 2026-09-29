@@ -414,7 +414,8 @@ export class VNAudioController {
         const startedAt = nowValue();
         // requestAnimationFrame can be suspended in hidden tabs while audio keeps playing.
         // Timer callbacks may be throttled, but they continue and calculate progress from elapsed wall time.
-        const schedule = callback => setTimeout(() => callback(nowValue()), 16);
+        const tickMs = Math.min(16, Math.max(1, duration));
+        const schedule = callback => setTimeout(() => callback(nowValue()), tickMs);
         const fadeGeneration = ++entry.fadeGeneration;
 
         return new Promise(resolve => {
