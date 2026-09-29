@@ -455,6 +455,14 @@ export class VNPreloadController {
             const meta = this.requestMeta.get(path);
             if (critical && meta) meta.critical = true;
             const result = await this.inflight.get(path);
+            const generationNumber = Number(generation);
+            const currentGeneration = generation === null
+                || generation === undefined
+                || !Number.isFinite(generationNumber)
+                || generationNumber === this.warmGeneration;
+            if (result?.cancelled && !this.cancelled && (critical || currentGeneration)) {
+                return this._ensurePath(path, { critical, generation, decodeImage });
+            }
             if (decodeImage && result?.ok && VNPreloader.isImagePath(path) && !this.decodedImages.has(path)) {
                 return this._ensureDecodedImage(path);
             }
