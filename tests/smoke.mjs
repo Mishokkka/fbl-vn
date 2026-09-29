@@ -2547,6 +2547,52 @@ await resumeVisualPlayer.resume({
 assert.ok(resumeCriticalPaths.includes("inherited-reconnect-bg.webp"), "Reconnect resume must preload the inherited background even when the current frame does not declare it");
 assert.ok(resumeCriticalPaths.includes("inherited-reconnect-portrait.webp"), "Reconnect resume must preload the inherited portrait before rendering the recovered frame");
 
+const concurrentResumePlayer = Object.create(VNPlayerApp.prototype);
+concurrentResumePlayer.loading = false;
+concurrentResumePlayer._disposed = false;
+concurrentResumePlayer._resuming = false;
+concurrentResumePlayer._resumePromise = null;
+concurrentResumePlayer.started = false;
+concurrentResumePlayer.scene = scene;
+concurrentResumePlayer.mode = PLAYER_MODES.GM;
+concurrentResumePlayer.participantIds = [];
+concurrentResumePlayer.leaderId = gm1.id;
+concurrentResumePlayer.currentFrameId = null;
+concurrentResumePlayer.currentTextIndex = 0;
+concurrentResumePlayer.counterState = {};
+concurrentResumePlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+concurrentResumePlayer._pendingRemoteFrames = [];
+concurrentResumePlayer._playbackQueue = Promise.resolve();
+concurrentResumePlayer._leaderVotes = new Map();
+concurrentResumePlayer._participantConnectionState = new Map();
+concurrentResumePlayer._buildPlaybackIndex();
+let releaseConcurrentResume = null;
+let concurrentResumeEnsures = 0;
+concurrentResumePlayer._ensureFrameAssets = async () => {
+  concurrentResumeEnsures += 1;
+  await new Promise(resolve => { releaseConcurrentResume = resolve; });
+  return [];
+};
+concurrentResumePlayer.audio = { pauseExternalAudio() {}, async applyFrame() {} };
+concurrentResumePlayer._playCurrentVoice = async () => {};
+concurrentResumePlayer.render = async () => concurrentResumePlayer;
+concurrentResumePlayer._warmUpcomingAssets = () => {};
+concurrentResumePlayer._flushPendingRemoteFrames = async () => {};
+concurrentResumePlayer._resetVoteForStep = () => {};
+const concurrentResumeState = {
+  currentFrameId: "frame-root",
+  currentTextIndex: 0,
+  counterState: {},
+  visualState: { background: "resume-concurrent.webp", portrait: "", portraitPosition: "left" }
+};
+const concurrentResumeA = concurrentResumePlayer.resume(concurrentResumeState);
+const concurrentResumeB = concurrentResumePlayer.resume(concurrentResumeState);
+await Promise.resolve();
+assert.equal(concurrentResumeEnsures, 1, "Duplicate reconnect packets must share one in-progress resume instead of replaying the same frame twice");
+releaseConcurrentResume();
+await Promise.all([concurrentResumeA, concurrentResumeB]);
+assert.equal(concurrentResumePlayer._resumePromise, null, "Completed reconnect resume must release its shared promise");
+
 const previewInheritedPlayer = Object.create(VNPlayerApp.prototype);
 previewInheritedPlayer.loading = false;
 previewInheritedPlayer._disposed = false;
