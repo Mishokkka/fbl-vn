@@ -76,6 +76,7 @@ export class VNSocket {
                     console.warn(`${MODULE_ID} | Ignored untrusted socket command: ${type}`, payload);
                     return;
                 }
+                this._recoveryDispatchGeneration += 1;
                 if (data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
                 if (!game.user?.isGM) this._markSessionStatusPending();
                 break;
