@@ -1,0 +1,33 @@
+name: PR final validation
+
+on:
+  push:
+    branches:
+      - feat/audio-preload-ux-v1.7.0
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: |
+          find scripts tests tools -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+      - name: JSON
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('module.json','utf8')); JSON.parse(require('fs').readFileSync('examples/fbl-vn-export.example.json','utf8'));"
+      - name: Verify repository
+        run: node tools/verify.mjs
+      - name: Smoke
+        run: node tests/smoke.mjs
+      - name: Boot smoke
+        run: node tests/boot-smoke.mjs
+      - name: Runtime init smoke
+        run: node tests/runtime-init-smoke.mjs
+      - name: Socket transport smoke
+        run: node tests/socket-transport-smoke.mjs
