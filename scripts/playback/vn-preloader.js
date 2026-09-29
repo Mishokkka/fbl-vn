@@ -277,8 +277,10 @@ export class VNPreloadController {
         while (this.audioWarmers.size > AUDIO_WARMER_LIMIT) {
             const oldest = this.audioWarmers.entries().next().value;
             if (!oldest) break;
-            this.audioWarmers.delete(oldest[0]);
-            this._releaseAudioWarmer(oldest[1]);
+            const [oldestPath, oldestAudio] = oldest;
+            this.audioWarmers.delete(oldestPath);
+            this.loaded.delete(oldestPath);
+            this._releaseAudioWarmer(oldestAudio);
         }
     }
 
