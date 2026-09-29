@@ -226,6 +226,15 @@
   pointer-events: none;
 }
 
+.fbl-vn-choice-overlay.is-centered-text {
+  place-items: end center;
+  padding-bottom: 14px;
+}
+
+.fbl-vn-choice-overlay.is-centered-text .fbl-vn-player-choice-list {
+  max-height: 42vh;
+}
+
 .fbl-vn-player-choice-list {
   width: min(760px, 82vw);
   max-height: 72vh;

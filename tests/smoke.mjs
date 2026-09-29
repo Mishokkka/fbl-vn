@@ -56,18 +56,35 @@ globalThis.Audio = class {
     this.currentTime = 0;
     this.loop = false;
     this.volume = 1;
+    this.playCount = 0;
     this._listeners = new Map();
   }
   addEventListener(type, listener) { this._listeners.set(type, listener); }
   removeEventListener(type, listener) {
     if (this._listeners.get(type) === listener) this._listeners.delete(type);
   }
-  async play() { this.paused = false; }
+  async play() { this.paused = false; this.playCount += 1; }
   pause() { this.paused = true; }
   load() {}
   emit(type) { this._listeners.get(type)?.(); }
 };
-globalThis.Image = class {};
+globalThis.Image = class {
+  constructor() {
+    this.onload = null;
+    this.onerror = null;
+    this._src = "";
+    this.decodeCount = 0;
+  }
+  set src(value) {
+    this._src = String(value || "");
+    if (this._src) queueMicrotask(() => this.onload?.());
+  }
+  get src() { return this._src; }
+  async decode() { this.decodeCount += 1; }
+  removeAttribute(name) {
+    if (name === "src") this._src = "";
+  }
+};
 
 const { VNCharacterManagerApp } = await import("../scripts/apps/vn-character-manager-app.js");
 const { VNCounterManagerApp } = await import("../scripts/apps/vn-counter-manager-app.js");
@@ -78,13 +95,16 @@ const { VNSceneStore } = await import("../scripts/data/scene-store.js");
 const { VNSocket } = await import("../scripts/playback/vn-socket.js");
 const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
 const { VNPreloadController, VNPreloader } = await import("../scripts/playback/vn-preloader.js");
-const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createCounterCondition, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, isChoiceAvailable, resolveFrameNextRouting, sanitizeFrame, validateScene } = await import("../scripts/data/schema.js");
+const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createCounterCondition, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, isChoiceAvailable, resolveFrameNextRouting, sanitizeFrame, sanitizeScene, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
+const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, DATA_SCHEMA_VERSION, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId, serializeJson } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
+assert.equal(DATA_SCHEMA_VERSION, 13, "Audio timing release must use schema v13");
+assert.equal(game.settings.settings.has(`${MODULE_ID}.${SETTINGS.PRELOAD_AHEAD_DEPTH}`), true, "Long-range preload depth must be registered as a world setting");
+assert.equal(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_AHEAD_DEPTH), 10, "Long-range preload target depth must default to 10");
 
 const compactJson = serializeJson({ alpha: 1, nested: { beta: [2, 3] } });
 assert.equal(compactJson.includes("\n"), false, "JSON export serialization must be compact by default");
@@ -106,6 +126,10 @@ characterManager._captureExpandedCharacters();
 assert.deepEqual([...characterManager.expandedCharacterIds], ["character-a", "character-b"], "Expanded character cards must be captured before a manager rerender");
 
 const scene = createScene();
+assert.equal(scene.audioExitFadeMs, 750, "New scenes must default to a short exit audio fade");
+const standaloneLegacyScene = createScene();
+delete standaloneLegacyScene.audioExitFadeMs;
+assert.equal(sanitizeScene(standaloneLegacyScene).audioExitFadeMs, 0, "Standalone legacy scene imports without schema metadata must preserve immediate audio shutdown");
 scene.title = "Smoke";
 const branchId = scene.branches[0].id;
 scene.frameFolders = [
@@ -247,10 +271,6 @@ voicedNext.textBlocks[1].voice = "next-voice-2.ogg";
 voicedFrame.isFinal = false;
 voicedFrame.next = voicedNext.id;
 startupVoiceScene.frames.push(voicedNext);
-const backgroundImages = VNPreloader.collectBackgroundImagePaths(preloadScene);
-assert.equal(backgroundImages.includes("preload-beyond.webp"), true, "Distant images must be eligible for low-priority background preload");
-assert.equal(backgroundImages.some(path => path.endsWith(".ogg")), false, "Long-form audio must not be swept into the whole-scene background preload");
-
 const savedPreloadPath = VNPreloader.preloadPath;
 const preloadCalls = [];
 VNPreloader.preloadPath = async path => { preloadCalls.push(path); };
@@ -260,11 +280,6 @@ await Promise.all([
   preloadController.ensurePaths(["preload-a.webp", "preload-b.webp"], { concurrency: 2 })
 ]);
 assert.equal(preloadCalls.filter(path => path === "preload-a.webp").length, 1, "Concurrent priority preloads must share one in-flight request per asset");
-const backgroundController = new VNPreloadController(preloadScene);
-preloadCalls.length = 0;
-await backgroundController.startBackgroundImages();
-assert.equal(preloadCalls.includes("preload-beyond.webp"), true, "Background preload must eventually warm distant images");
-assert.equal(preloadCalls.some(path => path.endsWith(".ogg")), false, "Background preload must leave distant audio for nearby-frame warming");
 preloadCalls.length = 0;
 const voiceWarmController = new VNPreloadController(startupVoiceScene);
 await voiceWarmController.warmWindow(voicedFrame.id, { depth: 2, maxFrames: 12, concurrency: 4 });
@@ -273,6 +288,96 @@ assert.equal(preloadCalls.includes("voice-2.ogg"), true, "Nearby warming must fi
 assert.equal(preloadCalls.includes("voice-3.ogg"), true, "Nearby warming must fill all remaining voices for the current frame in the background");
 assert.equal(preloadCalls.includes("next-voice-1.ogg"), true, "Nearby warming must include the entry voice of an upcoming frame");
 assert.equal(preloadCalls.includes("next-voice-2.ogg"), false, "Nearby warming must not sweep every long voice from future frames");
+
+const deepWarmScene = createScene();
+const deepBranchId = deepWarmScene.branches[0].id;
+deepWarmScene.frames = Array.from({ length: 12 }, (_, index) => {
+  const frame = createFrame("dialogue");
+  frame.id = `deep-warm-${index}`;
+  frame.branchId = deepBranchId;
+  frame.background = `deep-warm-${index}.webp`;
+  frame.textBlocks[0].voice = `deep-warm-${index}.ogg`;
+  frame.next = index < 11 ? `deep-warm-${index + 1}` : "";
+  frame.isFinal = index === 11;
+  return frame;
+});
+deepWarmScene.startFrame = "deep-warm-0";
+preloadCalls.length = 0;
+const deepWarmController = new VNPreloadController(deepWarmScene);
+await deepWarmController.warmAhead("deep-warm-0", { depth: 10, maxFrames: 12 });
+assert.equal(preloadCalls.includes("deep-warm-10.ogg"), true, "Long-range warming must preload audio ten graph steps ahead");
+assert.equal(preloadCalls.includes("deep-warm-11.ogg"), false, "Configured warm depth must remain bounded instead of sweeping the entire scene");
+
+const retainedWarmAudio = new Audio("retained-warm.ogg");
+VNPreloader.preloadPath = async path => {
+  preloadCalls.push(path);
+  return path.endsWith(".ogg") ? retainedWarmAudio : path;
+};
+const audioWarmController = new VNPreloadController(preloadScene);
+await audioWarmController.ensurePaths(["retained-warm.ogg"]);
+assert.strictEqual(audioWarmController.audioWarmers.get("retained-warm.ogg"), retainedWarmAudio, "Successful audio preloads must retain a hidden media element so browser buffering can continue");
+audioWarmController.cancel();
+assert.equal(audioWarmController.audioWarmers.size, 0, "Cancelling preload must release retained hidden audio elements");
+assert.equal(retainedWarmAudio.paused, true, "Released hidden audio warmers must be paused");
+
+let evictionLoads = 0;
+VNPreloader.preloadPath = async path => {
+  evictionLoads += 1;
+  return new Audio(path);
+};
+const evictionController = new VNPreloadController(preloadScene);
+const evictionPaths = Array.from({ length: 33 }, (_, index) => `eviction-${index}.ogg`);
+await evictionController.ensurePaths(evictionPaths);
+assert.equal(evictionController.audioWarmers.size, 32, "Audio warmer pool must remain capped");
+assert.equal(evictionController.audioWarmers.has("eviction-0.ogg"), false, "The oldest audio warmer must be evicted when the pool exceeds its cap");
+assert.equal(evictionController.loaded.has("eviction-0.ogg"), false, "Evicted audio paths must leave the loaded set so they can be warmed again");
+const loadsBeforeRewarm = evictionLoads;
+await evictionController.ensurePaths(["eviction-0.ogg"]);
+assert.equal(evictionLoads, loadsBeforeRewarm + 1, "Requesting an evicted audio path must perform a new preload instead of returning a stale cached result");
+assert.equal(evictionController.audioWarmers.has("eviction-0.ogg"), true, "Re-requested evicted audio must return to the retained warmer pool");
+evictionController.cancel();
+
+let resolveLateWarm = null;
+VNPreloader.preloadPath = () => new Promise(resolve => { resolveLateWarm = resolve; });
+const lateWarmController = new VNPreloadController(preloadScene);
+const lateWarmPromise = lateWarmController.ensurePaths(["late-warm.ogg"]);
+await Promise.resolve();
+lateWarmController.cancel();
+const lateWarmAudio = new Audio("late-warm.ogg");
+resolveLateWarm(lateWarmAudio);
+await lateWarmPromise;
+assert.equal(lateWarmController.audioWarmers.size, 0, "An audio preload that finishes after cancellation must not repopulate the hidden warmer cache");
+assert.equal(lateWarmAudio.paused, true, "Late audio preload completion must be released immediately after cancellation");
+
+let promotedAttempts = 0;
+let rejectPromotedSpeculative = null;
+VNPreloader.preloadPath = path => {
+  promotedAttempts += 1;
+  if (promotedAttempts === 1) {
+    const pending = new Promise((_resolve, reject) => {
+      rejectPromotedSpeculative = reject;
+    });
+    pending.cancel = () => {
+      const error = new Error(`cancelled speculative preload: ${path}`);
+      error.code = "VN_PRELOAD_CANCELLED";
+      rejectPromotedSpeculative(error);
+    };
+    return pending;
+  }
+  return Promise.resolve(new Audio(path));
+};
+const promotedController = new VNPreloadController(preloadScene);
+promotedController.warmGeneration = 1;
+const staleSpeculative = promotedController.ensurePaths(["promoted.ogg"], { generation: 1 });
+await Promise.resolve();
+promotedController.warmGeneration = 2;
+promotedController._cancelStaleSpeculativeLoads(2);
+const promotedCritical = promotedController.ensurePaths(["promoted.ogg"], { critical: true });
+const [staleSpeculativeResult, promotedCriticalResult] = await Promise.all([staleSpeculative, promotedCritical]);
+assert.equal(staleSpeculativeResult[0].cancelled, true, "The stale speculative caller must remain cancelled instead of restarting obsolete work");
+assert.equal(promotedCriticalResult[0].ok, true, "A critical caller joining a cancelled stale request must retry on a fresh preload");
+assert.equal(promotedAttempts, 2, "Promotion after stale cancellation must perform exactly one replacement preload");
+promotedController.cancel();
 
 let transientAttempts = 0;
 VNPreloader.preloadPath = async path => {
@@ -300,9 +405,83 @@ criticalPlayer._preloader = new VNPreloadController(preloadScene);
 const criticalResults = await criticalPlayer._ensureFrameAssets({ background: "critical.webp", textBlocks: [], musicCues: [], sfxCues: [], additionalCharacters: [] });
 assert.equal(criticalResults[0].ok, true, "Critical frame assets must receive one immediate retry before the transition proceeds");
 assert.equal(criticalAttempts, 2, "Critical frame preload must retry a transient failure exactly once");
+assert.equal(criticalPlayer._preloader.decodedImages.has("critical.webp"), true, "Critical image paths must be marked decoded before the transition proceeds");
 VNPreloader.preloadPath = savedPreloadPath;
 
-await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
+let imageDecodeCalls = 0;
+let releaseImageDecode = null;
+const imageDecodeGate = new Promise(resolve => { releaseImageDecode = resolve; });
+const savedImage = globalThis.Image;
+globalThis.Image = class {
+  constructor() {
+    this.onload = null;
+    this.onerror = null;
+    this._src = "";
+  }
+  set src(value) {
+    this._src = String(value || "");
+    if (this._src) queueMicrotask(() => this.onload?.());
+  }
+  get src() { return this._src; }
+  decode() {
+    imageDecodeCalls += 1;
+    return imageDecodeGate;
+  }
+  removeAttribute(name) { if (name === "src") this._src = ""; }
+};
+const decodeController = new VNPreloadController(preloadScene);
+let decodeEnsureSettled = false;
+const decodedPromise = decodeController
+  .ensurePaths(["decode-current.webp"], { critical: true, decodeImages: true })
+  .then(result => {
+    decodeEnsureSettled = true;
+    return result;
+  });
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(imageDecodeCalls, 1, "Critical image preload must explicitly start image decoding");
+assert.equal(decodeEnsureSettled, false, "Critical image preload must remain pending until Image.decode() settles");
+releaseImageDecode();
+const decodedResult = await decodedPromise;
+assert.equal(decodedResult[0].ok, true, "Critical image preload must complete successfully after decode");
+assert.equal(decodeController.decodedImages.has("decode-current.webp"), true, "Decoded critical images must be tracked separately from speculative downloads");
+
+const pendingImages = [];
+globalThis.Image = class {
+  constructor() {
+    this.onload = null;
+    this.onerror = null;
+    this._src = "";
+    this.released = false;
+    pendingImages.push(this);
+  }
+  set src(value) { this._src = String(value || ""); }
+  get src() { return this._src; }
+  removeAttribute(name) {
+    if (name === "src") {
+      this._src = "";
+      this.released = true;
+    }
+  }
+};
+const cancelledImageController = new VNPreloadController(preloadScene);
+const cancelledImagePromise = cancelledImageController.ensurePaths(["cancel-image.webp"]);
+await Promise.resolve();
+cancelledImageController.cancel();
+const cancelledImageResults = await cancelledImagePromise;
+assert.equal(cancelledImageResults[0].cancelled, true, "Closing a cutscene must settle an in-flight image preload as cancelled immediately");
+assert.equal(pendingImages[0].released, true, "Cancelling the controller must detach the browser Image source instead of leaving the old request alive");
+
+const staleGenerationController = new VNPreloadController(preloadScene);
+const staleGenerationPromise = staleGenerationController.ensurePaths(["old-branch.webp"], { generation: 1 });
+await Promise.resolve();
+staleGenerationController._cancelStaleSpeculativeLoads(2);
+const staleGenerationResults = await staleGenerationPromise;
+assert.equal(staleGenerationResults[0].cancelled, true, "Changing preload generation must abort stale speculative image requests");
+assert.equal(pendingImages[1].released, true, "Stale speculative image requests must release their browser Image source");
+globalThis.Image = savedImage;
+
+await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const sceneSummaries = VNSceneStore.sceneSummaries;
 assert.equal(sceneSummaries.length, 1, "Scene summaries must expose one lightweight row per stored scene");
@@ -328,7 +507,7 @@ const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
 assert.ok(VNSceneStore.revision > revisionBeforeQueuedMutations, "Store revision must advance when persisted data changes");
-await VNSceneStore.setData({ schemaVersion: 12, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const noOpEditor = Object.create(VNEditorApp.prototype);
 noOpEditor._pendingRenderParts = new Set();
@@ -707,7 +886,8 @@ editor._enableCharacterControls({
     if (selector === "[data-character-select]") return characterSelect;
     if (selector === "[data-character-portrait-select]") return portraitSelect;
     return null;
-  }
+  },
+  querySelectorAll() { return []; }
 });
 characterSelect.listener({ currentTarget: characterSelect });
 characterSelect.value = "character-b";
@@ -1007,12 +1187,14 @@ assert.equal(compoundUsage.get(secondRouteCounter.id).nextRoutings, 1);
 assert.equal(getFrameReferences(scene, "frame-root").some(ref => ref.type === "counter-true" && ref.frameId === "frame-nested"), true, "Conditional outcomes must be reported as frame references");
 
 const legacyScene = createScene();
+delete legacyScene.audioExitFadeMs;
 const legacyYes = createFrame("dialogue");
 legacyYes.id = "legacy-yes";
 legacyYes.branchId = legacyScene.branches[0].id;
 legacyScene.frames.push(legacyYes);
 const legacySource = legacyScene.frames[0];
 delete legacySource.textPresentation;
+delete legacySource.vignetteMode;
 for (const block of legacySource.textBlocks || []) delete block.richText;
 delete legacySource.musicCues;
 delete legacySource.sfxCues;
@@ -1030,7 +1212,7 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 12);
+assert.equal(migrated.schemaVersion, 13);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
@@ -1060,6 +1242,24 @@ assert.equal(migratedFrame.musicCues[0].src, "legacy-music.ogg");
 assert.equal(migratedFrame.musicCues[0].loop, true);
 assert.equal(migratedFrame.sfxCues.length, 1, "Legacy SFX must migrate into one channel cue");
 assert.equal(migratedFrame.sfxCues[0].src, "legacy-bell.wav");
+assert.equal(migrated.scenes[0].audioExitFadeMs, 0, "Migrated scenes must preserve the old immediate close behavior unless the author opts into an exit fade");
+const schema12Scene = createScene();
+delete schema12Scene.audioExitFadeMs;
+schema12Scene.frames[0].musicCues = [{ id: "v12-audio", action: AUDIO_ACTIONS.PLAY, channel: "music-v12", src: "v12.ogg", loop: true }];
+const schema12Migrated = migrateData({ schemaVersion: 12, version: 3, scenes: [schema12Scene], assets: [], characters: [] });
+assert.equal(schema12Migrated.schemaVersion, 13, "Schema v12 exports must migrate explicitly to schema v13");
+assert.equal(schema12Migrated.scenes[0].audioExitFadeMs, 0, "Schema v12 scenes must retain immediate audio shutdown by default");
+assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].crossFadeMs, 0, "Schema v12 cues must gain zeroed timing fields");
+assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].repeatCount, 1, "Schema v12 cues must gain one-play repeat defaults");
+for (const cue of [...migratedFrame.musicCues, ...migratedFrame.sfxCues]) {
+  assert.equal(cue.repeatCount, 1, "Schema v13 migration must default legacy cues to one playback");
+  assert.equal(cue.repeatDelayMs, 0);
+  assert.equal(cue.startDelayMs, 0);
+  assert.equal(cue.fadeInMs, 0);
+  assert.equal(cue.fadeOutMs, 0);
+  assert.equal(cue.crossFadeMs, 0);
+  assert.equal(cue.continueRepeats, false);
+}
 assert.equal("musicMode" in migratedFrame, false, "Legacy music mode must be removed after migration");
 assert.equal("music" in migratedFrame, false, "Legacy music path must be removed after migration");
 assert.equal("sfx" in migratedFrame, false, "Legacy SFX path must be removed after migration");
@@ -1112,9 +1312,9 @@ assert.equal(migratedChoiceCondition.conditionLogic, COUNTER_CONDITION_LOGIC.ALL
 assert.equal("conditionCounterId" in migratedChoiceCondition, false, "Schema v12 must remove legacy choice condition fields");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 12, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 13, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
-for (const invalidSchemaVersion of [-1, 7.5, 13]) {
+for (const invalidSchemaVersion of [-1, 7.5, 14]) {
   assert.throws(
     () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
     /unsupported schemaVersion/,
@@ -1122,7 +1322,7 @@ for (const invalidSchemaVersion of [-1, 7.5, 13]) {
   );
 }
 assert.throws(
-  () => VNSceneStore._sanitizeData({ schemaVersion: 13, version: 3, scenes: [], assets: [], characters: [] }),
+  () => VNSceneStore._sanitizeData({ schemaVersion: 14, version: 3, scenes: [], assets: [], characters: [] }),
   /unsupported schemaVersion/,
   "The scene store must not silently downgrade future-schema data to an empty current-schema save"
 );
@@ -1144,6 +1344,29 @@ assert.equal(new Set(sanitizedAudioFrame.sfxCues.map(cue => cue.id)).size, sanit
 assert.equal(sanitizedAudioFrame.musicCues.every(cue => cue && typeof cue === "object" && !Array.isArray(cue)), true, "Malformed primitive or array music cues must normalize into cue objects");
 assert.equal(sanitizedAudioFrame.musicCues[0].id, "duplicate-audio", "The first valid unique cue ID should be preserved");
 assert.notEqual(sanitizedAudioFrame.musicCues[1].id, "duplicate-audio", "A duplicate cue ID must be regenerated");
+const advancedCue = createAudioCue("sfx", {
+  channel: "steps",
+  src: "steps.ogg",
+  repeatCount: 3,
+  repeatDelayMs: 250,
+  startDelayMs: 150,
+  fadeInMs: 100,
+  crossFadeMs: 300,
+  continueRepeats: true
+});
+assert.equal(advancedCue.repeatCount, 3);
+assert.equal(advancedCue.repeatDelayMs, 250);
+assert.equal(advancedCue.startDelayMs, 150);
+assert.equal(advancedCue.fadeInMs, 100);
+assert.equal(advancedCue.crossFadeMs, 300);
+assert.equal(advancedCue.continueRepeats, true);
+const loopRepeatConflict = sanitizeFrame({
+  ...createFrame("dialogue"),
+  sfxCues: [createAudioCue("sfx", { channel: "rain", src: "rain.ogg", loop: true, repeatCount: 4, repeatDelayMs: 500, continueRepeats: true })]
+});
+assert.equal(loopRepeatConflict.sfxCues[0].repeatCount, 1, "Looped audio must ignore finite repeat counts");
+assert.equal(loopRepeatConflict.sfxCues[0].repeatDelayMs, 0, "Looped audio must ignore repeat delays");
+assert.equal(loopRepeatConflict.sfxCues[0].continueRepeats, false, "Looped audio persists by channel and does not need repeat continuation");
 
 const audio = new VNAudioController();
 await audio.applyFrame({
@@ -1180,7 +1403,173 @@ await audio.applyFrame({
 });
 assert.equal(audio.music.size, 0, "Stop-all must clear every music channel");
 assert.equal(audio.sfx.size, 0, "Stop-all must clear every SFX channel");
+
+await audio.applyFrame({
+  musicCues: [],
+  sfxCues: [createAudioCue("sfx", { channel: "knock", src: "knock.wav", repeatCount: 3, repeatDelayMs: 1 })]
+});
+const repeatedKnock = audio.sfx.get("knock");
+assert.equal(repeatedKnock.audio.playCount, 1, "Finite SFX repeats must start with one immediate playback");
+repeatedKnock.audio.emit("ended");
+await new Promise(resolve => setTimeout(resolve, 4));
+assert.equal(repeatedKnock.audio.playCount, 2, "Finite SFX must replay after its configured delay");
+repeatedKnock.audio.emit("ended");
+await new Promise(resolve => setTimeout(resolve, 4));
+assert.equal(repeatedKnock.audio.playCount, 3, "Finite SFX must honor the requested repeat count");
+repeatedKnock.audio.emit("ended");
+await new Promise(resolve => setTimeout(resolve, 1));
+assert.equal(audio.sfx.has("knock"), false, "Finite repeat channels must retire after the final playback");
+
+await audio.applyFrame({
+  musicCues: [],
+  sfxCues: [createAudioCue("sfx", { channel: "bounded", src: "bounded.wav", repeatCount: 3, repeatDelayMs: 20 })]
+});
+const boundedRepeat = audio.sfx.get("bounded");
+boundedRepeat.audio.emit("ended");
+await audio.applyFrame({ musicCues: [], sfxCues: [] });
+await new Promise(resolve => setTimeout(resolve, 25));
+assert.equal(boundedRepeat.audio.playCount, 1, "Leaving a frame must cancel future finite repeats by default");
+assert.equal(audio.sfx.has("bounded"), false, "Cancelled waiting repeats must not leave stale channel entries");
+
+await audio.applyFrame({
+  musicCues: [],
+  sfxCues: [createAudioCue("sfx", { channel: "delayed", src: "delayed.wav", startDelayMs: 20, repeatCount: 2, continueRepeats: true })]
+});
+await audio.applyFrame({ musicCues: [], sfxCues: [] });
+await new Promise(resolve => setTimeout(resolve, 25));
+assert.equal(audio.sfx.has("delayed"), false, "An initial delayed cue must remain bound to the frame where it was scheduled even when later repeats may continue");
+
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "score-crossfade", src: "calm.ogg", loop: true })],
+  sfxCues: []
+});
+const fadingScore = audio.music.get("score-crossfade");
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "score-crossfade", src: "danger.ogg", loop: true, crossFadeMs: 4 })],
+  sfxCues: []
+});
+const incomingScore = audio.music.get("score-crossfade");
+assert.equal(incomingScore.path, "danger.ogg", "Crossfade must make the incoming track the logical channel owner immediately");
+await new Promise(resolve => setTimeout(resolve, 15));
+assert.equal(fadingScore.audio.paused, true, "Crossfade must retire the outgoing track after its fade");
+assert.ok(incomingScore.gain >= 0.99, "Crossfade must bring the incoming track to full gain");
+
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "interrupt-crossfade", src: "old.ogg", loop: true })],
+  sfxCues: []
+});
+const interruptedOutgoing = audio.music.get("interrupt-crossfade");
+await audio.applyFrame({
+  musicCues: [createAudioCue("music", { channel: "interrupt-crossfade", src: "new.ogg", loop: true, crossFadeMs: 40 })],
+  sfxCues: []
+});
+const interruptedIncoming = audio.music.get("interrupt-crossfade");
+await new Promise(resolve => setTimeout(resolve, 4));
+await audio.stopChannel("music", "interrupt-crossfade", 4);
+await new Promise(resolve => setTimeout(resolve, 8));
+assert.equal(interruptedOutgoing.audio.paused, true, "Stopping during crossfade must also retire the outgoing overlap");
+assert.equal(interruptedIncoming.audio.paused, true, "Stopping during crossfade must retire the incoming channel owner");
+assert.equal(audio.music.has("interrupt-crossfade"), false, "Stopping during crossfade must clear the logical channel");
+
+const savedHiddenTabRaf = globalThis.requestAnimationFrame;
+const savedHiddenTabCancelRaf = globalThis.cancelAnimationFrame;
+globalThis.requestAnimationFrame = () => { throw new Error("Audio fades must not depend on requestAnimationFrame"); };
+globalThis.cancelAnimationFrame = () => { throw new Error("Audio fade cleanup must not depend on cancelAnimationFrame"); };
+const hiddenTabFadeController = new VNAudioController();
+try {
+  await hiddenTabFadeController.playChannel("music", "hidden-fade", "hidden.ogg", true);
+  const hiddenFadeEntry = hiddenTabFadeController.music.get("hidden-fade");
+  await hiddenTabFadeController.stopChannel("music", "hidden-fade", 4);
+  assert.equal(hiddenFadeEntry.audio.paused, true, "Fade-out must complete even when animation frames are unavailable, as in a hidden tab");
+  assert.equal(hiddenTabFadeController.music.has("hidden-fade"), false, "Hidden-tab fade completion must retire the logical channel");
+}
+finally {
+  hiddenTabFadeController.destroy();
+  globalThis.requestAnimationFrame = savedHiddenTabRaf;
+  globalThis.cancelAnimationFrame = savedHiddenTabCancelRaf;
+}
+
+const originalAudioPlay = Audio.prototype.play;
+let resolvePendingPlay = null;
+Audio.prototype.play = function pendingPlay() {
+  this.paused = false;
+  this.playCount += 1;
+  return new Promise(resolve => { resolvePendingPlay = resolve; });
+};
+const pendingPlayController = new VNAudioController();
+const pendingChannelPromise = pendingPlayController.playChannel("music", "pending-owner", "pending.ogg", true);
+await Promise.resolve();
+const pendingEntry = pendingPlayController.music.get("pending-owner");
+assert.ok(pendingEntry, "Pending play() must be tracked as the logical channel owner");
+await pendingPlayController.stopChannel("music", "pending-owner");
+resolvePendingPlay();
+await pendingChannelPromise;
+assert.equal(pendingEntry.audio.paused, true, "A play() promise resolving after STOP must not revive retired channel audio");
+assert.equal(pendingPlayController.music.has("pending-owner"), false, "A stopped pending play() must stay detached from its channel");
+
+let resolvePendingVoice = null;
+Audio.prototype.play = function pendingVoicePlay() {
+  this.paused = false;
+  this.playCount += 1;
+  return new Promise(resolve => { resolvePendingVoice = resolve; });
+};
+const pendingVoicePromise = pendingPlayController.playVoice("voice-pending.ogg");
+await Promise.resolve();
+const pendingVoiceAudio = pendingPlayController.voice;
+pendingPlayController.stopVoice();
+resolvePendingVoice();
+await pendingVoicePromise;
+assert.equal(pendingVoiceAudio.paused, true, "A voice play() promise resolving after stopVoice() must not restart stale voice audio");
+assert.equal(pendingPlayController.voice, null, "Stopped pending voice must not reclaim the current voice slot");
+pendingPlayController.destroy();
+Audio.prototype.play = originalAudioPlay;
+
 audio.destroy();
+
+let externalPauseCalls = 0;
+let externalResumeCalls = 0;
+const externalSound = {
+  playing: true,
+  pause() { externalPauseCalls += 1; this.playing = false; },
+  play() { externalResumeCalls += 1; this.playing = true; return Promise.resolve(); }
+};
+game.audio = { playing: [externalSound] };
+foundry.audio.AudioHelper.playing = [];
+const audioLeaseA = new VNAudioController();
+const audioLeaseB = new VNAudioController();
+audioLeaseA.pauseExternalAudio();
+audioLeaseB.pauseExternalAudio();
+assert.equal(externalPauseCalls, 1, "Multiple VN audio controllers must share one external-audio pause snapshot");
+audioLeaseA.destroy();
+assert.equal(externalResumeCalls, 0, "External Foundry audio must stay paused while another VN audio controller still owns the pause");
+audioLeaseB.destroy();
+assert.equal(externalResumeCalls, 1, "External Foundry audio must resume exactly once after the final VN pause owner releases");
+delete game.audio;
+foundry.audio.AudioHelper.playing = undefined;
+
+let resolveExitFade;
+let exitAudioDestroyed = 0;
+const exitFadePlayer = Object.create(VNPlayerApp.prototype);
+exitFadePlayer._closing = false;
+exitFadePlayer._disposed = false;
+exitFadePlayer.scene = { id: "scene-exit-fade" };
+exitFadePlayer.audio = {
+  fadeOutAll() { return new Promise(resolve => { resolveExitFade = resolve; }); },
+  destroy() { exitAudioDestroyed += 1; }
+};
+exitFadePlayer._preloader = { cancel() {} };
+exitFadePlayer._cancelTypingAnimation = () => {};
+exitFadePlayer._preloadProgressRaf = null;
+exitFadePlayer._flushVolumeSettings = async () => {};
+exitFadePlayer._keyboardElement = null;
+exitFadePlayer._resizeBound = false;
+VNPlayerApp.active.set(exitFadePlayer.scene.id, exitFadePlayer);
+const exitCloseResult = await exitFadePlayer.close({ force: true, fadeOutMs: 750 });
+assert.strictEqual(exitCloseResult, exitFadePlayer, "Cutscene ApplicationV2 must close without waiting for the full audio tail");
+assert.equal(exitAudioDestroyed, 0, "Audio controller must stay alive while the non-blocking exit fade is still running");
+resolveExitFade();
+await exitFadePlayer._audioShutdownPromise;
+assert.equal(exitAudioDestroyed, 1, "Audio controller must be destroyed after the exit fade completes");
 
 const transitionBoundaryPlayer = Object.create(VNPlayerApp.prototype);
 transitionBoundaryPlayer.currentFrameId = "bad-transition";
@@ -1230,8 +1619,10 @@ assert.equal(transitionBoundaryContext.frameCharacters[1].portraitSrc, "companio
 assert.equal(transitionBoundaryContext.frameCharacters[1].showName, true, "Additional character names must obey their per-character visibility flag");
 transitionBoundaryPlayer.scene.frames[0].textPresentation = TEXT_PRESENTATIONS.CENTER;
 const centeredCharacterContext = await transitionBoundaryPlayer._prepareContext({});
-assert.equal(centeredCharacterContext.frameCharacters[0].showName, false, "Centered text must suppress the primary character name");
-assert.equal(centeredCharacterContext.frameCharacters[1].showName, false, "Centered text must suppress additional character names");
+assert.equal(centeredCharacterContext.frameCharacters.some(character => character.showName), false, "Centered text must suppress every visible character name");
+const centeredCompanion = centeredCharacterContext.frameCharacters.find(character => character.id === "companion");
+assert.ok(centeredCompanion, "Centered text must keep an additional character that still has a portrait");
+assert.equal(centeredCompanion.showName, false, "Centered text must suppress additional character names");
 
 const visualStatePlayer = Object.create(VNPlayerApp.prototype);
 visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portrait.png", portraitPosition: "center" };
@@ -1311,6 +1702,26 @@ assert.equal(framePreviewPlayer.visualState.portrait, "preview-portrait.webp", "
 assert.equal(framePreviewPlayer.audio.music.get("score")?.path, "score-preview.ogg", "Selected-frame preview must restore inherited music from the current branch, not another branch");
 assert.equal(framePreviewPlayer.audio.sfx.get("rain")?.path, "rain-preview.ogg", "Selected-frame preview must restore inherited looping SFX channels");
 framePreviewPlayer.audio.destroy();
+
+let resolveEditorAudioPreview = null;
+const auditionEditor = Object.create(VNEditorApp.prototype);
+auditionEditor.selectedFrameId = previewTarget.id;
+auditionEditor._commitFromForm = async () => ({
+  ...previewScene,
+  frames: previewScene.frames.map(frame => frame.id === previewTarget.id
+    ? { ...frame, sfxCues: [createAudioCue("sfx", { id: "audition-cue", channel: "audition", src: "audition.ogg" })] }
+    : frame)
+});
+auditionEditor._audioPreview = {
+  applyCue() { return new Promise(resolve => { resolveEditorAudioPreview = resolve; }); }
+};
+await VNEditorApp._onPreviewAudioCue.call(
+  auditionEditor,
+  { preventDefault() {} },
+  { dataset: { audioKind: "sfx", audioCueId: "audition-cue" } }
+);
+assert.equal(typeof resolveEditorAudioPreview, "function", "Editor audition must start the cue");
+resolveEditorAudioPreview();
 
 let previewFrameCall = null;
 const savedPreviewFrame = VNPlayerApp.previewFrame;
@@ -2085,8 +2496,98 @@ assert.strictEqual(
 assert.equal(VNPlayerApp.rejoinOffers.has("scene-recall-existing"), false, "GM recall must clear a stale return offer for a player who is already inside");
 VNPlayerApp.active.delete("scene-recall-existing");
 
+const savedStartupRender = VNPlayerApp.prototype.render;
+const savedStartupPreload = VNPlayerApp.prototype.preload;
+const savedStartupClose = VNPlayerApp.prototype.close;
+let startupFailureCloses = 0;
+try {
+  VNPlayerApp.prototype.close = async function () {
+    startupFailureCloses += 1;
+    this._disposed = true;
+    VNPlayerApp.active.delete(this.scene.id);
+  };
+
+  VNPlayerApp.prototype.render = async function () { throw new Error("startup-render-failure"); };
+  VNPlayerApp.prototype.preload = async function () { throw new Error("preload-must-not-run-after-render-failure"); };
+  await assert.rejects(
+    () => VNPlayerApp.openScene({ scene: { ...scene, id: "scene-startup-render-failure" }, networked: false }),
+    /startup-render-failure/,
+    "An initial player render failure must still reject to the caller"
+  );
+  assert.equal(startupFailureCloses, 1, "An initial player render failure must close the registered player app");
+  assert.equal(VNPlayerApp.active.has("scene-startup-render-failure"), false, "A failed initial render must not leave a stale active player");
+
+  await assert.rejects(
+    () => VNPlayerApp.previewFrame({ ...scene, id: "scene-preview-render-failure" }, "frame-root"),
+    /startup-render-failure/,
+    "An initial frame-preview render failure must still reject to the caller"
+  );
+  assert.equal(startupFailureCloses, 2, "An initial frame-preview render failure must close the registered preview app");
+  assert.equal(VNPlayerApp.active.has("scene-preview-render-failure"), false, "A failed preview render must not leave a stale active player");
+
+  VNPlayerApp.prototype.render = async function () { return this; };
+  VNPlayerApp.prototype.preload = async function () { throw new Error("startup-preload-failure"); };
+  await assert.rejects(
+    () => VNPlayerApp.openScene({ scene: { ...scene, id: "scene-startup-failure" }, networked: false }),
+    /startup-preload-failure/,
+    "A startup preload failure must still reject to the caller"
+  );
+  assert.equal(startupFailureCloses, 3, "A startup preload failure must close the rendered player app");
+  assert.equal(VNPlayerApp.active.has("scene-startup-failure"), false, "A failed startup must not leave a stale active player");
+}
+finally {
+  VNPlayerApp.prototype.render = savedStartupRender;
+  VNPlayerApp.prototype.preload = savedStartupPreload;
+  VNPlayerApp.prototype.close = savedStartupClose;
+}
+
+let applicationClosePrototype = Object.getPrototypeOf(VNPlayerApp.prototype);
+while (applicationClosePrototype && !Object.prototype.hasOwnProperty.call(applicationClosePrototype, "close")) {
+  applicationClosePrototype = Object.getPrototypeOf(applicationClosePrototype);
+}
+assert.ok(applicationClosePrototype, "Smoke harness must resolve the ApplicationV2 close implementation");
+const savedApplicationClose = applicationClosePrototype.close;
+let applicationCloseAttempts = 0;
+applicationClosePrototype.close = async function () {
+  applicationCloseAttempts += 1;
+  if (applicationCloseAttempts === 1) throw new Error("application-close-failure");
+  return this;
+};
+const closeRetryPlayer = Object.create(VNPlayerApp.prototype);
+closeRetryPlayer._closing = false;
+closeRetryPlayer._finishing = true;
+closeRetryPlayer._disposed = false;
+closeRetryPlayer._preloader = { cancel() {} };
+closeRetryPlayer._cancelTypingAnimation = () => {};
+closeRetryPlayer._preloadProgressRaf = null;
+closeRetryPlayer._flushVolumeSettings = async () => {};
+closeRetryPlayer._keyboardElement = null;
+closeRetryPlayer._resizeBound = false;
+closeRetryPlayer.scene = { id: "scene-close-retry" };
+let closeRetryAudioDestroys = 0;
+closeRetryPlayer.audio = {
+  async fadeOutAll() {},
+  destroy() { closeRetryAudioDestroys += 1; }
+};
+try {
+  await assert.rejects(
+    () => closeRetryPlayer.close({ force: true }),
+    /application-close-failure/,
+    "ApplicationV2 close failures must still propagate"
+  );
+  assert.equal(closeRetryPlayer._closing, false, "A failed ApplicationV2 close must release the close guard for a retry");
+  assert.equal(closeRetryPlayer._finishing, false, "A failed close reached through finish must release the finish guard for a retry");
+  await closeRetryPlayer.close({ force: true });
+  assert.equal(applicationCloseAttempts, 2, "A later close call must retry ApplicationV2 close after the first attempt fails");
+  assert.equal(closeRetryAudioDestroys, 2, "Each failed or successful close attempt must preserve audio cleanup");
+}
+finally {
+  applicationClosePrototype.close = savedApplicationClose;
+}
+
 let synchronizedRecallRenders = 0;
 let synchronizedRecallResumes = 0;
+let synchronizedRecallVisualPreloads = [];
 let synchronizedVoteState = null;
 const synchronizedRecallApp = {
   _disposed: false,
@@ -2102,6 +2603,7 @@ const synchronizedRecallApp = {
   visualState: { background: "old-bg.webp", portrait: "", portraitPosition: "left" },
   async render() { synchronizedRecallRenders += 1; },
   async preload() {},
+  async _ensureVisualStateAssets(state) { synchronizedRecallVisualPreloads.push({ ...state }); },
   async resume(state) {
     synchronizedRecallResumes += 1;
     this.currentFrameId = state.currentFrameId;
@@ -2127,6 +2629,7 @@ await VNPlayerApp.recallScene({
 });
 assert.equal(synchronizedRecallResumes, 0, "Duplicate open recovery on the current step must not restart playback or replay frame audio");
 assert.equal(synchronizedRecallRenders, 1, "Duplicate open recovery must refresh changed non-playback state in place");
+assert.deepEqual(synchronizedRecallVisualPreloads, [{ background: "new-bg.webp", portrait: "", portraitPosition: "left" }], "In-place reconnect recovery must preload inherited visual-state assets before rendering them");
 assert.deepEqual(synchronizedRecallApp.counterState, { counter: 2 }, "In-place recovery must synchronize counter state");
 assert.equal(synchronizedRecallApp.visualState.background, "new-bg.webp", "In-place recovery must synchronize visual state");
 assert.deepEqual(synchronizedRecallApp.participantIds, [playerUser.id, playerUser2.id], "In-place recovery must synchronize the vote roster");
@@ -2148,6 +2651,275 @@ await VNPlayerApp.recallScene({
 });
 assert.equal(synchronizedRecallResumes, 1, "Reconnect recovery on a different step must resume to the GM's current synchronized frame");
 VNPlayerApp.active.delete("scene-recall-sync");
+
+let releaseStaleVisualRecall = null;
+const staleVisualRecallGate = new Promise(resolve => { releaseStaleVisualRecall = resolve; });
+let staleVisualRecallRenders = 0;
+const staleVisualRecallApp = {
+  _disposed: false,
+  _recallRevision: 0,
+  mode: PLAYER_MODES.VOTE,
+  leaderId: gm1.id,
+  networked: true,
+  participantIds: [playerUser.id],
+  loading: false,
+  started: true,
+  currentFrameId: "frame-root",
+  currentTextIndex: 0,
+  counterState: { counter: 1 },
+  visualState: { background: "race-base.webp", portrait: "", portraitPosition: "left" },
+  async render() { staleVisualRecallRenders += 1; },
+  async preload() {},
+  async _ensureVisualStateAssets(state) {
+    if (state.background === "race-old.webp") await staleVisualRecallGate;
+  },
+  async resume() { throw new Error("Same-step visual recall must not resume playback"); },
+  _applyVoteState() {}
+};
+VNPlayerApp.active.set("scene-recall-visual-race", staleVisualRecallApp);
+const staleVisualRecall = VNPlayerApp.recallScene({
+  sceneId: "scene-recall-visual-race",
+  participantIds: [playerUser.id],
+  resumeState: {
+    currentFrameId: "frame-root",
+    currentTextIndex: 0,
+    counterState: { counter: 2 },
+    visualState: { background: "race-old.webp", portrait: "", portraitPosition: "left" }
+  }
+});
+await Promise.resolve();
+await Promise.resolve();
+await VNPlayerApp.recallScene({
+  sceneId: "scene-recall-visual-race",
+  participantIds: [playerUser.id],
+  resumeState: {
+    currentFrameId: "frame-root",
+    currentTextIndex: 0,
+    counterState: { counter: 3 },
+    visualState: { background: "race-new.webp", portrait: "", portraitPosition: "left" }
+  }
+});
+releaseStaleVisualRecall();
+await staleVisualRecall;
+assert.deepEqual(staleVisualRecallApp.counterState, { counter: 3 }, "An older visual recall must not overwrite newer counter state after its preload finishes");
+assert.equal(staleVisualRecallApp.visualState.background, "race-new.webp", "An older visual recall must not overwrite newer inherited visuals");
+assert.equal(staleVisualRecallRenders, 1, "Only the current in-place recall may render synchronized state");
+VNPlayerApp.active.delete("scene-recall-visual-race");
+
+let releaseStaleResumePreload = null;
+const staleResumePreloadGate = new Promise(resolve => { releaseStaleResumePreload = resolve; });
+let staleResumeRenders = 0;
+const staleResumePlayer = Object.create(VNPlayerApp.prototype);
+staleResumePlayer.loading = false;
+staleResumePlayer._disposed = false;
+staleResumePlayer._recallRevision = 0;
+staleResumePlayer._resuming = false;
+staleResumePlayer._resumePromise = null;
+staleResumePlayer.started = true;
+staleResumePlayer.scene = scene;
+staleResumePlayer.mode = PLAYER_MODES.GM;
+staleResumePlayer.participantIds = [];
+staleResumePlayer.leaderId = gm1.id;
+staleResumePlayer.currentFrameId = "frame-root";
+staleResumePlayer.currentTextIndex = 0;
+staleResumePlayer.counterState = { counter: 1 };
+staleResumePlayer.visualState = { background: "resume-base.webp", portrait: "", portraitPosition: "left" };
+staleResumePlayer._pendingRemoteFrames = [];
+staleResumePlayer._playbackQueue = Promise.resolve();
+staleResumePlayer._leaderVotes = new Map();
+staleResumePlayer._participantConnectionState = new Map();
+staleResumePlayer._buildPlaybackIndex();
+staleResumePlayer._ensureFrameAssets = async frame => {
+  if (frame.id === "frame-nested") await staleResumePreloadGate;
+  return [];
+};
+staleResumePlayer.audio = {
+  pauseExternalAudio() {},
+  async applyFrame() {},
+  stopVoice() {}
+};
+staleResumePlayer._playCurrentVoice = async () => {};
+staleResumePlayer.render = async () => {
+  staleResumeRenders += 1;
+  return staleResumePlayer;
+};
+staleResumePlayer._warmUpcomingAssets = () => {};
+staleResumePlayer._flushPendingRemoteFrames = async () => {};
+staleResumePlayer._resetVoteForStep = () => {};
+VNPlayerApp.active.set("scene-recall-resume-race", staleResumePlayer);
+const staleResumeRecall = VNPlayerApp.recallScene({
+  sceneId: "scene-recall-resume-race",
+  participantIds: [],
+  resumeState: {
+    currentFrameId: "frame-nested",
+    currentTextIndex: 0,
+    counterState: { counter: 2 },
+    visualState: { background: "resume-old.webp", portrait: "", portraitPosition: "left" }
+  }
+});
+await Promise.resolve();
+await Promise.resolve();
+const newestResumeRecall = VNPlayerApp.recallScene({
+  sceneId: "scene-recall-resume-race",
+  participantIds: [],
+  resumeState: {
+    currentFrameId: "frame-root",
+    currentTextIndex: 0,
+    counterState: { counter: 4 },
+    visualState: { background: "resume-new.webp", portrait: "", portraitPosition: "left" }
+  }
+});
+await Promise.resolve();
+releaseStaleResumePreload();
+await Promise.all([staleResumeRecall, newestResumeRecall]);
+assert.equal(staleResumePlayer.currentFrameId, "frame-root", "A newer recall must remain authoritative when an older resume was still preloading");
+assert.deepEqual(staleResumePlayer.counterState, { counter: 4 }, "The newest recall state must apply after a superseded resume exits");
+assert.equal(staleResumePlayer.visualState.background, "resume-new.webp", "A superseded resume must not paint its stale inherited visual state");
+assert.equal(staleResumeRenders, 1, "A superseded resume must not render its stale frame before the newest recall applies");
+VNPlayerApp.active.delete("scene-recall-resume-race");
+
+const resumeVisualPlayer = Object.create(VNPlayerApp.prototype);
+resumeVisualPlayer.loading = false;
+resumeVisualPlayer._disposed = false;
+resumeVisualPlayer._resuming = false;
+resumeVisualPlayer.started = true;
+resumeVisualPlayer.scene = scene;
+resumeVisualPlayer.mode = PLAYER_MODES.GM;
+resumeVisualPlayer.participantIds = [];
+resumeVisualPlayer.leaderId = gm1.id;
+resumeVisualPlayer.currentFrameId = null;
+resumeVisualPlayer.currentTextIndex = 0;
+resumeVisualPlayer.counterState = {};
+resumeVisualPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+resumeVisualPlayer._pendingRemoteFrames = [];
+resumeVisualPlayer._playbackQueue = Promise.resolve();
+resumeVisualPlayer._leaderVotes = new Map();
+resumeVisualPlayer._participantConnectionState = new Map();
+resumeVisualPlayer._buildPlaybackIndex();
+const resumeFrame = resumeVisualPlayer._getFrame("frame-root");
+let resumeCriticalPaths = null;
+let releaseResumeVisualPreload = null;
+const resumeVisualPreloadGate = new Promise(resolve => { releaseResumeVisualPreload = resolve; });
+let resumeVisualRenders = 0;
+resumeVisualPlayer._ensureCriticalPaths = async paths => {
+  resumeCriticalPaths = [...paths];
+  await resumeVisualPreloadGate;
+  return paths.map(path => ({ path, ok: true }));
+};
+resumeVisualPlayer.audio = {
+  pauseExternalAudio() {},
+  async applyFrame() {},
+  stopVoice() {},
+  async playVoice() {}
+};
+resumeVisualPlayer._playCurrentVoice = async () => {};
+resumeVisualPlayer.render = async () => {
+  resumeVisualRenders += 1;
+  return resumeVisualPlayer;
+};
+resumeVisualPlayer._warmUpcomingAssets = () => {};
+resumeVisualPlayer._flushPendingRemoteFrames = async () => {};
+resumeVisualPlayer._resetVoteForStep = () => {};
+const resumeVisualPromise = resumeVisualPlayer.resume({
+  currentFrameId: resumeFrame.id,
+  currentTextIndex: 0,
+  counterState: {},
+  visualState: {
+    background: "inherited-reconnect-bg.webp",
+    portrait: "inherited-reconnect-portrait.webp",
+    portraitPosition: "right"
+  }
+});
+await Promise.resolve();
+await Promise.resolve();
+assert.ok(resumeCriticalPaths.includes("inherited-reconnect-bg.webp"), "Reconnect resume must preload the inherited background even when the current frame does not declare it");
+assert.ok(resumeCriticalPaths.includes("inherited-reconnect-portrait.webp"), "Reconnect resume must preload the inherited portrait before rendering the recovered frame");
+assert.equal(resumeVisualRenders, 0, "Reconnect resume must not render before inherited visual assets finish preloading");
+releaseResumeVisualPreload();
+await resumeVisualPromise;
+assert.equal(resumeVisualRenders, 1, "Reconnect resume must render after inherited visual assets are ready");
+
+const concurrentResumePlayer = Object.create(VNPlayerApp.prototype);
+concurrentResumePlayer.loading = false;
+concurrentResumePlayer._disposed = false;
+concurrentResumePlayer._resuming = false;
+concurrentResumePlayer._resumePromise = null;
+concurrentResumePlayer.started = false;
+concurrentResumePlayer.scene = scene;
+concurrentResumePlayer.mode = PLAYER_MODES.GM;
+concurrentResumePlayer.participantIds = [];
+concurrentResumePlayer.leaderId = gm1.id;
+concurrentResumePlayer.currentFrameId = null;
+concurrentResumePlayer.currentTextIndex = 0;
+concurrentResumePlayer.counterState = {};
+concurrentResumePlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+concurrentResumePlayer._pendingRemoteFrames = [];
+concurrentResumePlayer._playbackQueue = Promise.resolve();
+concurrentResumePlayer._leaderVotes = new Map();
+concurrentResumePlayer._participantConnectionState = new Map();
+concurrentResumePlayer._buildPlaybackIndex();
+let releaseConcurrentResume = null;
+let concurrentResumeEnsures = 0;
+concurrentResumePlayer._ensureFrameAssets = async () => {
+  concurrentResumeEnsures += 1;
+  await new Promise(resolve => { releaseConcurrentResume = resolve; });
+  return [];
+};
+concurrentResumePlayer.audio = { pauseExternalAudio() {}, async applyFrame() {} };
+concurrentResumePlayer._playCurrentVoice = async () => {};
+concurrentResumePlayer.render = async () => concurrentResumePlayer;
+concurrentResumePlayer._warmUpcomingAssets = () => {};
+concurrentResumePlayer._flushPendingRemoteFrames = async () => {};
+concurrentResumePlayer._resetVoteForStep = () => {};
+const concurrentResumeState = {
+  currentFrameId: "frame-root",
+  currentTextIndex: 0,
+  counterState: {},
+  visualState: { background: "resume-concurrent.webp", portrait: "", portraitPosition: "left" }
+};
+const concurrentResumeA = concurrentResumePlayer.resume(concurrentResumeState);
+const concurrentResumeB = concurrentResumePlayer.resume(concurrentResumeState);
+await Promise.resolve();
+assert.equal(concurrentResumeEnsures, 1, "Duplicate reconnect packets must share one in-progress resume instead of replaying the same frame twice");
+releaseConcurrentResume();
+await Promise.all([concurrentResumeA, concurrentResumeB]);
+assert.equal(concurrentResumePlayer._resumePromise, null, "Completed reconnect resume must release its shared promise");
+
+const previewInheritedPlayer = Object.create(VNPlayerApp.prototype);
+previewInheritedPlayer.loading = false;
+previewInheritedPlayer._disposed = false;
+previewInheritedPlayer.scene = scene;
+previewInheritedPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+previewInheritedPlayer.counterState = {};
+previewInheritedPlayer.audio = { pauseExternalAudio() {} };
+previewInheritedPlayer._getFrame = () => ({ id: "preview-target", branchId: branchId });
+previewInheritedPlayer._findBranchPreviewPath = () => ({ steps: [], counterState: {} });
+previewInheritedPlayer._findPreviewPath = () => null;
+previewInheritedPlayer._warmFramePreview = async () => {
+  previewInheritedPlayer.visualState = {
+    background: "preview-inherited-bg.webp",
+    portrait: "preview-inherited-portrait.webp",
+    portraitPosition: "left"
+  };
+};
+let previewInheritedState = null;
+let releasePreviewInheritedPreload = null;
+const previewInheritedPreloadGate = new Promise(resolve => { releasePreviewInheritedPreload = resolve; });
+previewInheritedPlayer._ensureVisualStateAssets = async state => {
+  previewInheritedState = { ...state };
+  await previewInheritedPreloadGate;
+};
+let previewGoToFrame = null;
+previewInheritedPlayer._goToFrameNow = async frameId => { previewGoToFrame = frameId; };
+const previewInheritedPromise = previewInheritedPlayer.startFramePreview("preview-target", { branchId });
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(previewInheritedState?.background, "preview-inherited-bg.webp", "Frame preview must preload the inherited background reconstructed from prior frames");
+assert.equal(previewInheritedState?.portrait, "preview-inherited-portrait.webp", "Frame preview must preload the inherited portrait reconstructed from prior frames");
+assert.equal(previewGoToFrame, null, "Frame preview must not enter the target frame before inherited visual assets are ready");
+releasePreviewInheritedPreload();
+await previewInheritedPromise;
+assert.equal(previewGoToFrame, "preview-target", "Frame preview must continue after inherited visual assets are ready");
 
 const savedOpenSceneForRecall = VNPlayerApp.openScene;
 let recalledOpenPayload = null;

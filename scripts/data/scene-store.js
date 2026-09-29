@@ -37,6 +37,15 @@ export class VNSceneStore {
             type: Number,
             default: 10000,
         });
+        this._registerSetting(SETTINGS.PRELOAD_AHEAD_DEPTH, {
+            name: "VN: фоновая предзагрузка вперёд",
+            hint: "Насколько далеко по графу пытаться догружать катсцену после старта. Общее число кадров фонового окна также ограничено, чтобы ветвление не раздувало загрузку.",
+            scope: "world",
+            config: true,
+            type: Number,
+            range: { min: 2, max: 20, step: 1 },
+            default: 10
+        });
         this._registerSetting(SETTINGS.MUSIC_VOLUME, {
             name: "VN: громкость музыки",
             hint: "Множитель громкости музыки VN после общего уровня громкости плейлистов Foundry.",

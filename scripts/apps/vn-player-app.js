@@ -47,6 +47,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.started = false;
         this._starting = false;
         this._resuming = false;
+        this._resumePromise = null;
+        this._recallRevision = 0;
         this.preloadDone = 0;
         this.preloadTotal = 0;
         this.currentFrameId = null;
@@ -76,7 +78,6 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._resizeBound = false;
         this._preloadPromise = null;
         this._preloader = new VNPreloadController(this.scene);
-        this._backgroundPreloadPromise = null;
         this._disposed = false;
         this._preloadProgressRaf = null;
         this._pendingPreloadProgress = null;
@@ -191,22 +192,32 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             participantIds: payload.participantIds || [],
             networked: payload.networked === true || Array.isArray(payload.targetIds)
         });
-        await app.render(true);
-        if (payload.resumeState) {
-            await app.preload({
-                frameId: payload.resumeState.currentFrameId || "",
-                extraPaths: [
-                    payload.resumeState.visualState?.background || "",
-                    payload.resumeState.visualState?.portrait || ""
-                ]
-            });
-            await app.resume(payload.resumeState);
+        try {
+            await app.render(true);
+            if (payload.resumeState) {
+                await app.preload({
+                    frameId: payload.resumeState.currentFrameId || "",
+                    extraPaths: [
+                        payload.resumeState.visualState?.background || "",
+                        payload.resumeState.visualState?.portrait || ""
+                    ]
+                });
+                if (!app._disposed) await app.resume(payload.resumeState);
+            }
+            else {
+                await app.preload();
+            }
         }
-        else {
-            void app.preload().catch(error => {
-                console.error(`${MODULE_ID} | Cutscene preload failed.`, error);
-                notifyWarn("VN: предзагрузка катсцены завершилась ошибкой. Подробности записаны в консоль.");
-            });
+        catch (error) {
+            console.error(`${MODULE_ID} | Cutscene startup failed.`, error);
+            notifyWarn("VN: подготовка катсцены завершилась ошибкой. Подробности записаны в консоль.");
+            try {
+                await app.close({ force: true });
+            }
+            catch (closeError) {
+                console.warn(`${MODULE_ID} | Failed to close player after startup error.`, closeError);
+            }
+            throw error;
         }
         return app;
     }
@@ -223,9 +234,20 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             networked: false,
             framePreview: true
         });
-        await app.render(true);
-        await app.preload({ frameId });
-        await app.startFramePreview(frameId, { branchId: options.branchId || "" });
+        try {
+            await app.render(true);
+            await app.preload({ frameId });
+            if (!app._disposed) await app.startFramePreview(frameId, { branchId: options.branchId || "" });
+        }
+        catch (error) {
+            try {
+                await app.close({ force: true });
+            }
+            catch (closeError) {
+                console.warn(`${MODULE_ID} | Failed to close frame preview after startup error.`, closeError);
+            }
+            throw error;
+        }
         return app;
     }
 
@@ -234,6 +256,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!sceneId) return null;
         const existing = VNPlayerApp.active.get(sceneId);
         if (!existing || existing._disposed === true) return VNPlayerApp.openScene(payload);
+
+        const recallRevision = Math.max(0, Number(existing._recallRevision || 0)) + 1;
+        existing._recallRevision = recallRevision;
+        const isCurrentRecall = () => existing._disposed !== true && existing._recallRevision === recallRevision;
 
         VNPlayerApp.clearRejoinOffer(sceneId);
         if (payload?.mode !== undefined) existing.mode = payload.mode;
@@ -246,12 +272,24 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         const state = payload?.resumeState;
         if (!state) {
+            if (existing.loading) await existing.preload();
+            if (!isCurrentRecall()) return existing;
             if (participantsChanged && existing.started) await existing.render();
             return existing;
         }
 
         if (existing.loading) await existing.preload();
-        if (existing._disposed) return existing;
+        if (!isCurrentRecall()) return existing;
+
+        if (existing._resumePromise) {
+            try {
+                await existing._resumePromise;
+            }
+            catch (_error) {
+                // The older recovery owns its error; the latest recall still gets a chance to apply.
+            }
+            if (!isCurrentRecall()) return existing;
+        }
 
         const requestedFrameId = state.currentFrameId || "";
         const requestedTextIndex = Number(state.currentTextIndex || 0);
@@ -260,7 +298,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             || Number(existing.currentTextIndex || 0) !== requestedTextIndex;
 
         if (needsPlaybackResume) {
-            await existing.resume(state);
+            await existing.resume(state, { recallRevision });
             return existing;
         }
 
@@ -270,9 +308,15 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const nextVisualState = state.visualState && typeof state.visualState === "object"
             ? Object.assign(createVisualState(), state.visualState)
             : existing.visualState;
-        const stateChanged = JSON.stringify(nextCounterState) !== JSON.stringify(existing.counterState)
-            || JSON.stringify(nextVisualState) !== JSON.stringify(existing.visualState);
+        const counterStateChanged = JSON.stringify(nextCounterState) !== JSON.stringify(existing.counterState);
+        const visualStateChanged = JSON.stringify(nextVisualState) !== JSON.stringify(existing.visualState);
+        const stateChanged = counterStateChanged || visualStateChanged;
 
+        if (visualStateChanged) {
+            await existing._ensureVisualStateAssets?.(nextVisualState);
+            if (!isCurrentRecall()) return existing;
+        }
+        if (!isCurrentRecall()) return existing;
         existing.counterState = nextCounterState;
         existing.visualState = nextVisualState;
         if (existing.mode === PLAYER_MODES.VOTE && state.voteState) existing._applyVoteState(state.voteState);
@@ -309,7 +353,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         VNPlayerApp.pendingStarts.delete(sceneId);
         VNPlayerApp.pendingAdvances.delete(sceneId);
         const app = VNPlayerApp.active.get(sceneId);
-        if (app) return app.close({ force: true });
+        if (app) return app.close({ force: true, fadeOutMs: Number(app.scene?.audioExitFadeMs || 0) });
     }
 
     static offerRejoin(scene, leaderId) {
@@ -423,8 +467,15 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async preload(options = {}) {
         if (this._preloadPromise) return this._preloadPromise;
-        this._preloadPromise = this._preloadInner(options.frameId || "", options.extraPaths || []);
-        return this._preloadPromise;
+        const run = this._preloadInner(options.frameId || "", options.extraPaths || []);
+        this._preloadPromise = run;
+        try {
+            return await run;
+        }
+        catch (error) {
+            if (this._preloadPromise === run) this._preloadPromise = null;
+            throw error;
+        }
     }
 
     async _preloadInner(startFrameId = "", extraPaths = []) {
@@ -459,7 +510,6 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.loading = false;
         await this.render();
         if (this._disposed) return results;
-        this._backgroundPreloadPromise = this._preloader.startBackgroundImages();
         VNSocket.signalReady(this.scene.id, this.leaderId);
         if (VNPlayerApp.pendingStarts.has(this.scene.id)) {
             VNPlayerApp.pendingStarts.delete(this.scene.id);
@@ -472,18 +522,36 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this._disposed || !this._preloader) return [];
         const uniquePaths = [...new Set((Array.isArray(paths) ? paths : []).filter(Boolean))];
         if (!uniquePaths.length) return [];
-        const results = await this._preloader.ensurePaths(uniquePaths, { concurrency: 6 });
+        const results = await this._preloader.ensurePaths(uniquePaths, {
+            concurrency: 6,
+            critical: true,
+            decodeImages: true
+        });
         if (this._disposed) return results;
         const failedPaths = results.filter(result => result?.ok === false && result.path).map(result => result.path);
         if (!failedPaths.length) return results;
-        const retries = await this._preloader.ensurePaths(failedPaths, { concurrency: 6 });
+        const retries = await this._preloader.ensurePaths(failedPaths, {
+            concurrency: 6,
+            critical: true,
+            decodeImages: true
+        });
         const retryByPath = new Map(retries.map(result => [result.path, result]));
         return results.map(result => retryByPath.get(result.path) || result);
     }
 
-    _ensureFrameAssets(frame, textIndex = 0) {
-        if (!frame) return Promise.resolve([]);
-        return this._ensureCriticalPaths(VNPreloader.collectFrameEntryPaths(frame, textIndex));
+    _ensureFrameAssets(frame, textIndex = 0, extraPaths = []) {
+        if (!frame) return this._ensureCriticalPaths(extraPaths);
+        return this._ensureCriticalPaths([
+            ...VNPreloader.collectFrameEntryPaths(frame, textIndex),
+            ...(Array.isArray(extraPaths) ? extraPaths : [])
+        ]);
+    }
+
+    _ensureVisualStateAssets(state = this.visualState) {
+        return this._ensureCriticalPaths([
+            state?.background || "",
+            state?.portrait || ""
+        ]);
     }
 
     _ensureTextBlockAssets(frame, textIndex = 0) {
@@ -493,8 +561,17 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _warmUpcomingAssets(frame) {
         if (!frame?.id || this._disposed || !this._preloader) return;
-        void this._preloader.warmWindow(frame.id, { depth: 2, maxFrames: 12, concurrency: 2 }).catch(error => {
-            console.warn(`${MODULE_ID} | Nearby asset preload failed.`, error);
+        let depth = 10;
+        try {
+            const configured = Number(game.settings?.get?.(MODULE_ID, SETTINGS.PRELOAD_AHEAD_DEPTH));
+            if (Number.isFinite(configured)) depth = Math.max(2, Math.min(20, Math.floor(configured)));
+        }
+        catch (_error) {
+            depth = 10;
+        }
+        const maxFrames = Math.max(12, depth + 2);
+        void this._preloader.warmAhead(frame.id, { depth, maxFrames }).catch(error => {
+            console.warn(`${MODULE_ID} | Background asset preload failed.`, error);
         });
     }
 
@@ -633,7 +710,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             bank.set(channel, {
                 channel,
                 src: cue.src,
-                loop: cue.loop === true
+                loop: cue.loop === true,
+                fadeInMs: 0,
+                crossFadeMs: 0,
+                repeatCount: cue.repeatCount || 1,
+                repeatDelayMs: cue.repeatDelayMs || 0,
+                continueRepeats: cue.continueRepeats === true
             });
         }
     }
@@ -656,10 +738,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             : getInitialCounterState(this.scene);
 
         for (const cue of music.values()) {
-            await this.audio.playChannel("music", cue.channel, cue.src, cue.loop);
+            await this.audio.playChannel("music", cue.channel, cue.src, cue.loop, cue);
         }
         for (const cue of sfx.values()) {
-            await this.audio.playChannel("sfx", cue.channel, cue.src, true);
+            await this.audio.playChannel("sfx", cue.channel, cue.src, true, cue);
         }
     }
 
@@ -675,6 +757,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const previewPath = branchPreview || this._findPreviewPath(frame.id);
         if (previewPath) {
             await this._warmFramePreview(previewPath);
+            await this._ensureVisualStateAssets(this.visualState);
+            if (this._disposed) return;
         }
         else {
             this.counterState = getInitialCounterState(this.scene);
@@ -706,35 +790,67 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
-    async resume(state = {}) {
-        if (this.loading || this._disposed || this._resuming) return;
+    async resume(state = {}, options = {}) {
+        if (this._disposed) return;
+        if (this._resumePromise) return this._resumePromise;
+        if (this.loading) return;
+
+        const recallRevision = Number.isFinite(Number(options.recallRevision))
+            ? Number(options.recallRevision)
+            : null;
+        const isCurrentResume = () => !this._disposed
+            && (recallRevision === null || Number(this._recallRevision || 0) === recallRevision);
+
         this._resuming = true;
-        try {
-            this.started = true;
-            this.audio.pauseExternalAudio();
-            this.counterState = state.counterState && typeof state.counterState === "object" ? Object.assign({}, state.counterState) : getInitialCounterState(this.scene);
-            this.visualState = Object.assign(createVisualState(), state.visualState && typeof state.visualState === "object" ? state.visualState : {});
+        const run = (async () => {
+            const nextCounterState = state.counterState && typeof state.counterState === "object"
+                ? Object.assign({}, state.counterState)
+                : getInitialCounterState(this.scene);
+            const nextVisualState = Object.assign(
+                createVisualState(),
+                state.visualState && typeof state.visualState === "object" ? state.visualState : {}
+            );
             const frame = this._getFrame(state.currentFrameId);
             if (!frame) {
+                if (!isCurrentResume()) return;
                 this.started = false;
                 return await this.start();
             }
             const blocks = getFrameTextBlocks(frame);
             const requestedIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
-            await this._ensureFrameAssets(frame, requestedIndex);
-            if (this._disposed) return;
+            await this._ensureFrameAssets(frame, requestedIndex, [
+                nextVisualState.background || "",
+                nextVisualState.portrait || ""
+            ]);
+            if (!isCurrentResume()) return;
+
+            this.started = true;
+            this.audio.pauseExternalAudio();
+            this.counterState = nextCounterState;
+            this.visualState = nextVisualState;
             this.currentFrameId = frame.id;
             this._contentHidden = false;
             this.currentTextIndex = requestedIndex;
             this._resetVoteForStep(frame.id, this.currentTextIndex);
             await this.audio.applyFrame(frame);
+            if (!isCurrentResume()) return;
             await this._playCurrentVoice(frame);
+            if (!isCurrentResume()) {
+                this.audio.stopVoice();
+                return;
+            }
             await this.render();
+            if (!isCurrentResume()) return;
             if (this.mode === PLAYER_MODES.VOTE && state.voteState) this._applyVoteState(state.voteState);
             this._warmUpcomingAssets(frame);
             await this._flushPendingRemoteFrames();
+        })();
+        this._resumePromise = run;
+        try {
+            return await run;
         }
         finally {
+            if (this._resumePromise === run) this._resumePromise = null;
             this._resuming = false;
         }
     }
@@ -783,7 +899,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this.mode === PLAYER_MODES.VOTE && this.networked && !this._isLeader()) {
             VNPlayerApp.offerRejoin(this.scene, this.leaderId);
             VNSocket.leave(this.scene.id, this.leaderId);
-            const result = await this.close({ force: true });
+            const result = await this.close({ force: true, fadeOutMs: Number(this.scene?.audioExitFadeMs || 0) });
             VNPlayerApp._renderRejoinControl();
             return result;
         }
@@ -1645,10 +1761,19 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._finishing = true;
         const synchronized = this.networked && (this.mode === PLAYER_MODES.GM || this.mode === PLAYER_MODES.VOTE);
         if (synchronized && this._isLeader()) VNSocket.close(this.scene.id);
-        await this.close({ force: true });
+        await this.close({ force: true, fadeOutMs: Number(this.scene?.audioExitFadeMs || 0) });
     }
 
     async close(options = {}) {
+        if (this._closing) return;
+        this._closing = true;
+        const fadeOutMs = Math.max(0, Math.min(10000, Number(options.fadeOutMs || 0)));
+        const audioShutdown = fadeOutMs > 0
+            ? this.audio.fadeOutAll(fadeOutMs).catch(error => {
+                console.warn(`${MODULE_ID} | Scene exit audio fade failed.`, error);
+            })
+            : Promise.resolve();
+
         this._disposed = true;
         this._preloader?.cancel();
         this._cancelTypingAnimation();
@@ -1663,11 +1788,32 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             window.removeEventListener("resize", this._onWindowResize);
             this._resizeBound = false;
         }
-        this.audio.destroy();
         VNPlayerApp.active.delete(this.scene.id);
         VNPlayerApp.pendingStarts.delete(this.scene.id);
         VNPlayerApp.pendingAdvances.delete(this.scene.id);
-        return super.close(options);
+
+        let closeResult;
+        try {
+            closeResult = await super.close(options);
+        }
+        catch (error) {
+            this.audio.destroy();
+            this._closing = false;
+            this._finishing = false;
+            throw error;
+        }
+
+        if (fadeOutMs > 0) {
+            this._audioShutdownPromise = audioShutdown.finally(() => {
+                this.audio.destroy();
+                this._audioShutdownPromise = null;
+            });
+            void this._audioShutdownPromise;
+        }
+        else {
+            this.audio.destroy();
+        }
+        return closeResult;
     }
 
     static _onNext(event, target) {

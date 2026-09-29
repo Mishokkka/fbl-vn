@@ -83,7 +83,7 @@
     {{/if}}
 
     {{#if showChoices}}
-      <div class="fbl-vn-choice-overlay">
+      <div class="fbl-vn-choice-overlay {{#if isCenteredText}}is-centered-text{{/if}}">
         <div class="fbl-vn-player-choice-list">
           {{#each choices}}
             <button type="button" class="{{#if selected}}is-selected{{/if}} {{#if unavailable}}is-unavailable{{/if}}" data-action="choose" data-choice-id="{{id}}" {{#unless ../canAdvance}}disabled{{/unless}} {{#if ../localHasVoted}}disabled{{/if}} {{#unless available}}disabled{{/unless}}>

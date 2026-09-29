@@ -42,6 +42,10 @@ VNSocket.readyTargets.clear();
 VNSocket._socketMessageHandler = null;
 VNSocket._userConnectedHookId = null;
 VNSocket._clearSessionStatusRecovery();
+VNSocket._sessionStatusRecoveryGeneration = 0;
+VNSocket._recoveryDispatchGeneration = 0;
+VNSocket._sessionStatusPersistent = false;
+VNSocket._sessionStatusTailTimer = null;
 VNSocket._connectionState.clear();
 
 let trustedAdvanceCalls = 0;
@@ -66,6 +70,12 @@ assert.deepEqual(
   [gm1.id, player.id],
   "Non-vote synchronized modes must retain the GM in their participant metadata"
 );
+
+player.active = false;
+VNSocket._connectionState.set(player.id, true);
+assert.equal(VNSocket.getTargetUserIds().includes(player.id), true, "Initial target discovery must trust the explicit connection hook when Foundry user.active is temporarily stale");
+player.active = true;
+VNSocket._connectionState.delete(player.id);
 
 assert.equal(VNSocket.emit("advance", { sceneId: "scene-auth" }), true);
 assert.equal(emitted.length, 1);
@@ -137,6 +147,16 @@ assert.deepEqual(reopen.payload.data.targetIds, [player.id], "Reconnect reopen m
 assert.equal(reopen.payload.data.resumeState.currentFrameId, "frame-current", "Reconnect must resume at the GM's current synchronized frame");
 assert.deepEqual(reopen.payload.data.participantIds, [player.id, player2.id], "Reconnect must restore the current player-only vote roster");
 
+const savedReconnectSyncState = VNSocket.handlers.getSyncState;
+VNSocket.handlers.getSyncState = () => null;
+emitted.length = 0;
+assert.equal(VNSocket._sendSessionStatusToUser(reconnectSceneId, reconnectSession, player.id), false, "A started session must not reopen a player without a usable synchronized resume snapshot");
+assert.equal(emitted.some(entry => entry.payload?.type === "open"), false, "Missing GM resume state must leave recovery retries alive instead of opening a stuck waiting screen");
+const pendingStatus = emitted.find(entry => entry.payload?.type === "sessionStatusPending" && entry.payload?.data?.sceneId === reconnectSceneId);
+assert.ok(pendingStatus, "A GM with an active session but no resume snapshot must tell the player to keep recovery alive");
+assert.deepEqual(pendingStatus.payload.data.targetIds, [player.id], "Pending recovery status must target only the requesting player");
+VNSocket.handlers.getSyncState = savedReconnectSyncState;
+
 let leaveHandlerCall = null;
 VNSocket.handlers.leave = (data, senderId) => { leaveHandlerCall = { data, senderId }; };
 const leavePayload = {
@@ -163,6 +183,101 @@ assert.deepEqual(reconnectOffer.payload.data.targetIds, [player.id], "Rejoin off
 assert.equal(reconnectOffer.payload.data.sceneTitle, "Reconnect", "Rejoin offer must carry enough display context to rebuild the return button");
 
 game.user = player;
+VNSocket._clearSessionStatusRecovery();
+const savedSetTimeout = globalThis.setTimeout;
+const savedClearTimeout = globalThis.clearTimeout;
+const recoveryDelays = [];
+globalThis.setTimeout = (callback, delay) => {
+  const token = { delay, callback };
+  recoveryDelays.push(delay);
+  return token;
+};
+globalThis.clearTimeout = () => {};
+VNSocket._scheduleSessionStatusRecovery();
+assert.deepEqual(recoveryDelays, [0, 750, 2500, 6000, 12000], "Player reload recovery must keep retrying long enough to survive a slower simultaneous GM/server reconnect");
+VNSocket._markSessionStatusPending();
+for (const timer of [...VNSocket._sessionStatusTimers]) timer.callback();
+assert.deepEqual(
+  recoveryDelays,
+  [0, 750, 2500, 6000, 12000, 12000],
+  "A confirmed active session without a resume snapshot must continue polling after the initial recovery window"
+);
+assert.equal(VNSocket._sessionStatusPersistent, true, "Pending session status must keep recovery persistent until a usable authoritative response arrives");
+VNSocket._clearSessionStatusRecovery();
+assert.equal(VNSocket._sessionStatusTailTimer, null, "Clearing recovery must cancel the persistent tail timer");
+assert.equal(VNSocket._sessionStatusPersistent, false, "Clearing recovery must reset persistent pending state");
+globalThis.setTimeout = savedSetTimeout;
+globalThis.clearTimeout = savedClearTimeout;
+
+const savedRecoveryScheduler = VNSocket._scheduleSessionStatusRecovery;
+let lateGmRecoverySchedules = 0;
+VNSocket._scheduleSessionStatusRecovery = () => { lateGmRecoverySchedules += 1; };
+VNSocket._onUserConnected(gm1, true);
+await Promise.resolve();
+assert.equal(lateGmRecoverySchedules, 1, "A player must retry session recovery when a GM connects after the initial startup window");
+VNSocket._scheduleSessionStatusRecovery = savedRecoveryScheduler;
+
+const savedRaceScheduleRecovery = VNSocket._scheduleSessionStatusRecovery;
+const savedRaceClearRecovery = VNSocket._clearSessionStatusRecovery;
+let raceScheduleCalls = 0;
+let raceClearCalls = 0;
+VNSocket._scheduleSessionStatusRecovery = () => { raceScheduleCalls += 1; };
+VNSocket._clearSessionStatusRecovery = () => { raceClearCalls += 1; };
+let resolveOlderRecovery = null;
+let rejectNewerRecovery = null;
+const olderRecovery = new Promise(resolve => { resolveOlderRecovery = resolve; });
+const newerRecovery = new Promise((_resolve, reject) => { rejectNewerRecovery = reject; });
+const savedRaceOpenHandler = VNSocket.handlers.open;
+VNSocket.handlers.open = data => data.marker === "older" ? olderRecovery : newerRecovery;
+VNSocket.activeLeaders.delete("scene-dispatch-race");
+socketCallback({
+  type: "open",
+  timestamp: Date.now(),
+  senderId: gm1.id,
+  data: { sceneId: "scene-dispatch-race", targetIds: [player.id], marker: "older" }
+});
+socketCallback({
+  type: "open",
+  timestamp: Date.now(),
+  senderId: gm1.id,
+  data: { sceneId: "scene-dispatch-race", targetIds: [player.id], marker: "newer" }
+});
+rejectNewerRecovery(new Error("newer-recovery-failure"));
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(raceScheduleCalls, 1, "The newest failed recovery dispatch must schedule another status recovery");
+resolveOlderRecovery();
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(raceClearCalls, 0, "An older successful dispatch must not clear recovery required by a newer failure");
+
+let resolvePrePendingRecovery = null;
+const prePendingRecovery = new Promise(resolve => { resolvePrePendingRecovery = resolve; });
+const savedPendingMarker = VNSocket._markSessionStatusPending;
+let pendingMarkerCalls = 0;
+VNSocket._markSessionStatusPending = () => { pendingMarkerCalls += 1; };
+VNSocket.handlers.open = () => prePendingRecovery;
+socketCallback({
+  type: "open",
+  timestamp: Date.now(),
+  senderId: gm1.id,
+  data: { sceneId: "scene-dispatch-race", targetIds: [player.id], marker: "pre-pending" }
+});
+socketCallback({
+  type: "sessionStatusPending",
+  timestamp: Date.now(),
+  senderId: gm1.id,
+  data: { sceneId: "scene-dispatch-race", targetIds: [player.id] }
+});
+assert.equal(pendingMarkerCalls, 1, "A trusted pending-session response must keep recovery alive");
+resolvePrePendingRecovery();
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(raceClearCalls, 0, "A pre-pending successful dispatch must not clear recovery after a newer pending-session response");
+VNSocket._markSessionStatusPending = savedPendingMarker;
+
+VNSocket.handlers.open = savedRaceOpenHandler;
+VNSocket._scheduleSessionStatusRecovery = savedRaceScheduleRecovery;
+VNSocket._clearSessionStatusRecovery = savedRaceClearRecovery;
+VNSocket.activeLeaders.delete("scene-dispatch-race");
+
 emitted.length = 0;
 assert.equal(VNSocket.requestSessionStatus(), true, "A freshly bootstrapped player client must ask the GM for active-session status");
 const statusRequest = emitted.find(entry => entry.payload?.type === "sessionStatusRequest");

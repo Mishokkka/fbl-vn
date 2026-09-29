@@ -357,7 +357,7 @@
 }
 
 .fbl-vn-condition-list,
-.choice-condition-list {
+.fbl-vn-editor .choice-condition-list {
   min-width: 0;
   display: grid;
   gap: 5px;

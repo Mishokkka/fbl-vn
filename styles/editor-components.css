@@ -905,6 +905,102 @@ button.fbl-vn-validation-item.warning i {
   grid-template-columns: 24px minmax(220px, 1fr) minmax(110px, 0.65fr) minmax(220px, 1.35fr) 50px auto;
 }
 
+.fbl-vn-editor .fbl-vn-audio-state-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-state-card {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid rgba(182, 138, 74, 0.14);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.fbl-vn-editor .fbl-vn-audio-state-card > strong {
+  font-size: 11px;
+  color: var(--vn-soft);
+}
+
+.fbl-vn-editor .fbl-vn-audio-state-card ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fbl-vn-editor .fbl-vn-audio-state-card li {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: baseline;
+  color: var(--vn-muted);
+  font-size: 11px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-state-card code {
+  color: var(--vn-soft);
+  font-size: 10px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-empty-inline {
+  color: var(--vn-muted);
+  font-size: 11px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-advanced {
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin-top: 1px;
+  padding: 0 7px 6px;
+  border: 1px solid rgba(226, 215, 196, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.fbl-vn-editor .fbl-vn-audio-advanced > summary {
+  cursor: pointer;
+  padding: 5px 0;
+  color: var(--vn-muted);
+  font-size: 11px;
+  user-select: none;
+}
+
+.fbl-vn-editor .fbl-vn-audio-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(105px, 1fr));
+  gap: 6px;
+  align-items: end;
+}
+
+.fbl-vn-editor .fbl-vn-audio-advanced-grid .form-group {
+  margin: 0;
+}
+
+.fbl-vn-editor .fbl-vn-audio-continue-repeats {
+  min-height: var(--vn-control-h);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--vn-muted);
+  font-size: 11px;
+}
+
+.fbl-vn-editor .fbl-vn-audio-continue-repeats input {
+  margin: 0;
+}
+
+.fbl-vn-editor .fbl-vn-audio-cue > .fbl-vn-audio-cue-actions {
+  grid-column: 6;
+  grid-row: 1;
+}
+
 @media (max-width: 1320px) {
   .fbl-vn-editor .fbl-vn-audio-group-header {
     align-items: flex-start;
@@ -928,9 +1024,19 @@ button.fbl-vn-validation-item.warning i {
     gap: 6px;
   }
 
-  .fbl-vn-editor .fbl-vn-audio-cue-actions {
+  .fbl-vn-editor .fbl-vn-audio-cue > .fbl-vn-audio-cue-actions {
     grid-column: 3;
+    grid-row: auto;
     justify-self: end;
+  }
+
+  .fbl-vn-editor .fbl-vn-audio-advanced {
+    grid-column: 2 / -1;
+  }
+
+  .fbl-vn-editor .fbl-vn-audio-advanced-grid,
+  .fbl-vn-editor .fbl-vn-audio-state-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 

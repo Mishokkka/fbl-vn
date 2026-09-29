@@ -73,11 +73,18 @@ export function createFrameNextRouting() {
 export function createAudioCue(kind = "music", options = {}) {
     const isMusic = kind === "music";
     return {
-        id: randomId("audio"),
+        id: options.id || randomId("audio"),
         action: Object.values(AUDIO_ACTIONS).includes(options.action) ? options.action : AUDIO_ACTIONS.PLAY,
         channel: String(options.channel || ""),
         src: String(options.src || ""),
-        loop: options.loop === undefined ? isMusic : options.loop === true
+        loop: options.loop === undefined ? isMusic : options.loop === true,
+        repeatCount: Math.max(1, Math.min(20, Math.floor(normalizeNumber(options.repeatCount, 1)))),
+        repeatDelayMs: Math.max(0, Math.min(60000, normalizeNumber(options.repeatDelayMs, 0))),
+        startDelayMs: Math.max(0, Math.min(60000, normalizeNumber(options.startDelayMs, 0))),
+        fadeInMs: Math.max(0, Math.min(60000, normalizeNumber(options.fadeInMs, 0))),
+        fadeOutMs: Math.max(0, Math.min(60000, normalizeNumber(options.fadeOutMs, 0))),
+        crossFadeMs: Math.max(0, Math.min(60000, normalizeNumber(options.crossFadeMs, 0))),
+        continueRepeats: options.continueRepeats === true
     };
 }
 
@@ -185,6 +192,7 @@ export function createScene() {
         title: "Новая катсцена",
         description: "",
         defaultMode: PLAYER_MODES.INDIVIDUAL,
+        audioExitFadeMs: 750,
         counters: [],
         branches: [branch],
         startFrame: first.id,
@@ -226,6 +234,7 @@ export function createSampleScene() {
         title: "Пример VN-катсцены",
         description: "Минимальный пример: наррация, реплика и выбор.",
         defaultMode: PLAYER_MODES.INDIVIDUAL,
+        audioExitFadeMs: 750,
         counters: [],
         branches: [branch],
         startFrame: f1.id,
@@ -241,6 +250,7 @@ export function sanitizeScene(scene) {
     clean.title || (clean.title = "Без названия");
     clean.description || (clean.description = "");
     clean.defaultMode = Object.values(PLAYER_MODES).includes(clean.defaultMode) ? clean.defaultMode : PLAYER_MODES.INDIVIDUAL;
+    clean.audioExitFadeMs = Math.max(0, Math.min(10000, normalizeNumber(clean.audioExitFadeMs, 0)));
     clean.counters = Array.isArray(clean.counters) ? clean.counters.map(sanitizeSceneCounter) : [];
     clean.branches = Array.isArray(clean.branches) ? clean.branches.map(sanitizeSceneBranch) : [];
     if (!clean.branches.length) clean.branches.push(createSceneBranch("Основная ветка"));
@@ -481,18 +491,43 @@ export function sanitizeAudioCue(cue, kind = "music", usedIds = null) {
     clean.channel = String(clean.channel || "").trim();
     clean.src = String(clean.src || "").trim();
     clean.loop = clean.loop === true;
+    clean.repeatCount = Math.max(1, Math.min(20, Math.floor(normalizeNumber(clean.repeatCount, 1))));
+    clean.repeatDelayMs = Math.max(0, Math.min(60000, normalizeNumber(clean.repeatDelayMs, 0)));
+    clean.startDelayMs = Math.max(0, Math.min(60000, normalizeNumber(clean.startDelayMs, 0)));
+    clean.fadeInMs = Math.max(0, Math.min(60000, normalizeNumber(clean.fadeInMs, 0)));
+    clean.fadeOutMs = Math.max(0, Math.min(60000, normalizeNumber(clean.fadeOutMs, 0)));
+    clean.crossFadeMs = Math.max(0, Math.min(60000, normalizeNumber(clean.crossFadeMs, 0)));
+    clean.continueRepeats = clean.continueRepeats === true;
 
     if (clean.action === AUDIO_ACTIONS.STOP) {
         clean.src = "";
         clean.loop = false;
+        clean.repeatCount = 1;
+        clean.repeatDelayMs = 0;
+        clean.startDelayMs = 0;
+        clean.fadeInMs = 0;
+        clean.crossFadeMs = 0;
+        clean.continueRepeats = false;
     }
     else if (clean.action === AUDIO_ACTIONS.STOP_ALL) {
         clean.channel = "";
         clean.src = "";
         clean.loop = false;
+        clean.repeatCount = 1;
+        clean.repeatDelayMs = 0;
+        clean.startDelayMs = 0;
+        clean.fadeInMs = 0;
+        clean.crossFadeMs = 0;
+        clean.continueRepeats = false;
     }
-    else if (kind === "music" && source.loop === undefined) {
-        clean.loop = true;
+    else {
+        clean.fadeOutMs = 0;
+        if (kind === "music" && source.loop === undefined) clean.loop = true;
+        if (clean.loop) {
+            clean.repeatCount = 1;
+            clean.repeatDelayMs = 0;
+            clean.continueRepeats = false;
+        }
     }
     return clean;
 }
@@ -950,6 +985,15 @@ export function validateScene(scene) {
                 if (cue.channel) seenChannels.add(cue.channel);
                 if (cue.action === AUDIO_ACTIONS.PLAY && !String(cue.src || "").trim()) {
                     issues.push(issue(ISSUE_SEVERITY.ERROR, "audio-no-source", `У кадра «${label}» для запуска звука не выбран файл.`, { frameId: frame.id, field: `${fieldBase}.src` }));
+                }
+                if (cue.action === AUDIO_ACTIONS.PLAY && cue.loop === true && Number(cue.repeatCount || 1) > 1) {
+                    issues.push(issue(ISSUE_SEVERITY.WARNING, "audio-loop-repeat-conflict", `В кадре «${label}» канал «${cue.channel || "?"}» одновременно зациклен и имеет конечные повторы; повторы будут проигнорированы.`, { frameId: frame.id, field: `${fieldBase}.repeatCount` }));
+                }
+                for (const timingKey of ["startDelayMs", "repeatDelayMs", "fadeInMs", "fadeOutMs", "crossFadeMs"]) {
+                    const timing = Number(cue[timingKey] || 0);
+                    if (timing < 0 || timing > 60000) {
+                        issues.push(issue(ISSUE_SEVERITY.WARNING, "audio-timing-out-of-range", `В кадре «${label}» параметр аудио ${timingKey} выходит за рекомендуемый диапазон 0–60 с и будет ограничен.`, { frameId: frame.id, field: `${fieldBase}.${timingKey}` }));
+                    }
                 }
             }
         }
