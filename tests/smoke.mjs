@@ -349,6 +349,36 @@ await lateWarmPromise;
 assert.equal(lateWarmController.audioWarmers.size, 0, "An audio preload that finishes after cancellation must not repopulate the hidden warmer cache");
 assert.equal(lateWarmAudio.paused, true, "Late audio preload completion must be released immediately after cancellation");
 
+let promotedAttempts = 0;
+let rejectPromotedSpeculative = null;
+VNPreloader.preloadPath = path => {
+  promotedAttempts += 1;
+  if (promotedAttempts === 1) {
+    const pending = new Promise((_resolve, reject) => {
+      rejectPromotedSpeculative = reject;
+    });
+    pending.cancel = () => {
+      const error = new Error(`cancelled speculative preload: ${path}`);
+      error.code = "VN_PRELOAD_CANCELLED";
+      rejectPromotedSpeculative(error);
+    };
+    return pending;
+  }
+  return Promise.resolve(new Audio(path));
+};
+const promotedController = new VNPreloadController(preloadScene);
+promotedController.warmGeneration = 1;
+const staleSpeculative = promotedController.ensurePaths(["promoted.ogg"], { generation: 1 });
+await Promise.resolve();
+promotedController.warmGeneration = 2;
+promotedController._cancelStaleSpeculativeLoads(2);
+const promotedCritical = promotedController.ensurePaths(["promoted.ogg"], { critical: true });
+const [staleSpeculativeResult, promotedCriticalResult] = await Promise.all([staleSpeculative, promotedCritical]);
+assert.equal(staleSpeculativeResult[0].cancelled, true, "The stale speculative caller must remain cancelled instead of restarting obsolete work");
+assert.equal(promotedCriticalResult[0].ok, true, "A critical caller joining a cancelled stale request must retry on a fresh preload");
+assert.equal(promotedAttempts, 2, "Promotion after stale cancellation must perform exactly one replacement preload");
+promotedController.cancel();
+
 let transientAttempts = 0;
 VNPreloader.preloadPath = async path => {
   if (path !== "transient.webp") return path;
@@ -2472,6 +2502,50 @@ finally {
   VNPlayerApp.prototype.render = savedStartupRender;
   VNPlayerApp.prototype.preload = savedStartupPreload;
   VNPlayerApp.prototype.close = savedStartupClose;
+}
+
+let applicationClosePrototype = Object.getPrototypeOf(VNPlayerApp.prototype);
+while (applicationClosePrototype && !Object.prototype.hasOwnProperty.call(applicationClosePrototype, "close")) {
+  applicationClosePrototype = Object.getPrototypeOf(applicationClosePrototype);
+}
+assert.ok(applicationClosePrototype, "Smoke harness must resolve the ApplicationV2 close implementation");
+const savedApplicationClose = applicationClosePrototype.close;
+let applicationCloseAttempts = 0;
+applicationClosePrototype.close = async function () {
+  applicationCloseAttempts += 1;
+  if (applicationCloseAttempts === 1) throw new Error("application-close-failure");
+  return this;
+};
+const closeRetryPlayer = Object.create(VNPlayerApp.prototype);
+closeRetryPlayer._closing = false;
+closeRetryPlayer._finishing = true;
+closeRetryPlayer._disposed = false;
+closeRetryPlayer._preloader = { cancel() {} };
+closeRetryPlayer._cancelTypingAnimation = () => {};
+closeRetryPlayer._preloadProgressRaf = null;
+closeRetryPlayer._flushVolumeSettings = async () => {};
+closeRetryPlayer._keyboardElement = null;
+closeRetryPlayer._resizeBound = false;
+closeRetryPlayer.scene = { id: "scene-close-retry" };
+let closeRetryAudioDestroys = 0;
+closeRetryPlayer.audio = {
+  async fadeOutAll() {},
+  destroy() { closeRetryAudioDestroys += 1; }
+};
+try {
+  await assert.rejects(
+    () => closeRetryPlayer.close({ force: true }),
+    /application-close-failure/,
+    "ApplicationV2 close failures must still propagate"
+  );
+  assert.equal(closeRetryPlayer._closing, false, "A failed ApplicationV2 close must release the close guard for a retry");
+  assert.equal(closeRetryPlayer._finishing, false, "A failed close reached through finish must release the finish guard for a retry");
+  await closeRetryPlayer.close({ force: true });
+  assert.equal(applicationCloseAttempts, 2, "A later close call must retry ApplicationV2 close after the first attempt fails");
+  assert.equal(closeRetryAudioDestroys, 2, "Each failed or successful close attempt must preserve audio cleanup");
+}
+finally {
+  applicationClosePrototype.close = savedApplicationClose;
 }
 
 let synchronizedRecallRenders = 0;
