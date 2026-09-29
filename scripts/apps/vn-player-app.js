@@ -298,7 +298,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             || Number(existing.currentTextIndex || 0) !== requestedTextIndex;
 
         if (needsPlaybackResume) {
-            await existing.resume(state);
+            await existing.resume(state, { recallRevision });
             return existing;
         }
 
@@ -790,36 +790,57 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
-    async resume(state = {}) {
+    async resume(state = {}, options = {}) {
         if (this._disposed) return;
         if (this._resumePromise) return this._resumePromise;
         if (this.loading) return;
 
+        const recallRevision = Number.isFinite(Number(options.recallRevision))
+            ? Number(options.recallRevision)
+            : null;
+        const isCurrentResume = () => !this._disposed
+            && (recallRevision === null || Number(this._recallRevision || 0) === recallRevision);
+
         this._resuming = true;
         const run = (async () => {
-            this.started = true;
-            this.audio.pauseExternalAudio();
-            this.counterState = state.counterState && typeof state.counterState === "object" ? Object.assign({}, state.counterState) : getInitialCounterState(this.scene);
-            this.visualState = Object.assign(createVisualState(), state.visualState && typeof state.visualState === "object" ? state.visualState : {});
+            const nextCounterState = state.counterState && typeof state.counterState === "object"
+                ? Object.assign({}, state.counterState)
+                : getInitialCounterState(this.scene);
+            const nextVisualState = Object.assign(
+                createVisualState(),
+                state.visualState && typeof state.visualState === "object" ? state.visualState : {}
+            );
             const frame = this._getFrame(state.currentFrameId);
             if (!frame) {
+                if (!isCurrentResume()) return;
                 this.started = false;
                 return await this.start();
             }
             const blocks = getFrameTextBlocks(frame);
             const requestedIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
             await this._ensureFrameAssets(frame, requestedIndex, [
-                this.visualState.background || "",
-                this.visualState.portrait || ""
+                nextVisualState.background || "",
+                nextVisualState.portrait || ""
             ]);
-            if (this._disposed) return;
+            if (!isCurrentResume()) return;
+
+            this.started = true;
+            this.audio.pauseExternalAudio();
+            this.counterState = nextCounterState;
+            this.visualState = nextVisualState;
             this.currentFrameId = frame.id;
             this._contentHidden = false;
             this.currentTextIndex = requestedIndex;
             this._resetVoteForStep(frame.id, this.currentTextIndex);
             await this.audio.applyFrame(frame);
+            if (!isCurrentResume()) return;
             await this._playCurrentVoice(frame);
+            if (!isCurrentResume()) {
+                this.audio.stopVoice();
+                return;
+            }
             await this.render();
+            if (!isCurrentResume()) return;
             if (this.mode === PLAYER_MODES.VOTE && state.voteState) this._applyVoteState(state.voteState);
             this._warmUpcomingAssets(frame);
             await this._flushPendingRemoteFrames();
@@ -832,46 +853,6 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (this._resumePromise === run) this._resumePromise = null;
             this._resuming = false;
         }
-    }
-
-    async _flushPendingRemoteFrames() {
-        while (this._pendingRemoteFrames.length && !this._disposed) {
-            const item = this._pendingRemoteFrames.shift();
-            if (typeof item === "string") {
-                await this._enqueuePlaybackOperation(() => this._goToFrameNow(item, { remote: true }));
-            }
-            else if (item) {
-                await this._enqueuePlaybackOperation(() => this._applyRemoteAdvance(item.frameId, item.textIndex, item.options || {}));
-            }
-        }
-    }
-
-    _enqueuePlaybackOperation(operation) {
-        const previous = this._playbackQueue && typeof this._playbackQueue.then === "function"
-            ? this._playbackQueue
-            : Promise.resolve();
-        const run = previous
-            .catch(() => {})
-            .then(async () => {
-                if (this._disposed) return;
-                return operation();
-            });
-        this._playbackQueue = run.catch(error => {
-            console.error(`${MODULE_ID} | Playback operation failed.`, error);
-        });
-        return run;
-    }
-
-    async _applyRemoteAdvance(frameId, textIndex = 0, options = {}) {
-        if (options?.choiceId) this._applyChoiceEffectById(options.choiceId);
-        if (this.currentFrameId === frameId && options?.reenter !== true) {
-            return this._goToTextBlockNow(Number(textIndex || 0), { remote: true });
-        }
-        return this._goToFrameNow(frameId, { remote: true, textIndex });
-    }
-
-    _canCloseLocally() {
-        return this._isLeader() || this.mode === PLAYER_MODES.INDIVIDUAL || this.mode === PLAYER_MODES.VOTE;
     }
 
     async requestClose() {
