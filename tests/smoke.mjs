@@ -104,7 +104,7 @@ const { duplicateData, localize, mergeData, randomId, serializeJson } = await im
 VNSceneStore.registerSettings();
 assert.equal(DATA_SCHEMA_VERSION, 13, "Audio timing release must use schema v13");
 assert.equal(game.settings.settings.has(`${MODULE_ID}.${SETTINGS.PRELOAD_AHEAD_DEPTH}`), true, "Long-range preload depth must be registered as a world setting");
-assert.equal(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_AHEAD_DEPTH), 10, "Long-range preload depth must default to ten graph steps");
+assert.equal(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_AHEAD_DEPTH), 10, "Long-range preload target depth must default to 10");
 
 const compactJson = serializeJson({ alpha: 1, nested: { beta: [2, 3] } });
 assert.equal(compactJson.includes("\n"), false, "JSON export serialization must be compact by default");
@@ -1470,6 +1470,24 @@ await new Promise(resolve => setTimeout(resolve, 8));
 assert.equal(interruptedOutgoing.audio.paused, true, "Stopping during crossfade must also retire the outgoing overlap");
 assert.equal(interruptedIncoming.audio.paused, true, "Stopping during crossfade must retire the incoming channel owner");
 assert.equal(audio.music.has("interrupt-crossfade"), false, "Stopping during crossfade must clear the logical channel");
+
+const savedHiddenTabRaf = globalThis.requestAnimationFrame;
+const savedHiddenTabCancelRaf = globalThis.cancelAnimationFrame;
+globalThis.requestAnimationFrame = () => { throw new Error("Audio fades must not depend on requestAnimationFrame"); };
+globalThis.cancelAnimationFrame = () => { throw new Error("Audio fade cleanup must not depend on cancelAnimationFrame"); };
+const hiddenTabFadeController = new VNAudioController();
+try {
+  await hiddenTabFadeController.playChannel("music", "hidden-fade", "hidden.ogg", true);
+  const hiddenFadeEntry = hiddenTabFadeController.music.get("hidden-fade");
+  await hiddenTabFadeController.stopChannel("music", "hidden-fade", 4);
+  assert.equal(hiddenFadeEntry.audio.paused, true, "Fade-out must complete even when animation frames are unavailable, as in a hidden tab");
+  assert.equal(hiddenTabFadeController.music.has("hidden-fade"), false, "Hidden-tab fade completion must retire the logical channel");
+}
+finally {
+  hiddenTabFadeController.destroy();
+  globalThis.requestAnimationFrame = savedHiddenTabRaf;
+  globalThis.cancelAnimationFrame = savedHiddenTabCancelRaf;
+}
 
 const originalAudioPlay = Audio.prototype.play;
 let resolvePendingPlay = null;
