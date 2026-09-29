@@ -203,10 +203,14 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await app.resume(payload.resumeState);
         }
         else {
-            void app.preload().catch(error => {
+            try {
+                await app.preload();
+            }
+            catch (error) {
                 console.error(`${MODULE_ID} | Cutscene preload failed.`, error);
                 notifyWarn("VN: предзагрузка катсцены завершилась ошибкой. Подробности записаны в консоль.");
-            });
+                throw error;
+            }
         }
         return app;
     }
@@ -246,6 +250,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         const state = payload?.resumeState;
         if (!state) {
+            if (existing.loading) await existing.preload();
+            if (existing._disposed) return existing;
             if (participantsChanged && existing.started) await existing.render();
             return existing;
         }
@@ -428,8 +434,15 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     async preload(options = {}) {
         if (this._preloadPromise) return this._preloadPromise;
-        this._preloadPromise = this._preloadInner(options.frameId || "", options.extraPaths || []);
-        return this._preloadPromise;
+        const run = this._preloadInner(options.frameId || "", options.extraPaths || []);
+        this._preloadPromise = run;
+        try {
+            return await run;
+        }
+        catch (error) {
+            if (this._preloadPromise === run) this._preloadPromise = null;
+            throw error;
+        }
     }
 
     async _preloadInner(startFrameId = "", extraPaths = []) {
