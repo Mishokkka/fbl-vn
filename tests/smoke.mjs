@@ -304,6 +304,23 @@ audioWarmController.cancel();
 assert.equal(audioWarmController.audioWarmers.size, 0, "Cancelling preload must release retained hidden audio elements");
 assert.equal(retainedWarmAudio.paused, true, "Released hidden audio warmers must be paused");
 
+let evictionLoads = 0;
+VNPreloader.preloadPath = async path => {
+  evictionLoads += 1;
+  return new Audio(path);
+};
+const evictionController = new VNPreloadController(preloadScene);
+const evictionPaths = Array.from({ length: 33 }, (_, index) => `eviction-${index}.ogg`);
+await evictionController.ensurePaths(evictionPaths);
+assert.equal(evictionController.audioWarmers.size, 32, "Audio warmer pool must remain capped");
+assert.equal(evictionController.audioWarmers.has("eviction-0.ogg"), false, "The oldest audio warmer must be evicted when the pool exceeds its cap");
+assert.equal(evictionController.loaded.has("eviction-0.ogg"), false, "Evicted audio paths must leave the loaded set so they can be warmed again");
+const loadsBeforeRewarm = evictionLoads;
+await evictionController.ensurePaths(["eviction-0.ogg"]);
+assert.equal(evictionLoads, loadsBeforeRewarm + 1, "Requesting an evicted audio path must perform a new preload instead of returning a stale cached result");
+assert.equal(evictionController.audioWarmers.has("eviction-0.ogg"), true, "Re-requested evicted audio must return to the retained warmer pool");
+evictionController.cancel();
+
 let resolveLateWarm = null;
 VNPreloader.preloadPath = () => new Promise(resolve => { resolveLateWarm = resolve; });
 const lateWarmController = new VNPreloadController(preloadScene);
