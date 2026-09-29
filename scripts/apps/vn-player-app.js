@@ -48,6 +48,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._starting = false;
         this._resuming = false;
         this._resumePromise = null;
+        this._recallRevision = 0;
         this.preloadDone = 0;
         this.preloadTotal = 0;
         this.currentFrameId = null;
@@ -192,25 +193,31 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             networked: payload.networked === true || Array.isArray(payload.targetIds)
         });
         await app.render(true);
-        if (payload.resumeState) {
-            await app.preload({
-                frameId: payload.resumeState.currentFrameId || "",
-                extraPaths: [
-                    payload.resumeState.visualState?.background || "",
-                    payload.resumeState.visualState?.portrait || ""
-                ]
-            });
-            await app.resume(payload.resumeState);
-        }
-        else {
-            try {
+        try {
+            if (payload.resumeState) {
+                await app.preload({
+                    frameId: payload.resumeState.currentFrameId || "",
+                    extraPaths: [
+                        payload.resumeState.visualState?.background || "",
+                        payload.resumeState.visualState?.portrait || ""
+                    ]
+                });
+                if (!app._disposed) await app.resume(payload.resumeState);
+            }
+            else {
                 await app.preload();
             }
-            catch (error) {
-                console.error(`${MODULE_ID} | Cutscene preload failed.`, error);
-                notifyWarn("VN: предзагрузка катсцены завершилась ошибкой. Подробности записаны в консоль.");
-                throw error;
+        }
+        catch (error) {
+            console.error(`${MODULE_ID} | Cutscene startup failed.`, error);
+            notifyWarn("VN: подготовка катсцены завершилась ошибкой. Подробности записаны в консоль.");
+            try {
+                await app.close({ force: true });
             }
+            catch (closeError) {
+                console.warn(`${MODULE_ID} | Failed to close player after startup error.`, closeError);
+            }
+            throw error;
         }
         return app;
     }
@@ -228,8 +235,19 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             framePreview: true
         });
         await app.render(true);
-        await app.preload({ frameId });
-        await app.startFramePreview(frameId, { branchId: options.branchId || "" });
+        try {
+            await app.preload({ frameId });
+            if (!app._disposed) await app.startFramePreview(frameId, { branchId: options.branchId || "" });
+        }
+        catch (error) {
+            try {
+                await app.close({ force: true });
+            }
+            catch (closeError) {
+                console.warn(`${MODULE_ID} | Failed to close frame preview after startup error.`, closeError);
+            }
+            throw error;
+        }
         return app;
     }
 
@@ -238,6 +256,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!sceneId) return null;
         const existing = VNPlayerApp.active.get(sceneId);
         if (!existing || existing._disposed === true) return VNPlayerApp.openScene(payload);
+
+        const recallRevision = Math.max(0, Number(existing._recallRevision || 0)) + 1;
+        existing._recallRevision = recallRevision;
+        const isCurrentRecall = () => existing._disposed !== true && existing._recallRevision === recallRevision;
 
         VNPlayerApp.clearRejoinOffer(sceneId);
         if (payload?.mode !== undefined) existing.mode = payload.mode;
@@ -251,13 +273,23 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const state = payload?.resumeState;
         if (!state) {
             if (existing.loading) await existing.preload();
-            if (existing._disposed) return existing;
+            if (!isCurrentRecall()) return existing;
             if (participantsChanged && existing.started) await existing.render();
             return existing;
         }
 
         if (existing.loading) await existing.preload();
-        if (existing._disposed) return existing;
+        if (!isCurrentRecall()) return existing;
+
+        if (existing._resumePromise) {
+            try {
+                await existing._resumePromise;
+            }
+            catch (_error) {
+                // The older recovery owns its error; the latest recall still gets a chance to apply.
+            }
+            if (!isCurrentRecall()) return existing;
+        }
 
         const requestedFrameId = state.currentFrameId || "";
         const requestedTextIndex = Number(state.currentTextIndex || 0);
@@ -282,8 +314,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         if (visualStateChanged) {
             await existing._ensureVisualStateAssets?.(nextVisualState);
-            if (existing._disposed) return existing;
+            if (!isCurrentRecall()) return existing;
         }
+        if (!isCurrentRecall()) return existing;
         existing.counterState = nextCounterState;
         existing.visualState = nextVisualState;
         if (existing.mode === PLAYER_MODES.VOTE && state.voteState) existing._applyVoteState(state.voteState);
