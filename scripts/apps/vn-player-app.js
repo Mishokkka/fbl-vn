@@ -855,6 +855,46 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
     }
 
+    async _flushPendingRemoteFrames() {
+        while (this._pendingRemoteFrames.length && !this._disposed) {
+            const item = this._pendingRemoteFrames.shift();
+            if (typeof item === "string") {
+                await this._enqueuePlaybackOperation(() => this._goToFrameNow(item, { remote: true }));
+            }
+            else if (item) {
+                await this._enqueuePlaybackOperation(() => this._applyRemoteAdvance(item.frameId, item.textIndex, item.options || {}));
+            }
+        }
+    }
+
+    _enqueuePlaybackOperation(operation) {
+        const previous = this._playbackQueue && typeof this._playbackQueue.then === "function"
+            ? this._playbackQueue
+            : Promise.resolve();
+        const run = previous
+            .catch(() => {})
+            .then(async () => {
+                if (this._disposed) return;
+                return operation();
+            });
+        this._playbackQueue = run.catch(error => {
+            console.error(`${MODULE_ID} | Playback operation failed.`, error);
+        });
+        return run;
+    }
+
+    async _applyRemoteAdvance(frameId, textIndex = 0, options = {}) {
+        if (options?.choiceId) this._applyChoiceEffectById(options.choiceId);
+        if (this.currentFrameId === frameId && options?.reenter !== true) {
+            return this._goToTextBlockNow(Number(textIndex || 0), { remote: true });
+        }
+        return this._goToFrameNow(frameId, { remote: true, textIndex });
+    }
+
+    _canCloseLocally() {
+        return this._isLeader() || this.mode === PLAYER_MODES.INDIVIDUAL || this.mode === PLAYER_MODES.VOTE;
+    }
+
     async requestClose() {
         if (this.mode === PLAYER_MODES.VOTE && this.networked && !this._isLeader()) {
             VNPlayerApp.offerRejoin(this.scene, this.leaderId);
