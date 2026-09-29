@@ -1798,6 +1798,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         catch (error) {
             this.audio.destroy();
+            this._closing = false;
+            this._finishing = false;
             throw error;
         }
 
