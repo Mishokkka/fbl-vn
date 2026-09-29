@@ -2434,6 +2434,7 @@ VNPlayerApp.active.delete("scene-recall-existing");
 
 let synchronizedRecallRenders = 0;
 let synchronizedRecallResumes = 0;
+let synchronizedRecallVisualPreloads = [];
 let synchronizedVoteState = null;
 const synchronizedRecallApp = {
   _disposed: false,
@@ -2449,6 +2450,7 @@ const synchronizedRecallApp = {
   visualState: { background: "old-bg.webp", portrait: "", portraitPosition: "left" },
   async render() { synchronizedRecallRenders += 1; },
   async preload() {},
+  async _ensureVisualStateAssets(state) { synchronizedRecallVisualPreloads.push({ ...state }); },
   async resume(state) {
     synchronizedRecallResumes += 1;
     this.currentFrameId = state.currentFrameId;
@@ -2474,6 +2476,7 @@ await VNPlayerApp.recallScene({
 });
 assert.equal(synchronizedRecallResumes, 0, "Duplicate open recovery on the current step must not restart playback or replay frame audio");
 assert.equal(synchronizedRecallRenders, 1, "Duplicate open recovery must refresh changed non-playback state in place");
+assert.deepEqual(synchronizedRecallVisualPreloads, [{ background: "new-bg.webp", portrait: "", portraitPosition: "left" }], "In-place reconnect recovery must preload inherited visual-state assets before rendering them");
 assert.deepEqual(synchronizedRecallApp.counterState, { counter: 2 }, "In-place recovery must synchronize counter state");
 assert.equal(synchronizedRecallApp.visualState.background, "new-bg.webp", "In-place recovery must synchronize visual state");
 assert.deepEqual(synchronizedRecallApp.participantIds, [playerUser.id, playerUser2.id], "In-place recovery must synchronize the vote roster");
@@ -2495,6 +2498,80 @@ await VNPlayerApp.recallScene({
 });
 assert.equal(synchronizedRecallResumes, 1, "Reconnect recovery on a different step must resume to the GM's current synchronized frame");
 VNPlayerApp.active.delete("scene-recall-sync");
+
+const resumeVisualPlayer = Object.create(VNPlayerApp.prototype);
+resumeVisualPlayer.loading = false;
+resumeVisualPlayer._disposed = false;
+resumeVisualPlayer._resuming = false;
+resumeVisualPlayer.started = true;
+resumeVisualPlayer.scene = scene;
+resumeVisualPlayer.mode = PLAYER_MODES.GM;
+resumeVisualPlayer.participantIds = [];
+resumeVisualPlayer.leaderId = gm1.id;
+resumeVisualPlayer.currentFrameId = null;
+resumeVisualPlayer.currentTextIndex = 0;
+resumeVisualPlayer.counterState = {};
+resumeVisualPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+resumeVisualPlayer._pendingRemoteFrames = [];
+resumeVisualPlayer._playbackQueue = Promise.resolve();
+resumeVisualPlayer._leaderVotes = new Map();
+resumeVisualPlayer._participantConnectionState = new Map();
+resumeVisualPlayer._buildPlaybackIndex();
+const resumeFrame = resumeVisualPlayer._getFrame("frame-root");
+let resumeCriticalPaths = null;
+resumeVisualPlayer._ensureCriticalPaths = async paths => {
+  resumeCriticalPaths = [...paths];
+  return paths.map(path => ({ path, ok: true }));
+};
+resumeVisualPlayer.audio = {
+  pauseExternalAudio() {},
+  async applyFrame() {},
+  stopVoice() {},
+  async playVoice() {}
+};
+resumeVisualPlayer._playCurrentVoice = async () => {};
+resumeVisualPlayer.render = async () => resumeVisualPlayer;
+resumeVisualPlayer._warmUpcomingAssets = () => {};
+resumeVisualPlayer._flushPendingRemoteFrames = async () => {};
+resumeVisualPlayer._resetVoteForStep = () => {};
+await resumeVisualPlayer.resume({
+  currentFrameId: resumeFrame.id,
+  currentTextIndex: 0,
+  counterState: {},
+  visualState: {
+    background: "inherited-reconnect-bg.webp",
+    portrait: "inherited-reconnect-portrait.webp",
+    portraitPosition: "right"
+  }
+});
+assert.ok(resumeCriticalPaths.includes("inherited-reconnect-bg.webp"), "Reconnect resume must preload the inherited background even when the current frame does not declare it");
+assert.ok(resumeCriticalPaths.includes("inherited-reconnect-portrait.webp"), "Reconnect resume must preload the inherited portrait before rendering the recovered frame");
+
+const previewInheritedPlayer = Object.create(VNPlayerApp.prototype);
+previewInheritedPlayer.loading = false;
+previewInheritedPlayer._disposed = false;
+previewInheritedPlayer.scene = scene;
+previewInheritedPlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+previewInheritedPlayer.counterState = {};
+previewInheritedPlayer.audio = { pauseExternalAudio() {} };
+previewInheritedPlayer._getFrame = () => ({ id: "preview-target", branchId: branchId });
+previewInheritedPlayer._findBranchPreviewPath = () => ({ steps: [], counterState: {} });
+previewInheritedPlayer._findPreviewPath = () => null;
+previewInheritedPlayer._warmFramePreview = async () => {
+  previewInheritedPlayer.visualState = {
+    background: "preview-inherited-bg.webp",
+    portrait: "preview-inherited-portrait.webp",
+    portraitPosition: "left"
+  };
+};
+let previewInheritedState = null;
+previewInheritedPlayer._ensureVisualStateAssets = async state => { previewInheritedState = { ...state }; };
+let previewGoToFrame = null;
+previewInheritedPlayer._goToFrameNow = async frameId => { previewGoToFrame = frameId; };
+await previewInheritedPlayer.startFramePreview("preview-target", { branchId });
+assert.equal(previewInheritedState?.background, "preview-inherited-bg.webp", "Frame preview must preload the inherited background reconstructed from prior frames");
+assert.equal(previewInheritedState?.portrait, "preview-inherited-portrait.webp", "Frame preview must preload the inherited portrait reconstructed from prior frames");
+assert.equal(previewGoToFrame, "preview-target", "Frame preview must continue after inherited visual assets are ready");
 
 const savedOpenSceneForRecall = VNPlayerApp.openScene;
 let recalledOpenPayload = null;
