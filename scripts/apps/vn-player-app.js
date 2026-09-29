@@ -192,8 +192,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             participantIds: payload.participantIds || [],
             networked: payload.networked === true || Array.isArray(payload.targetIds)
         });
-        await app.render(true);
         try {
+            await app.render(true);
             if (payload.resumeState) {
                 await app.preload({
                     frameId: payload.resumeState.currentFrameId || "",
@@ -234,8 +234,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             networked: false,
             framePreview: true
         });
-        await app.render(true);
         try {
+            await app.render(true);
             await app.preload({ frameId });
             if (!app._disposed) await app.startFramePreview(frameId, { branchId: options.branchId || "" });
         }
