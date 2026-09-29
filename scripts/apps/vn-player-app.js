@@ -76,7 +76,6 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this._resizeBound = false;
         this._preloadPromise = null;
         this._preloader = new VNPreloadController(this.scene);
-        this._backgroundPreloadPromise = null;
         this._disposed = false;
         this._preloadProgressRaf = null;
         this._pendingPreloadProgress = null;
@@ -270,9 +269,14 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const nextVisualState = state.visualState && typeof state.visualState === "object"
             ? Object.assign(createVisualState(), state.visualState)
             : existing.visualState;
-        const stateChanged = JSON.stringify(nextCounterState) !== JSON.stringify(existing.counterState)
-            || JSON.stringify(nextVisualState) !== JSON.stringify(existing.visualState);
+        const counterStateChanged = JSON.stringify(nextCounterState) !== JSON.stringify(existing.counterState);
+        const visualStateChanged = JSON.stringify(nextVisualState) !== JSON.stringify(existing.visualState);
+        const stateChanged = counterStateChanged || visualStateChanged;
 
+        if (visualStateChanged) {
+            await existing._ensureVisualStateAssets?.(nextVisualState);
+            if (existing._disposed) return existing;
+        }
         existing.counterState = nextCounterState;
         existing.visualState = nextVisualState;
         if (existing.mode === PLAYER_MODES.VOTE && state.voteState) existing._applyVoteState(state.voteState);
@@ -471,18 +475,36 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this._disposed || !this._preloader) return [];
         const uniquePaths = [...new Set((Array.isArray(paths) ? paths : []).filter(Boolean))];
         if (!uniquePaths.length) return [];
-        const results = await this._preloader.ensurePaths(uniquePaths, { concurrency: 6 });
+        const results = await this._preloader.ensurePaths(uniquePaths, {
+            concurrency: 6,
+            critical: true,
+            decodeImages: true
+        });
         if (this._disposed) return results;
         const failedPaths = results.filter(result => result?.ok === false && result.path).map(result => result.path);
         if (!failedPaths.length) return results;
-        const retries = await this._preloader.ensurePaths(failedPaths, { concurrency: 6 });
+        const retries = await this._preloader.ensurePaths(failedPaths, {
+            concurrency: 6,
+            critical: true,
+            decodeImages: true
+        });
         const retryByPath = new Map(retries.map(result => [result.path, result]));
         return results.map(result => retryByPath.get(result.path) || result);
     }
 
-    _ensureFrameAssets(frame, textIndex = 0) {
-        if (!frame) return Promise.resolve([]);
-        return this._ensureCriticalPaths(VNPreloader.collectFrameEntryPaths(frame, textIndex));
+    _ensureFrameAssets(frame, textIndex = 0, extraPaths = []) {
+        if (!frame) return this._ensureCriticalPaths(extraPaths);
+        return this._ensureCriticalPaths([
+            ...VNPreloader.collectFrameEntryPaths(frame, textIndex),
+            ...(Array.isArray(extraPaths) ? extraPaths : [])
+        ]);
+    }
+
+    _ensureVisualStateAssets(state = this.visualState) {
+        return this._ensureCriticalPaths([
+            state?.background || "",
+            state?.portrait || ""
+        ]);
     }
 
     _ensureTextBlockAssets(frame, textIndex = 0) {
@@ -688,6 +710,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const previewPath = branchPreview || this._findPreviewPath(frame.id);
         if (previewPath) {
             await this._warmFramePreview(previewPath);
+            await this._ensureVisualStateAssets(this.visualState);
+            if (this._disposed) return;
         }
         else {
             this.counterState = getInitialCounterState(this.scene);
@@ -734,7 +758,10 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
             const blocks = getFrameTextBlocks(frame);
             const requestedIndex = Math.max(0, Math.min(Math.max(0, blocks.length - 1), Number(state.currentTextIndex || 0)));
-            await this._ensureFrameAssets(frame, requestedIndex);
+            await this._ensureFrameAssets(frame, requestedIndex, [
+                this.visualState.background || "",
+                this.visualState.portrait || ""
+            ]);
             if (this._disposed) return;
             this.currentFrameId = frame.id;
             this._contentHidden = false;
