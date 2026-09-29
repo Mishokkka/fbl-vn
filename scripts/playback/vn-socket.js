@@ -1,6 +1,9 @@
 import { MODULE_ID, PLAYER_MODES, SETTINGS, SOCKET_NAME } from "../utils/constants.js";
 import { wait } from "../utils/foundry-helpers.js";
 
+const SESSION_STATUS_RECOVERY_DELAYS = Object.freeze([0, 750, 2500, 6000, 12000]);
+const SESSION_STATUS_TAIL_DELAY_MS = 12000;
+
 export class VNSocket {
     static registerHandlers(handlers) {
         this.handlers = handlers ?? {};
@@ -51,16 +54,30 @@ export class VNSocket {
                     return;
                 }
                 const recoveryCommand = type === "open" || type === "rejoinOffer" || type === "recall";
-                if (type === "close") this._clearSessionStatusRecovery();
+                if (type === "close") {
+                    this._recoveryDispatchGeneration += 1;
+                    this._clearSessionStatusRecovery();
+                }
                 if (recoveryCommand && data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
+                const dispatchGeneration = recoveryCommand ? ++this._recoveryDispatchGeneration : 0;
                 const dispatch = this._dispatchTrustedCommand(type, data, senderId);
                 if (recoveryCommand) {
                     void dispatch.then(success => {
+                        if (dispatchGeneration !== this._recoveryDispatchGeneration) return;
                         if (success) this._clearSessionStatusRecovery();
                         else if (!game.user?.isGM) this._scheduleSessionStatusRecovery();
                     });
                 }
                 if (type === "close" && data.sceneId) this.activeLeaders.delete(data.sceneId);
+                break;
+            }
+            case "sessionStatusPending": {
+                if (!this._isTrustedGmCommand(type, data, senderId)) {
+                    console.warn(`${MODULE_ID} | Ignored untrusted socket command: ${type}`, payload);
+                    return;
+                }
+                if (data.sceneId) this.activeLeaders.set(data.sceneId, senderId);
+                if (!game.user?.isGM) this._markSessionStatusPending();
                 break;
             }
             case "ready":
@@ -83,7 +100,7 @@ export class VNSocket {
                 break;
             case "sessionStatusRequest":
                 if (!game.user?.isGM) return;
-                this._handleSessionStatusRequest(senderId);
+                this._handleSessionStatusRequest(data, senderId);
                 break;
             default:
                 console.warn(`${MODULE_ID} | Unknown socket payload`, payload);
@@ -113,7 +130,7 @@ export class VNSocket {
         const sceneId = data?.sceneId || data?.scene?.id || "";
         if (!sceneId) return false;
         const currentLeaderId = this.activeLeaders.get(sceneId);
-        if (type === "open" || type === "rejoinOffer" || type === "recall") {
+        if (type === "open" || type === "rejoinOffer" || type === "recall" || type === "sessionStatusPending") {
             if (!currentLeaderId || currentLeaderId === senderId) return true;
             const currentLeader = game.users?.get?.(currentLeaderId);
             return currentLeader?.active !== true;
@@ -227,6 +244,11 @@ export class VNSocket {
         const resumeState = this.handlers.getSyncState?.(sceneId) || null;
         if (session.started && !resumeState) {
             console.warn(`${MODULE_ID} | Session status for ${sceneId} is not ready yet; waiting for the next recovery request.`);
+            this.emit("sessionStatusPending", {
+                sceneId,
+                leaderId: session.leaderId,
+                targetIds: [userId]
+            });
             return false;
         }
         this.emit("open", {
@@ -241,7 +263,7 @@ export class VNSocket {
         return true;
     }
 
-    static _handleSessionStatusRequest(senderId) {
+    static _handleSessionStatusRequest(_data, senderId) {
         const user = game.users?.get?.(senderId);
         if (!game.user?.isGM || !user || user.isGM) return;
         this._connectionState.set(senderId, true);
@@ -415,27 +437,59 @@ export class VNSocket {
 
     static _scheduleSessionStatusRecovery() {
         this._clearSessionStatusRecovery();
+        const generation = this._sessionStatusRecoveryGeneration;
         const schedule = globalThis.setTimeout;
         if (typeof schedule !== "function") {
             this.requestSessionStatus();
             return;
         }
-        for (const delay of [0, 750, 2500, 6000, 12000]) {
+        for (const delay of SESSION_STATUS_RECOVERY_DELAYS) {
             let timer = null;
             timer = schedule(() => {
                 this._sessionStatusTimers.delete(timer);
+                if (generation !== this._sessionStatusRecoveryGeneration || game.user?.isGM) return;
                 this.requestSessionStatus();
+                if (!this._sessionStatusTimers.size && this._sessionStatusPersistent) {
+                    this._scheduleSessionStatusTail(generation);
+                }
             }, delay);
             this._sessionStatusTimers.add(timer);
         }
     }
 
+    static _markSessionStatusPending() {
+        if (game.user?.isGM) return;
+        this._sessionStatusPersistent = true;
+        if (!this._sessionStatusTimers.size) {
+            this._scheduleSessionStatusTail(this._sessionStatusRecoveryGeneration);
+        }
+    }
+
+    static _scheduleSessionStatusTail(generation = this._sessionStatusRecoveryGeneration) {
+        if (game.user?.isGM || !this._sessionStatusPersistent || this._sessionStatusTailTimer !== null) return;
+        const schedule = globalThis.setTimeout;
+        if (typeof schedule !== "function") {
+            this.requestSessionStatus();
+            return;
+        }
+        this._sessionStatusTailTimer = schedule(() => {
+            this._sessionStatusTailTimer = null;
+            if (generation !== this._sessionStatusRecoveryGeneration || !this._sessionStatusPersistent || game.user?.isGM) return;
+            this.requestSessionStatus();
+            this._scheduleSessionStatusTail(generation);
+        }, SESSION_STATUS_TAIL_DELAY_MS);
+    }
+
     static _clearSessionStatusRecovery() {
+        this._sessionStatusRecoveryGeneration += 1;
+        this._sessionStatusPersistent = false;
         const cancel = globalThis.clearTimeout;
         if (typeof cancel === "function") {
             for (const timer of this._sessionStatusTimers) cancel(timer);
+            if (this._sessionStatusTailTimer !== null) cancel(this._sessionStatusTailTimer);
         }
         this._sessionStatusTimers.clear();
+        this._sessionStatusTailTimer = null;
     }
 
     static _isUserConnected(userId) {
@@ -517,7 +571,7 @@ export class VNSocket {
         Promise.resolve(this.handlers.userConnected?.(user, connected)).catch(error => {
             console.error(`${MODULE_ID} | userConnected handler failed.`, error);
         });
-        if (connected && user?.id === game.user?.id && !game.user?.isGM) {
+        if (connected && !game.user?.isGM && (user?.id === game.user?.id || user?.isGM === true)) {
             this._scheduleSessionStatusRecovery();
         }
         if (!connected || !game.user?.isGM || !user || user.isGM) return;
@@ -538,4 +592,8 @@ VNSocket._socketMessageHandler = null;
 VNSocket._userConnectedHookId = null;
 VNSocket._launchInProgress = false;
 VNSocket._sessionStatusTimers = new Set();
+VNSocket._sessionStatusTailTimer = null;
+VNSocket._sessionStatusPersistent = false;
+VNSocket._sessionStatusRecoveryGeneration = 0;
+VNSocket._recoveryDispatchGeneration = 0;
 VNSocket._connectionState = new Map();
