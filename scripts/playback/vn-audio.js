@@ -114,7 +114,7 @@ export class VNAudioController {
             delayTimer: null,
             repeatTimer: null,
             awaitingRepeat: false,
-            fadeRaf: null,
+            fadeTimer: null,
             fadeGeneration: 0,
             fadeResolve: null,
             stopped: false,
@@ -370,10 +370,10 @@ export class VNAudioController {
             entry.fadeResolve = null;
             resolveFade(false);
         }
-        if (entry.fadeRaf !== null && entry.fadeRaf !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(entry.fadeRaf);
+        if (entry.fadeTimer !== null && entry.fadeTimer !== undefined) clearTimeout(entry.fadeTimer);
         entry.delayTimer = null;
         entry.repeatTimer = null;
-        entry.fadeRaf = null;
+        entry.fadeTimer = null;
         this._detachEntry(entry);
         try {
             entry.audio.pause();
@@ -404,24 +404,24 @@ export class VNAudioController {
             entry.fadeResolve = null;
             resolvePrevious(false);
         }
-        if (entry.fadeRaf !== null && entry.fadeRaf !== undefined && typeof cancelAnimationFrame === "function") {
-            cancelAnimationFrame(entry.fadeRaf);
-            entry.fadeRaf = null;
+        if (entry.fadeTimer !== null && entry.fadeTimer !== undefined) {
+            clearTimeout(entry.fadeTimer);
+            entry.fadeTimer = null;
         }
 
         const startGain = Math.max(0, Math.min(1, Number(entry.gain ?? 1)));
         const nowValue = () => (typeof performance !== "undefined" && performance.now ? performance.now() : Date.now());
         const startedAt = nowValue();
-        const raf = typeof requestAnimationFrame === "function"
-            ? requestAnimationFrame
-            : callback => setTimeout(() => callback(nowValue()), 16);
+        // requestAnimationFrame can be suspended in hidden tabs while audio keeps playing.
+        // Timer callbacks may be throttled, but they continue and calculate progress from elapsed wall time.
+        const schedule = callback => setTimeout(() => callback(nowValue()), 16);
         const fadeGeneration = ++entry.fadeGeneration;
 
         return new Promise(resolve => {
             entry.fadeResolve = resolve;
             const finish = completed => {
                 if (entry.fadeGeneration === fadeGeneration) {
-                    entry.fadeRaf = null;
+                    entry.fadeTimer = null;
                     entry.fadeResolve = null;
                 }
                 resolve(completed);
@@ -436,9 +436,9 @@ export class VNAudioController {
                     finish(true);
                     return;
                 }
-                entry.fadeRaf = raf(step);
+                entry.fadeTimer = schedule(step);
             };
-            entry.fadeRaf = raf(step);
+            entry.fadeTimer = schedule(step);
         });
     }
 
