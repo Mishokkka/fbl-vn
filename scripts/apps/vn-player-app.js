@@ -47,6 +47,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.started = false;
         this._starting = false;
         this._resuming = false;
+        this._resumePromise = null;
         this.preloadDone = 0;
         this.preloadTotal = 0;
         this.currentFrameId = null;
@@ -744,9 +745,12 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     async resume(state = {}) {
-        if (this.loading || this._disposed || this._resuming) return;
+        if (this._disposed) return;
+        if (this._resumePromise) return this._resumePromise;
+        if (this.loading) return;
+
         this._resuming = true;
-        try {
+        const run = (async () => {
             this.started = true;
             this.audio.pauseExternalAudio();
             this.counterState = state.counterState && typeof state.counterState === "object" ? Object.assign({}, state.counterState) : getInitialCounterState(this.scene);
@@ -773,8 +777,13 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (this.mode === PLAYER_MODES.VOTE && state.voteState) this._applyVoteState(state.voteState);
             this._warmUpcomingAssets(frame);
             await this._flushPendingRemoteFrames();
+        })();
+        this._resumePromise = run;
+        try {
+            return await run;
         }
         finally {
+            if (this._resumePromise === run) this._resumePromise = null;
             this._resuming = false;
         }
     }
