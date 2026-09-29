@@ -227,6 +227,7 @@ let resolveOlderRecovery = null;
 let rejectNewerRecovery = null;
 const olderRecovery = new Promise(resolve => { resolveOlderRecovery = resolve; });
 const newerRecovery = new Promise((_resolve, reject) => { rejectNewerRecovery = reject; });
+const savedRaceOpenHandler = VNSocket.handlers.open;
 VNSocket.handlers.open = data => data.marker === "older" ? olderRecovery : newerRecovery;
 VNSocket.activeLeaders.delete("scene-dispatch-race");
 socketCallback({
@@ -242,13 +243,12 @@ socketCallback({
   data: { sceneId: "scene-dispatch-race", targetIds: [player.id], marker: "newer" }
 });
 rejectNewerRecovery(new Error("newer-recovery-failure"));
-await Promise.resolve();
-await Promise.resolve();
+await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(raceScheduleCalls, 1, "The newest failed recovery dispatch must schedule another status recovery");
 resolveOlderRecovery();
-await Promise.resolve();
-await Promise.resolve();
+await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(raceClearCalls, 0, "An older successful dispatch must not clear recovery required by a newer failure");
+VNSocket.handlers.open = savedRaceOpenHandler;
 VNSocket._scheduleSessionStatusRecovery = savedRaceScheduleRecovery;
 VNSocket._clearSessionStatusRecovery = savedRaceClearRecovery;
 VNSocket.activeLeaders.delete("scene-dispatch-race");
