@@ -68,7 +68,23 @@ globalThis.Audio = class {
   load() {}
   emit(type) { this._listeners.get(type)?.(); }
 };
-globalThis.Image = class {};
+globalThis.Image = class {
+  constructor() {
+    this.onload = null;
+    this.onerror = null;
+    this._src = "";
+    this.decodeCount = 0;
+  }
+  set src(value) {
+    this._src = String(value || "");
+    if (this._src) queueMicrotask(() => this.onload?.());
+  }
+  get src() { return this._src; }
+  async decode() { this.decodeCount += 1; }
+  removeAttribute(name) {
+    if (name === "src") this._src = "";
+  }
+};
 
 const { VNCharacterManagerApp } = await import("../scripts/apps/vn-character-manager-app.js");
 const { VNCounterManagerApp } = await import("../scripts/apps/vn-counter-manager-app.js");
@@ -359,7 +375,65 @@ criticalPlayer._preloader = new VNPreloadController(preloadScene);
 const criticalResults = await criticalPlayer._ensureFrameAssets({ background: "critical.webp", textBlocks: [], musicCues: [], sfxCues: [], additionalCharacters: [] });
 assert.equal(criticalResults[0].ok, true, "Critical frame assets must receive one immediate retry before the transition proceeds");
 assert.equal(criticalAttempts, 2, "Critical frame preload must retry a transient failure exactly once");
+assert.equal(criticalPlayer._preloader.decodedImages.has("critical.webp"), true, "Critical image paths must be marked decoded before the transition proceeds");
 VNPreloader.preloadPath = savedPreloadPath;
+
+let imageDecodeCalls = 0;
+const savedImage = globalThis.Image;
+globalThis.Image = class {
+  constructor() {
+    this.onload = null;
+    this.onerror = null;
+    this._src = "";
+  }
+  set src(value) {
+    this._src = String(value || "");
+    if (this._src) queueMicrotask(() => this.onload?.());
+  }
+  get src() { return this._src; }
+  async decode() { imageDecodeCalls += 1; }
+  removeAttribute(name) { if (name === "src") this._src = ""; }
+};
+const decodeController = new VNPreloadController(preloadScene);
+const decodedResult = await decodeController.ensurePaths(["decode-current.webp"], { critical: true, decodeImages: true });
+assert.equal(decodedResult[0].ok, true, "Critical image preload must complete successfully");
+assert.equal(imageDecodeCalls, 1, "Critical image preload must explicitly decode the image before rendering");
+assert.equal(decodeController.decodedImages.has("decode-current.webp"), true, "Decoded critical images must be tracked separately from speculative downloads");
+
+const pendingImages = [];
+globalThis.Image = class {
+  constructor() {
+    this.onload = null;
+    this.onerror = null;
+    this._src = "";
+    this.released = false;
+    pendingImages.push(this);
+  }
+  set src(value) { this._src = String(value || ""); }
+  get src() { return this._src; }
+  removeAttribute(name) {
+    if (name === "src") {
+      this._src = "";
+      this.released = true;
+    }
+  }
+};
+const cancelledImageController = new VNPreloadController(preloadScene);
+const cancelledImagePromise = cancelledImageController.ensurePaths(["cancel-image.webp"]);
+await Promise.resolve();
+cancelledImageController.cancel();
+const cancelledImageResults = await cancelledImagePromise;
+assert.equal(cancelledImageResults[0].cancelled, true, "Closing a cutscene must settle an in-flight image preload as cancelled immediately");
+assert.equal(pendingImages[0].released, true, "Cancelling the controller must detach the browser Image source instead of leaving the old request alive");
+
+const staleGenerationController = new VNPreloadController(preloadScene);
+const staleGenerationPromise = staleGenerationController.ensurePaths(["old-branch.webp"], { generation: 1 });
+await Promise.resolve();
+staleGenerationController._cancelStaleSpeculativeLoads(2);
+const staleGenerationResults = await staleGenerationPromise;
+assert.equal(staleGenerationResults[0].cancelled, true, "Changing preload generation must abort stale speculative image requests");
+assert.equal(pendingImages[1].released, true, "Stale speculative image requests must release their browser Image source");
+globalThis.Image = savedImage;
 
 await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
 
