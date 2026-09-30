@@ -177,6 +177,20 @@
   text-shadow: 0 2px 2px rgba(0, 0, 0, 0.8);
 }
 
+.fbl-vn-type-segment,
+.fbl-vn-type-glyph {
+  display: inline;
+}
+
+.fbl-vn-type-glyph {
+  animation: fbl-vn-type-glyph-in var(--vn-type-glyph-duration, 90ms) linear both;
+}
+
+@keyframes fbl-vn-type-glyph-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .fbl-vn-dialogue-actions {
   position: absolute;
   right: 20px;
