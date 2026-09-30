@@ -772,12 +772,13 @@ export function sanitizeCharacterPortrait(portrait) {
     return clean;
 }
 
-export function createCharacterPreset(name, portraitLabel, portraitPath, defaultPosition) {
+export function createCharacterPreset(name, portraitLabel, portraitPath, defaultPosition, sceneId = "") {
     const portrait = createCharacterPortrait(portraitLabel || "Основной", portraitPath || "");
     return {
         id: randomId("character"),
         name: name || "Новый персонаж",
         defaultPosition: defaultPosition || "left",
+        sceneId: String(sceneId || ""),
         portraits: portrait.path ? [portrait] : []
     };
 }
@@ -787,6 +788,7 @@ export function sanitizeCharacter(character) {
     clean.id || (clean.id = randomId("character"));
     clean.name = String(clean.name || "Без имени");
     clean.defaultPosition = ["left", "center", "right"].includes(clean.defaultPosition) ? clean.defaultPosition : "left";
+    clean.sceneId = String(clean.sceneId || "");
     clean.portraits = Array.isArray(clean.portraits) ? clean.portraits.map(sanitizeCharacterPortrait).filter(portrait => portrait.path || portrait.label) : [];
     return clean;
 }
