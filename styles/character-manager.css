@@ -127,14 +127,14 @@ button.fbl-vn-character-summary:focus-visible {
 }
 
 .fbl-vn-character-card-body {
-  display: grid;
+  display: none;
   gap: 8px;
   padding: 8px;
   border-top: 1px solid var(--vn-border);
 }
 
-.fbl-vn-character-card-body[hidden] {
-  display: none;
+.fbl-vn-character-card[data-expanded="true"] > .fbl-vn-character-card-body {
+  display: grid;
 }
 
 .fbl-vn-character-fields {
