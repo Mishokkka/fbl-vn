@@ -63,6 +63,10 @@ export function migrateData(source) {
         migrateToV13(data);
         schemaVersion = 13;
     }
+    if (schemaVersion < 14) {
+        migrateToV14(data);
+        schemaVersion = 14;
+    }
     data.schemaVersion = DATA_SCHEMA_VERSION;
     return data;
 }
@@ -438,6 +442,38 @@ function migrateToV13(data) {
                     if (cue.fadeOutMs === undefined) cue.fadeOutMs = 0;
                     if (cue.crossFadeMs === undefined) cue.crossFadeMs = 0;
                     if (cue.continueRepeats === undefined) cue.continueRepeats = false;
+                }
+            }
+        }
+    }
+}
+
+function migrateToV14(data) {
+    data.characters = Array.isArray(data.characters) ? data.characters : [];
+    for (const character of data.characters) {
+        if (!character || typeof character !== "object") continue;
+        if (character.defaultPosition === undefined || character.defaultPosition === null || character.defaultPosition === "") {
+            character.defaultPosition = "auto";
+        }
+    }
+
+    data.scenes = Array.isArray(data.scenes) ? data.scenes : [];
+    for (const scene of data.scenes) {
+        if (!scene || typeof scene !== "object") continue;
+        scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
+        for (const frame of scene.frames) {
+            if (!frame || typeof frame !== "object") continue;
+            if (frame.portraitPosition === undefined || frame.portraitPosition === null || frame.portraitPosition === "") {
+                frame.portraitPosition = "auto";
+            }
+            if (frame.textSpeed === undefined || frame.textSpeed === null || frame.textSpeed === "") {
+                frame.textSpeed = 160;
+            }
+            frame.additionalCharacters = Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : [];
+            for (const entry of frame.additionalCharacters) {
+                if (!entry || typeof entry !== "object") continue;
+                if (entry.portraitPosition === undefined || entry.portraitPosition === null || entry.portraitPosition === "") {
+                    entry.portraitPosition = "auto";
                 }
             }
         }
