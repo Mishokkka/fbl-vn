@@ -191,13 +191,6 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
             });
         }
 
-        for (const input of htmlElement.querySelectorAll("[data-character-name]")) {
-            input.addEventListener("input", () => {
-                const row = input.closest("[data-character-row]");
-                const summaryName = row ? row.querySelector("[data-character-summary-name]") : null;
-                if (summaryName) summaryName.textContent = input.value.trim() || "Без имени";
-            });
-        }
     }
 
     _readCharacters() {
