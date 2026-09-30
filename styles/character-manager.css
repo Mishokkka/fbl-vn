@@ -134,7 +134,7 @@ button.fbl-vn-character-summary:focus-visible {
 }
 
 .fbl-vn-character-card-body[hidden] {
-  display: none !important;
+  display: none;
 }
 
 .fbl-vn-character-fields {
