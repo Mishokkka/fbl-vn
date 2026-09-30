@@ -318,7 +318,8 @@ button.fbl-vn-validation-item.warning i {
   min-width: 0;
 }
 
-.fbl-vn-text-presentation {
+.fbl-vn-text-presentation,
+.fbl-vn-text-speed {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -331,6 +332,12 @@ button.fbl-vn-validation-item.warning i {
   width: auto;
   min-width: 180px;
   height: var(--vn-control-h);
+}
+
+.fbl-vn-text-speed input {
+  width: 76px;
+  height: var(--vn-control-h);
+  text-align: right;
 }
 
 .fbl-vn-rich-text-editor {

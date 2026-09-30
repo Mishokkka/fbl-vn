@@ -1,8 +1,9 @@
 import { applyChoiceCounterEffect, applyFrameCounterEffect, getInitialCounterState, getFrameTextBlocks, getTextBlock, isChoiceAvailable, resolveFrameNextRouting } from "../data/schema.js";
+import { VNSceneStore } from "../data/scene-store.js";
 import { VNPreloadController, VNPreloader } from "../playback/vn-preloader.js";
 import { VNAudioController } from "../playback/vn-audio.js";
 import { VNSocket } from "../playback/vn-socket.js";
-import { AUDIO_ACTIONS, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
+import { AUDIO_ACTIONS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, TEXT_SPEED, VIGNETTE_MODES } from "../utils/constants.js";
 import { notify, notifyWarn } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } from "../utils/rich-text.js";
 
@@ -21,6 +22,16 @@ function uniqueIds(ids) {
     return [...new Set((Array.isArray(ids) ? ids : []).filter(id => typeof id === "string" && id))];
 }
 
+function normalizeCharacterPresetPositions(source) {
+    const positions = {};
+    if (!source || typeof source !== "object" || Array.isArray(source)) return positions;
+    for (const [characterId, position] of Object.entries(source)) {
+        if (!characterId) continue;
+        positions[characterId] = ["auto", "left", "center", "right"].includes(position) ? position : "auto";
+    }
+    return positions;
+}
+
 function getNumberSetting(key, fallback = 1) {
     try {
         const value = game.settings?.get?.(MODULE_ID, key);
@@ -36,6 +47,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     constructor(options = {}) {
         super(options);
         this.scene = options.scene;
+        this._characterPresetPositions = normalizeCharacterPresetPositions(options.characterPresetPositions);
         this._buildPlaybackIndex();
         this.mode = options.mode !== undefined ? options.mode : PLAYER_MODES.INDIVIDUAL;
         this.leaderId = options.leaderId !== undefined ? options.leaderId : null;
@@ -54,6 +66,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.currentFrameId = null;
         this.currentTextIndex = 0;
         this.visualState = createVisualState();
+        this._autoPortraitCharacterId = "";
+        this._autoPortraitSide = "";
+        this._lastDialoguePortraitSide = "";
         this.audio = new VNAudioController();
         this.counterState = getInitialCounterState(this.scene);
         this._typingRaf = null;
@@ -178,6 +193,22 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         catch (_error) { return false; }
     }
 
+    static _characterPresetPositionsFromStore(scene) {
+        const ids = new Set();
+        for (const frame of Array.isArray(scene?.frames) ? scene.frames : []) {
+            if (frame?.characterId) ids.add(frame.characterId);
+            for (const character of Array.isArray(frame?.additionalCharacters) ? frame.additionalCharacters : []) {
+                if (character?.characterId) ids.add(character.characterId);
+            }
+        }
+        const positions = {};
+        for (const characterId of ids) {
+            const position = VNSceneStore.getCharacter(characterId)?.defaultPosition;
+            positions[characterId] = ["auto", "left", "center", "right"].includes(position) ? position : "auto";
+        }
+        return positions;
+    }
+
     static async openScene(payload) {
         if (!payload || !payload.scene) return;
         const scene = payload.scene;
@@ -185,12 +216,17 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         for (const app of [...VNPlayerApp.active.values()]) {
             await app.close({ force: true });
         }
+        const networked = payload.networked === true || Array.isArray(payload.targetIds);
+        const characterPresetPositions = payload.characterPresetPositions && typeof payload.characterPresetPositions === "object"
+            ? payload.characterPresetPositions
+            : (networked ? {} : VNPlayerApp._characterPresetPositionsFromStore(scene));
         const app = new VNPlayerApp({
             scene,
             mode: payload.mode !== undefined ? payload.mode : PLAYER_MODES.INDIVIDUAL,
             leaderId: payload.leaderId !== undefined ? payload.leaderId : null,
             participantIds: payload.participantIds || [],
-            networked: payload.networked === true || Array.isArray(payload.targetIds)
+            characterPresetPositions,
+            networked
         });
         try {
             await app.render(true);
@@ -231,6 +267,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             scene,
             mode: PLAYER_MODES.INDIVIDUAL,
             leaderId: game.user.id,
+            characterPresetPositions: VNPlayerApp._characterPresetPositionsFromStore(scene),
             networked: false,
             framePreview: true
         });
@@ -265,6 +302,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (payload?.mode !== undefined) existing.mode = payload.mode;
         if (payload?.leaderId !== undefined) existing.leaderId = payload.leaderId;
         if (payload?.networked === true || Array.isArray(payload?.targetIds)) existing.networked = true;
+        if (payload?.characterPresetPositions && typeof payload.characterPresetPositions === "object") {
+            existing._characterPresetPositions = normalizeCharacterPresetPositions(payload.characterPresetPositions);
+        }
 
         const nextParticipants = Array.isArray(payload?.participantIds) ? uniqueIds(payload.participantIds) : existing.participantIds;
         const participantsChanged = JSON.stringify(nextParticipants) !== JSON.stringify(existing.participantIds);
@@ -319,6 +359,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!isCurrentRecall()) return existing;
         existing.counterState = nextCounterState;
         existing.visualState = nextVisualState;
+        existing._restoreAutoPortraitState(state.automaticPortraitState);
         if (existing.mode === PLAYER_MODES.VOTE && state.voteState) existing._applyVoteState(state.voteState);
         if (stateChanged || participantsChanged) await existing.render();
         return existing;
@@ -445,6 +486,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             currentTextIndex: app.currentTextIndex,
             counterState: Object.assign({}, app.counterState),
             visualState: Object.assign({}, app.visualState),
+            automaticPortraitState: {
+                characterId: app._autoPortraitCharacterId,
+                side: app._autoPortraitSide,
+                lastDialogueSide: app._lastDialoguePortraitSide
+            },
             voteState: app.mode === PLAYER_MODES.VOTE ? app._buildVoteStateFromLeaderVotes() : null
         };
     }
@@ -780,6 +826,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.counterState = getInitialCounterState(this.scene);
             this.audio.pauseExternalAudio();
             this.visualState = createVisualState();
+            this._resetAutoPortraitSequence();
             const frames = Array.isArray(this.scene.frames) ? this.scene.frames : [];
             const firstId = this.scene.startFrame || (frames[0] ? frames[0].id : null);
             await this.goToFrame(firstId, { force: true });
@@ -828,6 +875,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.audio.pauseExternalAudio();
             this.counterState = nextCounterState;
             this.visualState = nextVisualState;
+            this._restoreAutoPortraitState(state.automaticPortraitState);
             this.currentFrameId = frame.id;
             this._contentHidden = false;
             this.currentTextIndex = requestedIndex;
@@ -958,7 +1006,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         for (const character of frame && Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : []) {
             if (!character || typeof character !== "object") continue;
-            const position = ["left", "center", "right"].includes(character.portraitPosition) ? character.portraitPosition : "right";
+            const position = this._resolveAdditionalPortraitPosition(character);
             const name = String(character.name || "");
             const portrait = String(character.portrait || "");
             const showName = Boolean(name) && character.showName !== false && !isCenteredText;
@@ -1169,7 +1217,8 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             richText || richTextFromPlainText(fallbackText),
             { fallbackText }
         );
-        const frameKey = `${this.currentFrameId || ""}:${this.currentTextIndex}:${safeHtml}`;
+        const textSpeed = this._textSpeedForFrame(this._getFrame(this.currentFrameId));
+        const frameKey = `${this.currentFrameId || ""}:${this.currentTextIndex}:${textSpeed}:${safeHtml}`;
         if (node && this._typingNode === node && this._typingKey === frameKey) return;
         if (node && this._typingKey === frameKey && this._typingComplete) {
             node.innerHTML = this._typingText;
@@ -1227,7 +1276,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         let revealed = 0;
         let carry = 0;
         let previous = performance.now();
-        const charsPerMs = 0.16;
+        const charsPerMs = textSpeed / 1000;
         const reveal = count => {
             let remaining = count;
             while (remaining > 0 && segmentIndex < segments.length) {
@@ -1290,13 +1339,91 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (hideButton) hideButton.setAttribute("aria-expanded", this._contentHidden ? "false" : "true");
     }
 
+    _textSpeedForFrame(frame) {
+        const value = Number(frame?.textSpeed);
+        if (!Number.isFinite(value)) return TEXT_SPEED.DEFAULT;
+        return Math.max(TEXT_SPEED.MIN, Math.min(TEXT_SPEED.MAX, value));
+    }
+
+    _characterDefaultPosition(characterId) {
+        if (!characterId) return "auto";
+        const position = this._characterPresetPositions?.[characterId];
+        return ["auto", "left", "center", "right"].includes(position) ? position : "auto";
+    }
+
+    _restoreAutoPortraitState(state) {
+        this._autoPortraitCharacterId = typeof state?.characterId === "string" ? state.characterId : "";
+        this._autoPortraitSide = ["left", "right"].includes(state?.side) ? state.side : "";
+        this._lastDialoguePortraitSide = ["left", "right"].includes(state?.lastDialogueSide)
+            ? state.lastDialogueSide
+            : "";
+    }
+
+    _resetAutoPortraitSequence() {
+        this._autoPortraitCharacterId = "";
+        this._autoPortraitSide = "";
+        this._lastDialoguePortraitSide = "";
+    }
+
+    _resolvePrimaryPortraitPosition(frame) {
+        const framePosition = ["auto", "left", "center", "right"].includes(frame?.portraitPosition)
+            ? frame.portraitPosition
+            : "auto";
+        const presetPosition = this._characterDefaultPosition(frame?.characterId);
+
+        if (frame?.type !== FRAME_TYPES.DIALOGUE) {
+            this._resetAutoPortraitSequence();
+            if (framePosition !== "auto") return framePosition;
+            return presetPosition !== "auto" ? presetPosition : "left";
+        }
+
+        const characterKey = String(frame?.characterId || frame?.speaker || "__anonymous__");
+        const characterChanged = characterKey !== (this._autoPortraitCharacterId || "");
+
+        if (framePosition !== "auto") {
+            if (characterChanged) this._autoPortraitSide = "";
+            this._autoPortraitCharacterId = characterKey;
+            if (framePosition === "left" || framePosition === "right") {
+                this._autoPortraitSide = framePosition;
+                this._lastDialoguePortraitSide = framePosition;
+            }
+            return framePosition;
+        }
+
+        if (presetPosition !== "auto") {
+            if (characterChanged) this._autoPortraitSide = "";
+            this._autoPortraitCharacterId = characterKey;
+            if (presetPosition === "left" || presetPosition === "right") {
+                this._lastDialoguePortraitSide = presetPosition;
+            }
+            return presetPosition;
+        }
+
+        if (!characterChanged && (this._autoPortraitSide === "left" || this._autoPortraitSide === "right")) {
+            return this._autoPortraitSide;
+        }
+
+        const side = this._lastDialoguePortraitSide === "left" ? "right" : "left";
+        this._autoPortraitCharacterId = characterKey;
+        this._autoPortraitSide = side;
+        this._lastDialoguePortraitSide = side;
+        return side;
+    }
+
+    _resolveAdditionalPortraitPosition(character) {
+        const framePosition = ["auto", "left", "center", "right"].includes(character?.portraitPosition)
+            ? character.portraitPosition
+            : "auto";
+        if (framePosition !== "auto") return framePosition;
+        const presetPosition = this._characterDefaultPosition(character?.characterId);
+        return presetPosition !== "auto" ? presetPosition : "right";
+    }
+
     _applyVisualState(frame) {
         if (!frame) return;
         if (frame.clearBackground === true) this.visualState.background = "";
         if (frame.background) this.visualState.background = frame.background;
-        this.visualState.portraitPosition = ["left", "center", "right"].includes(frame.portraitPosition)
-            ? frame.portraitPosition
-            : "left";
+        this.visualState.portraitPosition = this._resolvePrimaryPortraitPosition(frame);
         if (frame.hidePortrait === true) this.visualState.portrait = "";
         else if (frame.portrait) this.visualState.portrait = frame.portrait;
     }

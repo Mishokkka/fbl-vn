@@ -97,12 +97,12 @@ const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
 const { VNPreloadController, VNPreloader } = await import("../scripts/playback/vn-preloader.js");
 const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createCounterCondition, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, isChoiceAvailable, resolveFrameNextRouting, sanitizeFrame, sanitizeScene, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, DATA_SCHEMA_VERSION, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
+const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, DATA_SCHEMA_VERSION, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, TEXT_SPEED, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId, serializeJson } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
-assert.equal(DATA_SCHEMA_VERSION, 13, "Audio timing release must use schema v13");
+assert.equal(DATA_SCHEMA_VERSION, 14, "Portrait inheritance and frame text speed must use schema v14");
 assert.equal(game.settings.settings.has(`${MODULE_ID}.${SETTINGS.PRELOAD_AHEAD_DEPTH}`), true, "Long-range preload depth must be registered as a world setting");
 assert.equal(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_AHEAD_DEPTH), 10, "Long-range preload target depth must default to 10");
 
@@ -167,7 +167,8 @@ scene.frames[0].sfxCues = [
 assert.deepEqual(new Set(collectAssetPaths(scene)), new Set(["music-a.ogg", "music-b.ogg", "wind.ogg"]), "Preload collection must include every playable audio cue");
 const nested = createFrame("dialogue");
 assert.equal(nested.textPresentation, TEXT_PRESENTATIONS.BOX, "New frames must use the normal dialogue box by default");
-assert.equal(nested.portraitPosition, "left", "New frames must default portraits to the left");
+assert.equal(nested.portraitPosition, "auto", "New frames must inherit portrait position by default");
+assert.equal(nested.textSpeed, TEXT_SPEED.DEFAULT, "New frames must use the default typewriter speed");
 assert.equal(nested.vignetteMode, VIGNETTE_MODES.NONE, "New frames must disable the vignette by default");
 assert.equal(nested.transition, "none", "New frames must disable visual transitions by default");
 assert.equal(nested.showSpeakerName, true, "New frames must show the primary character name by default");
@@ -179,10 +180,12 @@ const extraCharacter = createFrameCharacter({ name: "Companion", portrait: "comp
 assert.equal(extraCharacter.showName, true, "Additional frame characters must show their names by default");
 scene.frames[0].additionalCharacters.push(extraCharacter);
 assert.equal(collectAssetPaths({ frames: [scene.frames[0]] }).includes("companion.png"), true, "Additional character portraits must be preloaded");
-assert.equal(createCharacterPreset("Left default").defaultPosition, "left", "New character presets must default to the left");
+assert.equal(createCharacterPreset("Automatic default").defaultPosition, "auto", "New character presets must default to automatic placement");
 assert.equal(createCharacterPreset("Scoped", "Main", "", "left", "scene-a").sceneId, "scene-a", "Character presets must preserve their cutscene library assignment");
 const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid", transition: "legacy" });
-assert.equal(invalidPositionFrame.portraitPosition, "left", "Invalid portrait positions must sanitize to left");
+assert.equal(invalidPositionFrame.portraitPosition, "auto", "Invalid portrait positions must sanitize to automatic placement");
+assert.equal(sanitizeFrame({ ...nested, textSpeed: 999 }).textSpeed, TEXT_SPEED.MAX, "Frame text speed must clamp to its upper bound");
+assert.equal(sanitizeFrame({ ...nested, textSpeed: 0 }).textSpeed, TEXT_SPEED.MIN, "Frame text speed must clamp to its lower bound");
 assert.equal(invalidPositionFrame.vignetteMode, VIGNETTE_MODES.NONE, "Invalid vignette modes must sanitize to none");
 assert.equal(invalidPositionFrame.transition, "none", "Unsupported transition values must sanitize to none");
 const formattedBlock = createTextBlock("Hello\nworld");
@@ -499,7 +502,7 @@ assert.equal(staleGenerationResults[0].cancelled, true, "Changing preload genera
 assert.equal(pendingImages[1].released, true, "Stale speculative image requests must release their browser Image source");
 globalThis.Image = savedImage;
 
-await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 14, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const sceneSummaries = VNSceneStore.sceneSummaries;
 assert.equal(sceneSummaries.length, 1, "Scene summaries must expose one lightweight row per stored scene");
@@ -525,7 +528,7 @@ const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
 assert.ok(VNSceneStore.revision > revisionBeforeQueuedMutations, "Store revision must advance when persisted data changes");
-await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 14, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const noOpEditor = Object.create(VNEditorApp.prototype);
 noOpEditor._pendingRenderParts = new Set();
@@ -1230,7 +1233,7 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 13);
+assert.equal(migrated.schemaVersion, 14);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
@@ -1265,9 +1268,101 @@ const schema12Scene = createScene();
 delete schema12Scene.audioExitFadeMs;
 schema12Scene.frames[0].musicCues = [{ id: "v12-audio", action: AUDIO_ACTIONS.PLAY, channel: "music-v12", src: "v12.ogg", loop: true }];
 const schema12Migrated = migrateData({ schemaVersion: 12, version: 3, scenes: [schema12Scene], assets: [], characters: [] });
-assert.equal(schema12Migrated.schemaVersion, 13, "Schema v12 exports must migrate explicitly to schema v13");
+assert.equal(schema12Migrated.schemaVersion, 14, "Schema v12 exports must migrate through to current schema v14");
 assert.equal(schema12Migrated.scenes[0].audioExitFadeMs, 0, "Schema v12 scenes must retain immediate audio shutdown by default");
 assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].crossFadeMs, 0, "Schema v12 cues must gain zeroed timing fields");
+
+const schema13Scene = createScene();
+schema13Scene.frames[0].portraitPosition = "left";
+delete schema13Scene.frames[0].textSpeed;
+schema13Scene.frames[0].additionalCharacters = [
+  createFrameCharacter({ id: "legacy-extra", name: "Legacy Extra", portraitPosition: "right" })
+];
+const schema13Migrated = migrateData({
+  schemaVersion: 13,
+  version: 3,
+  scenes: [schema13Scene],
+  assets: [],
+  characters: [{ id: "legacy-character", name: "Legacy", defaultPosition: "left", sceneId: "", portraits: [] }]
+});
+assert.equal(schema13Migrated.schemaVersion, 14, "Schema v13 exports must migrate explicitly to schema v14");
+assert.equal(schema13Migrated.scenes[0].frames[0].portraitPosition, "auto", "Legacy primary default-left frames must migrate to preset inheritance");
+assert.equal(schema13Migrated.scenes[0].frames[0].additionalCharacters[0].portraitPosition, "auto", "Legacy additional default-right entries must migrate to preset inheritance");
+assert.equal(schema13Migrated.scenes[0].frames[0].textSpeed, TEXT_SPEED.DEFAULT, "Legacy frames must gain the default text speed");
+assert.equal(schema13Migrated.characters[0].defaultPosition, "left", "Explicit legacy character preset sides must remain unchanged");
+
+const savedStoreMutateData = VNSceneStore.mutateData;
+try {
+  const presetSaveData = {
+    characters: [{
+      id: "preset-save-character",
+      name: "Preset Save",
+      defaultPosition: "right",
+      portraits: []
+    }]
+  };
+  VNSceneStore.mutateData = async updater => updater(presetSaveData);
+  await VNSceneStore.saveCharacterFromFrame({
+    speaker: "Preset Save",
+    portrait: "",
+    portraitPosition: "auto"
+  }, "Основной");
+  assert.equal(
+    presetSaveData.characters[0].defaultPosition,
+    "right",
+    "Saving an inherited frame must preserve the existing preset side"
+  );
+  await VNSceneStore.saveCharacterFromFrame({
+    speaker: "Preset Save",
+    portrait: "",
+    portraitPosition: "left"
+  }, "Основной");
+  assert.equal(
+    presetSaveData.characters[0].defaultPosition,
+    "left",
+    "Saving a frame with an explicit side must still update the preset side"
+  );
+
+  const importedData = { scenes: [], assets: [], characters: [] };
+  VNSceneStore.mutateData = async updater => updater(importedData);
+  const legacyImportScene = createScene();
+  legacyImportScene.frames[0].portraitPosition = "left";
+  delete legacyImportScene.frames[0].textSpeed;
+  legacyImportScene.frames[0].additionalCharacters = [
+    createFrameCharacter({ id: "import-extra", portraitPosition: "right" })
+  ];
+  await VNSceneStore.importData({
+    schemaVersion: 13,
+    version: 3,
+    scenes: [legacyImportScene],
+    assets: [],
+    characters: []
+  });
+  assert.equal(
+    importedData.scenes[0].portraitPosition,
+    undefined,
+    "Scene-level import migration must not invent frame fields on the scene object"
+  );
+  assert.equal(
+    importedData.scenes[0].frames[0].portraitPosition,
+    "auto",
+    "Versioned container imports must migrate legacy primary portrait positions before sanitizing"
+  );
+  assert.equal(
+    importedData.scenes[0].frames[0].additionalCharacters[0].portraitPosition,
+    "auto",
+    "Versioned container imports must migrate legacy additional portrait positions before sanitizing"
+  );
+  assert.equal(
+    importedData.scenes[0].frames[0].textSpeed,
+    TEXT_SPEED.DEFAULT,
+    "Versioned container imports must apply schema-v14 text-speed defaults"
+  );
+}
+finally {
+  VNSceneStore.mutateData = savedStoreMutateData;
+}
+
 assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].repeatCount, 1, "Schema v12 cues must gain one-play repeat defaults");
 for (const cue of [...migratedFrame.musicCues, ...migratedFrame.sfxCues]) {
   assert.equal(cue.repeatCount, 1, "Schema v13 migration must default legacy cues to one playback");
@@ -1330,9 +1425,9 @@ assert.equal(migratedChoiceCondition.conditionLogic, COUNTER_CONDITION_LOGIC.ALL
 assert.equal("conditionCounterId" in migratedChoiceCondition, false, "Schema v12 must remove legacy choice condition fields");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 13, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 14, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
-for (const invalidSchemaVersion of [-1, 7.5, 14]) {
+for (const invalidSchemaVersion of [-1, 7.5, 15]) {
   assert.throws(
     () => migrateData({ schemaVersion: invalidSchemaVersion, version: 3, scenes: [], assets: [], characters: [] }),
     /unsupported schemaVersion/,
@@ -1340,7 +1435,7 @@ for (const invalidSchemaVersion of [-1, 7.5, 14]) {
   );
 }
 assert.throws(
-  () => VNSceneStore._sanitizeData({ schemaVersion: 14, version: 3, scenes: [], assets: [], characters: [] }),
+  () => VNSceneStore._sanitizeData({ schemaVersion: 15, version: 3, scenes: [], assets: [], characters: [] }),
   /unsupported schemaVersion/,
   "The scene store must not silently downgrade future-schema data to an empty current-schema save"
 );
@@ -1647,6 +1742,61 @@ visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portr
 visualStatePlayer._applyVisualState({ background: "", clearBackground: false, portrait: "", hidePortrait: false, portraitPosition: "right" });
 assert.equal(visualStatePlayer.visualState.portrait, "old-portrait.png", "A frame without a new portrait must keep the previous portrait image");
 assert.equal(visualStatePlayer.visualState.portraitPosition, "right", "Portrait position must update even when the frame keeps the previous portrait image");
+
+const autoSidePlayer = Object.create(VNPlayerApp.prototype);
+autoSidePlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+autoSidePlayer._autoPortraitCharacterId = "";
+autoSidePlayer._autoPortraitSide = "";
+autoSidePlayer._lastDialoguePortraitSide = "";
+autoSidePlayer._characterPresetPositions = {
+  "auto-a": "auto",
+  "auto-b": "auto",
+  "auto-c": "auto",
+  "preset-right": "right",
+  "preset-left": "left"
+};
+const savedAutoGetCharacter = VNSceneStore.getCharacter;
+VNSceneStore.getCharacter = () => {
+  throw new Error("Playback position resolution must not read the private character store.");
+};
+const autoDialogue = (characterId, speaker) => {
+  const frame = createFrame("dialogue");
+  frame.characterId = characterId;
+  frame.speaker = speaker;
+  frame.portraitPosition = "auto";
+  return frame;
+};
+autoSidePlayer._applyVisualState(autoDialogue("auto-a", "A"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "Automatic dialogue placement must start on the left");
+autoSidePlayer._applyVisualState(autoDialogue("auto-a", "A"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "Consecutive lines by the same automatic character must keep their side");
+autoSidePlayer._applyVisualState(autoDialogue("auto-b", "B"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "right", "A new automatic speaker must alternate to the opposite side");
+autoSidePlayer._applyVisualState(autoDialogue("preset-right", "Fixed"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "right", "A preset side must override automatic alternation");
+autoSidePlayer._applyVisualState(autoDialogue("auto-c", "C"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "Automatic placement must continue from the last visible dialogue side");
+const explicitOverrideFrame = autoDialogue("preset-left", "Override");
+explicitOverrideFrame.portraitPosition = "right";
+autoSidePlayer._applyVisualState(explicitOverrideFrame);
+assert.equal(autoSidePlayer.visualState.portraitPosition, "right", "An explicit frame side must override the character preset side");
+assert.equal(autoSidePlayer._resolveAdditionalPortraitPosition({ characterId: "preset-left", portraitPosition: "auto" }), "left", "Additional characters must inherit an explicit preset side");
+assert.equal(autoSidePlayer._resolveAdditionalPortraitPosition({ characterId: "auto-a", portraitPosition: "auto" }), "right", "Additional automatic characters must retain the historical right-side fallback");
+autoSidePlayer._applyVisualState(createFrame("narration"));
+autoSidePlayer._applyVisualState(autoDialogue("auto-b", "B"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "A non-dialogue frame must reset automatic alternation");
+assert.equal(autoSidePlayer._textSpeedForFrame({ textSpeed: 80 }), 80, "Player must use the frame text speed");
+assert.equal(autoSidePlayer._textSpeedForFrame({ textSpeed: 999 }), TEXT_SPEED.MAX, "Player must clamp raw text speed payloads");
+assert.equal(autoSidePlayer._textSpeedForFrame({}), TEXT_SPEED.DEFAULT, "Player must fall back to the default text speed");
+autoSidePlayer._restoreAutoPortraitState({ characterId: "auto-b", side: "right", lastDialogueSide: "right" });
+assert.equal(autoSidePlayer._autoPortraitCharacterId, "auto-b", "Reconnect restoration must preserve the current automatic speaker");
+assert.equal(autoSidePlayer._autoPortraitSide, "right", "Reconnect restoration must preserve the current automatic side");
+assert.equal(autoSidePlayer._lastDialoguePortraitSide, "right", "Reconnect restoration must preserve the alternation history");
+autoSidePlayer._restoreAutoPortraitState({ characterId: 42, side: "center", lastDialogueSide: "center" });
+assert.equal(autoSidePlayer._autoPortraitCharacterId, "", "Invalid reconnect portrait state must reset the automatic speaker");
+assert.equal(autoSidePlayer._autoPortraitSide, "", "Invalid reconnect portrait state must reset the current side");
+assert.equal(autoSidePlayer._lastDialoguePortraitSide, "", "Invalid reconnect portrait state must reset alternation history");
+VNSceneStore.getCharacter = savedAutoGetCharacter;
 
 const player = Object.create(VNPlayerApp.prototype);
 player.scene = scene;
@@ -2619,6 +2769,10 @@ const synchronizedRecallApp = {
   currentTextIndex: 0,
   counterState: { counter: 1 },
   visualState: { background: "old-bg.webp", portrait: "", portraitPosition: "left" },
+  _autoPortraitCharacterId: "stale-character",
+  _autoPortraitSide: "left",
+  _lastDialoguePortraitSide: "left",
+  _restoreAutoPortraitState: VNPlayerApp.prototype._restoreAutoPortraitState,
   async render() { synchronizedRecallRenders += 1; },
   async preload() {},
   async _ensureVisualStateAssets(state) { synchronizedRecallVisualPreloads.push({ ...state }); },
@@ -2642,6 +2796,7 @@ await VNPlayerApp.recallScene({
     currentTextIndex: 0,
     counterState: { counter: 2 },
     visualState: { background: "new-bg.webp", portrait: "", portraitPosition: "left" },
+    automaticPortraitState: { characterId: "fresh-character", side: "right", lastDialogueSide: "right" },
     voteState: { frameId: "frame-root", textIndex: 0, voters: [], choices: {}, total: 2, participantIds: [playerUser.id, playerUser2.id] }
   }
 });
@@ -2650,6 +2805,9 @@ assert.equal(synchronizedRecallRenders, 1, "Duplicate open recovery must refresh
 assert.deepEqual(synchronizedRecallVisualPreloads, [{ background: "new-bg.webp", portrait: "", portraitPosition: "left" }], "In-place reconnect recovery must preload inherited visual-state assets before rendering them");
 assert.deepEqual(synchronizedRecallApp.counterState, { counter: 2 }, "In-place recovery must synchronize counter state");
 assert.equal(synchronizedRecallApp.visualState.background, "new-bg.webp", "In-place recovery must synchronize visual state");
+assert.equal(synchronizedRecallApp._autoPortraitCharacterId, "fresh-character", "In-place recovery must replace stale automatic speaker state");
+assert.equal(synchronizedRecallApp._autoPortraitSide, "right", "In-place recovery must restore the automatic side");
+assert.equal(synchronizedRecallApp._lastDialoguePortraitSide, "right", "In-place recovery must restore alternation history");
 assert.deepEqual(synchronizedRecallApp.participantIds, [playerUser.id, playerUser2.id], "In-place recovery must synchronize the vote roster");
 assert.equal(synchronizedVoteState?.total, 2, "In-place recovery must apply the current vote state");
 await VNPlayerApp.recallScene({
@@ -2686,6 +2844,7 @@ const staleVisualRecallApp = {
   currentTextIndex: 0,
   counterState: { counter: 1 },
   visualState: { background: "race-base.webp", portrait: "", portraitPosition: "left" },
+  _restoreAutoPortraitState: VNPlayerApp.prototype._restoreAutoPortraitState,
   async render() { staleVisualRecallRenders += 1; },
   async preload() {},
   async _ensureVisualStateAssets(state) {
@@ -2963,6 +3122,9 @@ reconnectVotePlayer._participantConnectionState = new Map();
 reconnectVotePlayer._leaderVotes = new Map([[playerUser.id, { action: "continue", choiceId: "" }]]);
 reconnectVotePlayer.counterState = { counter: 2 };
 reconnectVotePlayer.visualState = { background: "resume-bg.webp", portrait: "", portraitPosition: "left" };
+reconnectVotePlayer._autoPortraitCharacterId = "reconnect-character";
+reconnectVotePlayer._autoPortraitSide = "right";
+reconnectVotePlayer._lastDialoguePortraitSide = "right";
 reconnectVotePlayer.scene = scene;
 reconnectVotePlayer.leaderId = gm1.id;
 reconnectVotePlayer.started = true;
@@ -2972,6 +3134,11 @@ const reconnectVoteState = VNPlayerApp.getSyncState("scene-vote-reconnect-state"
 assert.deepEqual(reconnectVoteState.voteState.voters, [playerUser.id], "Reconnect snapshot must include current votes from remaining players");
 assert.equal(reconnectVoteState.voteState.total, 2, "Reconnect snapshot must include the current player-only quorum");
 assert.deepEqual(reconnectVoteState.voteState.participantIds, [playerUser.id, playerUser2.id], "Reconnect snapshot must carry the current vote roster");
+assert.deepEqual(
+  reconnectVoteState.automaticPortraitState,
+  { characterId: "reconnect-character", side: "right", lastDialogueSide: "right" },
+  "Reconnect snapshot must carry automatic portrait alternation state"
+);
 VNPlayerApp.active.delete("scene-vote-reconnect-state");
 
 const savedFoundry = globalThis.foundry;

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 13,
+  "schemaVersion": 14,
   "version": 3,
   "scenes": [
     {
@@ -124,7 +124,8 @@
             "trueFrameId": "",
             "falseFrameId": ""
           },
-          "choices": []
+          "choices": [],
+          "textSpeed": 160
         },
         {
           "id": "frame-dialogue",
@@ -142,7 +143,7 @@
           "speaker": "Проводник",
           "portrait": "modules/fbl-vn-cutscenes/example/guide.webp",
           "hidePortrait": false,
-          "portraitPosition": "left",
+          "portraitPosition": "auto",
           "showSpeakerName": true,
           "additionalCharacters": [
             {
@@ -151,7 +152,7 @@
               "portraitId": "portrait-companion-main",
               "name": "Спутник",
               "portrait": "modules/fbl-vn-cutscenes/example/companion.webp",
-              "portraitPosition": "right",
+              "portraitPosition": "auto",
               "showName": true
             }
           ],
@@ -200,7 +201,8 @@
             "trueFrameId": "",
             "falseFrameId": ""
           },
-          "choices": []
+          "choices": [],
+          "textSpeed": 160
         },
         {
           "id": "frame-choice",
@@ -286,7 +288,8 @@
               "effectOperation": "",
               "effectValue": 0
             }
-          ]
+          ],
+          "textSpeed": 160
         },
         {
           "id": "frame-alt",
@@ -346,7 +349,8 @@
             "trueFrameId": "",
             "falseFrameId": ""
           },
-          "choices": []
+          "choices": [],
+          "textSpeed": 160
         }
       ],
       "audioExitFadeMs": 750
@@ -374,7 +378,7 @@
     {
       "id": "character-guide",
       "name": "Проводник",
-      "defaultPosition": "left",
+      "defaultPosition": "auto",
       "portraits": [
         {
           "id": "portrait-guide-main",

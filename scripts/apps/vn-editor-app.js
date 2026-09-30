@@ -7,7 +7,7 @@ import { VNAssetPickerApp } from "./asset-picker-app.js";
 import { VNCharacterManagerApp } from "./vn-character-manager-app.js";
 import { VNCounterManagerApp } from "./vn-counter-manager-app.js";
 import { VNGraphApp } from "./vn-graph-app.js";
-import { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, MODULE_ID, PLAYER_MODES, TEXT_PRESENTATIONS, TEXT_SPEED, VIGNETTE_MODES } from "../utils/constants.js";
 import { confirmDialog, downloadJson, duplicateData, escapeHtml, formDialog, notify, notifyError, notifyWarn, randomId, readJsonFile } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -294,10 +294,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 musicChannelOptions: this._audioChannelOptions(scene, "music"),
                 sfxChannelOptions: this._audioChannelOptions(scene, "sfx"),
                 positionOptions: this._options([
+                    ["auto", "По пресету / авто"],
                     ["left", "Слева"],
                     ["center", "По центру"],
                     ["right", "Справа"]
-                ], frame ? frame.portraitPosition : undefined),
+                ], frame ? frame.portraitPosition : "auto"),
                 transitionOptions: this._options([
                     ["none", "Нет"],
                     ["fade", "Fade"],
@@ -1167,9 +1168,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const portrait = portraits.find(item => item.id === portraitId) || portraits[0] || null;
         frame.characterId = character.id;
         frame.speaker = character.name;
-        frame.portraitPosition = ["left", "center", "right"].includes(frame.portraitPosition)
+        frame.portraitPosition = ["auto", "left", "center", "right"].includes(frame.portraitPosition)
             ? frame.portraitPosition
-            : (character.defaultPosition || "left");
+            : "auto";
         frame.hidePortrait = false;
         if (portrait) {
             frame.portraitId = portrait.id;
@@ -1218,9 +1219,9 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const portrait = portraits.find(item => item.id === portraitId) || portraits[0] || null;
         entry.characterId = character.id;
         entry.name = character.name;
-        entry.portraitPosition = ["left", "center", "right"].includes(entry.portraitPosition)
+        entry.portraitPosition = ["auto", "left", "center", "right"].includes(entry.portraitPosition)
             ? entry.portraitPosition
-            : (character.defaultPosition || "right");
+            : "auto";
         if (portrait) {
             entry.portraitId = portrait.id;
             entry.portrait = portrait.path || "";
@@ -2069,10 +2070,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 characterOptions: this._characterOptions(characters, entry.characterId || ""),
                 portraitOptions: this._characterPortraitOptions(character, entry.portraitId || ""),
                 positionOptions: this._options([
+                    ["auto", "По пресету / авто"],
                     ["left", "Слева"],
                     ["center", "По центру"],
                     ["right", "Справа"]
-                ], entry.portraitPosition || "right"),
+                ], entry.portraitPosition || "auto"),
                 portraitInputName: `frame.additionalCharacters.${entry.id}.portrait`
             });
         });
@@ -2145,10 +2147,11 @@ export class VNEditorApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 portraitId: this._readRowValue(row, "[data-frame-character-portrait-select]", ""),
                 name: this._readRowValue(row, "[data-frame-character-name]", ""),
                 portrait: this._readRowValue(row, "[data-frame-character-portrait]", ""),
-                portraitPosition: this._readRowValue(row, "[data-frame-character-position]", "right"),
+                portraitPosition: this._readRowValue(row, "[data-frame-character-position]", "auto"),
                 showName: Boolean(row.querySelector("[data-frame-character-show-name]")?.checked)
             }));
             frame.textPresentation = this._readValue("frame.textPresentation", frame.textPresentation || TEXT_PRESENTATIONS.BOX);
+            frame.textSpeed = Number(this._readValue("frame.textSpeed", frame.textSpeed ?? TEXT_SPEED.DEFAULT) || TEXT_SPEED.DEFAULT);
             frame.musicCues = this._readAudioCues("music");
             frame.sfxCues = this._readAudioCues("sfx");
             frame.effectCounterId = this._readValue("frame.effectCounterId", frame.effectCounterId || "");
