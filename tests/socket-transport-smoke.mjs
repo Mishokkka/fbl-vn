@@ -119,6 +119,7 @@ const reconnectSession = {
   targetIds: [player.id, player2.id],
   participantIds: [player.id, player2.id],
   eligibleTargetIds: [player.id, player2.id],
+  characterPresetPositions: { "character-networked": "right" },
   started: true
 };
 VNSocket.activeSessions.set(reconnectSceneId, reconnectSession);
@@ -146,6 +147,11 @@ assert.ok(reopen, "Reconnect must reopen the active cutscene for the returning p
 assert.deepEqual(reopen.payload.data.targetIds, [player.id], "Reconnect reopen must target only the returning player");
 assert.equal(reopen.payload.data.resumeState.currentFrameId, "frame-current", "Reconnect must resume at the GM's current synchronized frame");
 assert.deepEqual(reopen.payload.data.participantIds, [player.id, player2.id], "Reconnect must restore the current player-only vote roster");
+assert.deepEqual(
+  reopen.payload.data.characterPresetPositions,
+  { "character-networked": "right" },
+  "Reconnect must carry the character preset positions required by player-side portrait resolution"
+);
 
 const savedReconnectSyncState = VNSocket.handlers.getSyncState;
 VNSocket.handlers.getSyncState = () => null;
