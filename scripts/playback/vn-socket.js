@@ -1,3 +1,4 @@
+import { VNSceneStore } from "../data/scene-store.js";
 import { MODULE_ID, PLAYER_MODES, SETTINGS, SOCKET_NAME } from "../utils/constants.js";
 import { wait } from "../utils/foundry-helpers.js";
 
@@ -223,6 +224,7 @@ export class VNSocket {
             leaderId: currentSession.leaderId,
             targetIds: [senderId],
             participantIds: [...currentSession.participantIds],
+            characterPresetPositions: currentSession.characterPresetPositions || {},
             resumeState: currentSession.started ? resumeState : null
         });
     }
@@ -259,6 +261,7 @@ export class VNSocket {
             leaderId: session.leaderId,
             targetIds: [userId],
             participantIds: [...session.participantIds],
+            characterPresetPositions: session.characterPresetPositions || {},
             resumeState: session.started ? resumeState : null
         });
         return true;
@@ -311,6 +314,23 @@ export class VNSocket {
             .map(user => user.id);
     }
 
+    static _characterPresetPositionsForScene(scene) {
+        const ids = new Set();
+        for (const frame of Array.isArray(scene?.frames) ? scene.frames : []) {
+            if (frame?.characterId) ids.add(frame.characterId);
+            for (const character of Array.isArray(frame?.additionalCharacters) ? frame.additionalCharacters : []) {
+                if (character?.characterId) ids.add(character.characterId);
+            }
+        }
+        const positions = {};
+        for (const characterId of ids) {
+            const character = VNSceneStore.getCharacter(characterId);
+            const position = character?.defaultPosition;
+            positions[characterId] = ["auto", "left", "center", "right"].includes(position) ? position : "auto";
+        }
+        return positions;
+    }
+
     /**
      * Launch a synchronized cutscene and wait only for the session's current
      * active targets, so players who leave during preload cannot hold startup.
@@ -340,6 +360,7 @@ export class VNSocket {
             }
             const targetIds = this.getTargetUserIds();
             const participantIds = this._participantIdsForLaunch(targetIds, mode);
+            const characterPresetPositions = this._characterPresetPositionsForScene(scene);
             this.activeTargets.set(scene.id, new Set(targetIds));
             this.activeParticipants.set(scene.id, new Set(participantIds));
             this.activeLeaders.set(scene.id, game.user.id);
@@ -350,6 +371,7 @@ export class VNSocket {
                 targetIds: [...targetIds],
                 participantIds: [...participantIds],
                 eligibleTargetIds: [...targetIds],
+                characterPresetPositions,
                 started: false
             });
             this.clearReady(scene.id, targetIds);
@@ -359,9 +381,10 @@ export class VNSocket {
                 mode,
                 leaderId: game.user.id,
                 targetIds,
-                participantIds
+                participantIds,
+                characterPresetPositions
             });
-            const localApp = await Promise.resolve(this.handlers.open?.({ scene, sceneId: scene.id, mode, leaderId: game.user.id, targetIds, participantIds, local: true }, game.user.id));
+            const localApp = await Promise.resolve(this.handlers.open?.({ scene, sceneId: scene.id, mode, leaderId: game.user.id, targetIds, participantIds, characterPresetPositions, local: true }, game.user.id));
             const localPreload = localApp?.preload?.();
             const configuredWait = Number(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_WAIT_MS) ?? 10000);
             const maxWait = Number.isFinite(configuredWait) ? Math.max(0, configuredWait) : 10000;
