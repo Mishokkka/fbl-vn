@@ -7,26 +7,139 @@ import { VNAssetPickerApp } from "./asset-picker-app.js";
 const ApplicationV2 = foundry.applications.api.ApplicationV2;
 const HandlebarsApplicationMixin = foundry.applications.api.HandlebarsApplicationMixin;
 
+const CHARACTER_SCOPE_ALL = "__all__";
+const CHARACTER_SCOPE_SHARED = "__shared__";
+const CHARACTER_SCENE_SHARED = "*";
+
 export class VNCharacterManagerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     constructor(options = {}) {
         super(options);
         this.editor = options.editor || null;
         this.expandedCharacterIds = new Set();
+        this.selectedScope = options.scope || this.editor?.selectedSceneId || CHARACTER_SCOPE_ALL;
+    }
+
+    _sceneUsageIndex(data) {
+        const usage = new Map();
+        const register = (characterId, sceneId) => {
+            const id = String(characterId || "");
+            if (!id || !sceneId) return;
+            if (!usage.has(id)) usage.set(id, new Set());
+            usage.get(id).add(sceneId);
+        };
+
+        for (const scene of Array.isArray(data?.scenes) ? data.scenes : []) {
+            if (!scene?.id) continue;
+            for (const frame of Array.isArray(scene.frames) ? scene.frames : []) {
+                register(frame?.characterId, scene.id);
+                for (const character of Array.isArray(frame?.additionalCharacters) ? frame.additionalCharacters : []) {
+                    register(character?.characterId, scene.id);
+                }
+            }
+        }
+        return usage;
+    }
+
+    _effectiveCharacterScope(character, usageIndex, validSceneIds) {
+        const explicitSceneId = String(character?.sceneId || "");
+        if (explicitSceneId === CHARACTER_SCENE_SHARED) return CHARACTER_SCOPE_SHARED;
+        if (validSceneIds.has(explicitSceneId)) return explicitSceneId;
+
+        const usedInScenes = usageIndex.get(character?.id);
+        if (usedInScenes?.size === 1) {
+            const [sceneId] = usedInScenes;
+            if (validSceneIds.has(sceneId)) return sceneId;
+        }
+        return CHARACTER_SCOPE_SHARED;
+    }
+
+    _scopeOptions(scenes, characters, usageIndex, validSceneIds) {
+        const counts = new Map([[CHARACTER_SCOPE_SHARED, 0]]);
+        for (const scene of scenes) counts.set(scene.id, 0);
+        for (const character of characters) {
+            const scope = this._effectiveCharacterScope(character, usageIndex, validSceneIds);
+            counts.set(scope, Number(counts.get(scope) || 0) + 1);
+        }
+
+        const preferredSceneId = this.editor?.selectedSceneId || "";
+        const orderedScenes = [...scenes].sort((a, b) => {
+            if (a.id === preferredSceneId) return -1;
+            if (b.id === preferredSceneId) return 1;
+            return String(a.title || "").localeCompare(String(b.title || ""), "ru");
+        });
+        const options = orderedScenes.map(scene => ({
+            value: scene.id,
+            label: `${scene.id === preferredSceneId ? "Текущая катсцена" : "Катсцена"}: ${scene.title || "Без названия"} (${counts.get(scene.id) || 0})`,
+            selected: this.selectedScope === scene.id
+        }));
+        options.push({
+            value: CHARACTER_SCOPE_SHARED,
+            label: `Общие / между катсценами (${counts.get(CHARACTER_SCOPE_SHARED) || 0})`,
+            selected: this.selectedScope === CHARACTER_SCOPE_SHARED
+        });
+        options.push({
+            value: CHARACTER_SCOPE_ALL,
+            label: `Все персонажи (${characters.length})`,
+            selected: this.selectedScope === CHARACTER_SCOPE_ALL
+        });
+        return options;
+    }
+
+    _characterSceneOptions(scenes, selectedScope) {
+        const selectedSceneId = selectedScope === CHARACTER_SCOPE_SHARED ? CHARACTER_SCENE_SHARED : selectedScope;
+        return [
+            {
+                value: CHARACTER_SCENE_SHARED,
+                label: "Общий / между катсценами",
+                selected: selectedSceneId === CHARACTER_SCENE_SHARED
+            },
+            ...scenes.map(scene => ({
+                value: scene.id,
+                label: scene.title || "Без названия",
+                selected: selectedSceneId === scene.id
+            }))
+        ];
     }
 
     async _prepareContext(options) {
         const context = await super._prepareContext(options);
-        const characters = VNSceneStore.characters.map(character => {
-            const copy = duplicateData(character);
-            copy.portraits = Array.isArray(copy.portraits) ? copy.portraits : [];
-            copy.positionOptions = this._positionOptions(copy.defaultPosition);
-            copy.portraitCount = copy.portraits.length;
-            copy.expanded = this.expandedCharacterIds.has(copy.id);
-            return copy;
-        });
+        const data = VNSceneStore.data;
+        const scenes = (Array.isArray(data.scenes) ? data.scenes : []).map(scene => ({
+            id: scene.id,
+            title: scene.title || "Без названия"
+        }));
+        const validSceneIds = new Set(scenes.map(scene => scene.id));
+        const validScopes = new Set([CHARACTER_SCOPE_ALL, CHARACTER_SCOPE_SHARED, ...validSceneIds]);
+        if (!validScopes.has(this.selectedScope)) {
+            const editorSceneId = this.editor?.selectedSceneId || "";
+            this.selectedScope = validSceneIds.has(editorSceneId) ? editorSceneId : CHARACTER_SCOPE_ALL;
+        }
+
+        const usageIndex = this._sceneUsageIndex(data);
+        const allCharacters = Array.isArray(data.characters) ? data.characters : [];
+        const characters = allCharacters
+            .filter(character => {
+                if (this.selectedScope === CHARACTER_SCOPE_ALL) return true;
+                return this._effectiveCharacterScope(character, usageIndex, validSceneIds) === this.selectedScope;
+            })
+            .map(character => {
+                const copy = duplicateData(character);
+                const effectiveScope = this._effectiveCharacterScope(copy, usageIndex, validSceneIds);
+                copy.portraits = Array.isArray(copy.portraits) ? copy.portraits : [];
+                copy.positionOptions = this._positionOptions(copy.defaultPosition);
+                copy.sceneOptions = this._characterSceneOptions(scenes, effectiveScope);
+                copy.portraitCount = copy.portraits.length;
+                copy.expanded = this.expandedCharacterIds.has(copy.id);
+                return copy;
+            });
+
         return Object.assign(context, {
             characters,
-            hasCharacters: characters.length > 0
+            hasCharacters: characters.length > 0,
+            isFiltered: this.selectedScope !== CHARACTER_SCOPE_ALL,
+            scopeOptions: this._scopeOptions(scenes, allCharacters, usageIndex, validSceneIds),
+            visibleCharacterCount: characters.length,
+            totalCharacterCount: allCharacters.length
         });
     }
 
@@ -38,7 +151,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
     _captureExpandedCharacters() {
         if (!this.element) return;
         this.expandedCharacterIds = new Set(
-            [...this.element.querySelectorAll("details[data-character-row][open]")]
+            [...this.element.querySelectorAll('[data-character-row][data-expanded="true"]')]
                 .map(row => row.dataset.characterId)
                 .filter(Boolean)
         );
@@ -48,12 +161,13 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         super._attachPartListeners(partId, htmlElement, options);
         if (partId !== "main") return;
 
-        for (const row of htmlElement.querySelectorAll("details[data-character-row]")) {
-            row.addEventListener("toggle", () => {
-                const characterId = row.dataset.characterId;
-                if (!characterId) return;
-                if (row.open) this.expandedCharacterIds.add(characterId);
-                else this.expandedCharacterIds.delete(characterId);
+        const scopeFilter = htmlElement.querySelector("[data-character-scope-filter]");
+        if (scopeFilter) {
+            scopeFilter.addEventListener("change", async () => {
+                this._captureExpandedCharacters();
+                await this._commitCharacters();
+                this.selectedScope = scopeFilter.value || CHARACTER_SCOPE_ALL;
+                this.render();
             });
         }
 
@@ -67,13 +181,18 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
     }
 
     _readCharacters() {
-        if (!this.element) return VNSceneStore.characters;
+        const storedCharacters = VNSceneStore.characters;
+        if (!this.element) return storedCharacters;
+
+        const byId = new Map(storedCharacters.map(character => [character.id, character]));
         const rows = [...this.element.querySelectorAll("[data-character-row]")];
-        const characters = [];
         for (const row of rows) {
             const id = row.dataset.characterId;
+            if (!id) continue;
+            const existing = byId.get(id) || {};
             const nameInput = row.querySelector("[data-character-name]");
             const positionInput = row.querySelector("[data-character-position]");
+            const sceneInput = row.querySelector("[data-character-scene]");
             const portraits = [];
             for (const portraitRow of row.querySelectorAll("[data-portrait-row]")) {
                 const labelInput = portraitRow.querySelector("[data-portrait-label]");
@@ -84,14 +203,25 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
                     path: pathInput ? pathInput.value : ""
                 });
             }
-            characters.push(sanitizeCharacter({
+            byId.set(id, sanitizeCharacter({
+                ...existing,
                 id,
                 name: nameInput ? nameInput.value : "Без имени",
                 defaultPosition: positionInput ? positionInput.value : "left",
+                sceneId: sceneInput ? sceneInput.value : existing.sceneId || "",
                 portraits
             }));
         }
-        return characters;
+        return [...byId.values()];
+    }
+
+    _newCharacterSceneId() {
+        const sceneIds = new Set(VNSceneStore.sceneSummaries.map(scene => scene.id));
+        if (sceneIds.has(this.selectedScope)) return this.selectedScope;
+        if (this.selectedScope === CHARACTER_SCOPE_SHARED) return CHARACTER_SCENE_SHARED;
+        const editorSceneId = this.editor?.selectedSceneId || "";
+        if (sceneIds.has(editorSceneId)) return editorSceneId;
+        return CHARACTER_SCENE_SHARED;
     }
 
     async _commitCharacters() {
@@ -106,6 +236,22 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         else if (typeof this.editor.render === "function") this.editor.render();
     }
 
+    static _onToggleCharacter(event, target) {
+        event.preventDefault();
+        const characterId = target.dataset.characterId;
+        if (!characterId) return;
+        const row = target.closest("[data-character-row]");
+        if (!row) return;
+
+        const expanded = row.dataset.expanded !== "true";
+        row.dataset.expanded = expanded ? "true" : "false";
+        target.setAttribute("aria-expanded", expanded ? "true" : "false");
+        const body = row.querySelector("[data-character-card-body]");
+        if (body) body.hidden = !expanded;
+        if (expanded) this.expandedCharacterIds.add(characterId);
+        else this.expandedCharacterIds.delete(characterId);
+    }
+
     static async _onSave(event, target) {
         event.preventDefault();
         await this._commitCharacters();
@@ -117,7 +263,9 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         event.preventDefault();
         const characters = this._readCharacters();
         this._captureExpandedCharacters();
-        characters.push(createCharacterPreset("Новый персонаж", "Основной", "", "left"));
+        const character = createCharacterPreset("Новый персонаж", "Основной", "", "left", this._newCharacterSceneId());
+        characters.push(character);
+        this.expandedCharacterIds.add(character.id);
         await VNSceneStore.replaceCharacters(characters);
         this._refreshEditor();
         this.render();
@@ -196,6 +344,7 @@ VNCharacterManagerApp.DEFAULT_OPTIONS = {
         height: 720
     },
     actions: {
+        toggleCharacter: VNCharacterManagerApp._onToggleCharacter,
         save: VNCharacterManagerApp._onSave,
         addCharacter: VNCharacterManagerApp._onAddCharacter,
         deleteCharacter: VNCharacterManagerApp._onDeleteCharacter,
