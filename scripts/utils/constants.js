@@ -11,6 +11,11 @@ export const SETTINGS = {
     DISABLE_TRANSITIONS: "disableTransitions",
     INSTANT_TEXT: "instantText"
 };
+export const TEXT_SPEED = Object.freeze({
+    MIN: 10,
+    MAX: 500,
+    DEFAULT: 160
+});
 export const SOCKET_NAME = `module.${MODULE_ID}`;
 export const FRAME_TYPES = {
     DIALOGUE: "dialogue",
@@ -61,7 +66,7 @@ export const PLAYER_MODES = {
     GM: "gm",
     VOTE: "vote"
 };
-export const DATA_SCHEMA_VERSION = 13;
+export const DATA_SCHEMA_VERSION = 14;
 export const DEFAULT_DATA = {
     schemaVersion: DATA_SCHEMA_VERSION,
     version: 3,
