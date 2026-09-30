@@ -15,11 +15,42 @@
 
 .fbl-vn-character-toolbar {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
   padding: 8px;
   border-bottom: 1px solid var(--vn-border);
   background: var(--vn-surface-2);
+}
+
+.fbl-vn-character-scope-picker {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(220px, 360px) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.fbl-vn-character-scope-picker label {
+  color: var(--vn-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fbl-vn-character-scope-picker select {
+  min-width: 0;
+}
+
+.fbl-vn-character-scope-count {
+  color: var(--vn-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.fbl-vn-character-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .fbl-vn-character-list {
@@ -34,33 +65,39 @@
 }
 
 .fbl-vn-character-card {
+  min-height: 44px;
   overflow: hidden;
   border: 1px solid var(--vn-border);
   border-radius: var(--vn-radius-md);
   background: var(--vn-surface-1);
 }
 
-.fbl-vn-character-summary {
+button.fbl-vn-character-summary {
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 10px;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: 42px;
-  padding: 8px 10px;
-  list-style: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--vn-text);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   user-select: none;
 }
 
-.fbl-vn-character-summary::-webkit-details-marker {
-  display: none;
-}
-
-.fbl-vn-character-summary:hover {
+button.fbl-vn-character-summary:hover {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.fbl-vn-character-summary:focus-visible {
+button.fbl-vn-character-summary:focus-visible {
   outline: 2px solid var(--vn-accent);
   outline-offset: -2px;
 }
@@ -70,7 +107,7 @@
   transition: transform 120ms ease;
 }
 
-.fbl-vn-character-card[open] .fbl-vn-character-chevron {
+.fbl-vn-character-card[data-expanded="true"] .fbl-vn-character-chevron {
   transform: rotate(90deg);
 }
 
@@ -96,9 +133,13 @@
   border-top: 1px solid var(--vn-border);
 }
 
+.fbl-vn-character-card-body[hidden] {
+  display: none;
+}
+
 .fbl-vn-character-fields {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(160px, 220px) 34px 34px;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(130px, 0.7fr) minmax(170px, 1fr) 34px 34px;
   gap: 6px;
   align-items: end;
 }
@@ -126,9 +167,59 @@
   padding: 0;
 }
 
-@media (max-width: 700px) {
+.fbl-vn-character-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 28px 16px;
+  color: var(--vn-muted);
+  text-align: center;
+}
+
+.fbl-vn-character-empty p {
+  margin: 0;
+}
+
+.fbl-vn-character-empty .hint {
+  max-width: 560px;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .fbl-vn-character-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fbl-vn-character-scope-picker {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .fbl-vn-character-toolbar-actions {
+    justify-content: flex-end;
+  }
+
   .fbl-vn-character-fields {
-    grid-template-columns: minmax(0, 1fr) minmax(120px, 180px) 34px 34px;
+    grid-template-columns: minmax(0, 1fr) minmax(130px, 190px) 34px 34px;
+  }
+
+  .fbl-vn-character-name-field {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .fbl-vn-character-position-field {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .fbl-vn-character-scene-field {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+
+  .fbl-vn-character-fields > button {
+    grid-row: 1;
   }
 
   .fbl-vn-portrait-row {
@@ -137,7 +228,15 @@
 }
 
 @media (max-width: 540px) {
-  .fbl-vn-character-summary {
+  .fbl-vn-character-scope-picker {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .fbl-vn-character-scope-picker label {
+    grid-column: 1 / -1;
+  }
+
+  button.fbl-vn-character-summary {
     grid-template-columns: 18px minmax(0, 1fr);
   }
 
@@ -149,9 +248,23 @@
     grid-template-columns: minmax(0, 1fr) 34px 34px;
   }
 
-  .fbl-vn-character-fields .form-group:nth-child(2) {
+  .fbl-vn-character-name-field {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .fbl-vn-character-position-field {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+
+  .fbl-vn-character-scene-field {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .fbl-vn-character-fields > button {
+    grid-row: 1;
   }
 
   .fbl-vn-portrait-row {

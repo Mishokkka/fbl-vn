@@ -1,29 +1,60 @@
 <section class="fbl-vn-ui fbl-vn-character-manager">
   <header class="fbl-vn-character-toolbar">
-    <button type="button" data-action="addCharacter"><i class="fa-solid fa-user-plus"></i> Добавить персонажа</button>
-    <button type="button" data-action="save"><i class="fa-solid fa-floppy-disk"></i> Сохранить</button>
+    <div class="fbl-vn-character-scope-picker">
+      <label for="fbl-vn-character-scope">Библиотека</label>
+      <select id="fbl-vn-character-scope" data-character-scope-filter>
+        {{#each scopeOptions}}
+          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+      <span class="fbl-vn-character-scope-count">{{visibleCharacterCount}} / {{totalCharacterCount}}</span>
+    </div>
+    <div class="fbl-vn-character-toolbar-actions">
+      <button type="button" data-action="addCharacter"><i class="fa-solid fa-user-plus"></i> Добавить персонажа</button>
+      <button type="button" data-action="save"><i class="fa-solid fa-floppy-disk"></i> Сохранить</button>
+    </div>
   </header>
 
   <div class="fbl-vn-character-list">
     {{#if hasCharacters}}
       {{#each characters}}
-        <details class="fbl-vn-character-card" data-character-row data-character-id="{{id}}" {{#if expanded}}open{{/if}}>
-          <summary class="fbl-vn-character-summary">
+        <article class="fbl-vn-character-card" data-character-row data-character-id="{{id}}" data-expanded="{{#if expanded}}true{{else}}false{{/if}}">
+          <button
+            type="button"
+            class="fbl-vn-character-summary"
+            data-action="toggleCharacter"
+            data-character-id="{{id}}"
+            aria-expanded="{{#if expanded}}true{{else}}false{{/if}}"
+            aria-controls="fbl-vn-character-body-{{id}}"
+          >
             <i class="fa-solid fa-chevron-right fbl-vn-character-chevron" aria-hidden="true"></i>
             <span class="fbl-vn-character-summary-name" data-character-summary-name>{{name}}</span>
             <span class="fbl-vn-character-summary-count">{{portraitCount}} портретов</span>
-          </summary>
+          </button>
 
-          <div class="fbl-vn-character-card-body">
+          <div
+            id="fbl-vn-character-body-{{id}}"
+            class="fbl-vn-character-card-body"
+            data-character-card-body
+            {{#if expanded}}{{else}}hidden{{/if}}
+          >
             <header class="fbl-vn-character-fields">
-              <div class="form-group">
+              <div class="form-group fbl-vn-character-name-field">
                 <label for="fbl-vn-character-name-{{id}}">Имя</label>
                 <input id="fbl-vn-character-name-{{id}}" type="text" data-character-name value="{{name}}" />
               </div>
-              <div class="form-group">
+              <div class="form-group fbl-vn-character-position-field">
                 <label for="fbl-vn-character-position-{{id}}">Позиция по умолчанию</label>
                 <select id="fbl-vn-character-position-{{id}}" data-character-position>
                   {{#each positionOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div class="form-group fbl-vn-character-scene-field">
+                <label for="fbl-vn-character-scene-{{id}}">Раздел библиотеки</label>
+                <select id="fbl-vn-character-scene-{{id}}" data-character-scene>
+                  {{#each sceneOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                   {{/each}}
                 </select>
@@ -49,10 +80,15 @@
               {{/each}}
             </div>
           </div>
-        </details>
+        </article>
       {{/each}}
     {{else}}
-      <p class="empty">Пресетов персонажей пока нет.</p>
+      <div class="fbl-vn-character-empty">
+        <p class="empty">В выбранном разделе библиотеки персонажей пока нет.</p>
+        {{#if isFiltered}}
+          <p class="hint">Переключите «Библиотеку» сверху, чтобы открыть персонажей другой катсцены или общий список.</p>
+        {{/if}}
+      </div>
     {{/if}}
   </div>
 </section>
