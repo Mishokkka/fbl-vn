@@ -22,6 +22,16 @@ function uniqueIds(ids) {
     return [...new Set((Array.isArray(ids) ? ids : []).filter(id => typeof id === "string" && id))];
 }
 
+function normalizeCharacterPresetPositions(source) {
+    const positions = {};
+    if (!source || typeof source !== "object" || Array.isArray(source)) return positions;
+    for (const [characterId, position] of Object.entries(source)) {
+        if (!characterId) continue;
+        positions[characterId] = ["auto", "left", "center", "right"].includes(position) ? position : "auto";
+    }
+    return positions;
+}
+
 function getNumberSetting(key, fallback = 1) {
     try {
         const value = game.settings?.get?.(MODULE_ID, key);
@@ -37,6 +47,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     constructor(options = {}) {
         super(options);
         this.scene = options.scene;
+        this._characterPresetPositions = normalizeCharacterPresetPositions(options.characterPresetPositions);
         this._buildPlaybackIndex();
         this.mode = options.mode !== undefined ? options.mode : PLAYER_MODES.INDIVIDUAL;
         this.leaderId = options.leaderId !== undefined ? options.leaderId : null;
@@ -182,6 +193,22 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         catch (_error) { return false; }
     }
 
+    static _characterPresetPositionsFromStore(scene) {
+        const ids = new Set();
+        for (const frame of Array.isArray(scene?.frames) ? scene.frames : []) {
+            if (frame?.characterId) ids.add(frame.characterId);
+            for (const character of Array.isArray(frame?.additionalCharacters) ? frame.additionalCharacters : []) {
+                if (character?.characterId) ids.add(character.characterId);
+            }
+        }
+        const positions = {};
+        for (const characterId of ids) {
+            const position = VNSceneStore.getCharacter(characterId)?.defaultPosition;
+            positions[characterId] = ["auto", "left", "center", "right"].includes(position) ? position : "auto";
+        }
+        return positions;
+    }
+
     static async openScene(payload) {
         if (!payload || !payload.scene) return;
         const scene = payload.scene;
@@ -189,12 +216,17 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         for (const app of [...VNPlayerApp.active.values()]) {
             await app.close({ force: true });
         }
+        const networked = payload.networked === true || Array.isArray(payload.targetIds);
+        const characterPresetPositions = payload.characterPresetPositions && typeof payload.characterPresetPositions === "object"
+            ? payload.characterPresetPositions
+            : (networked ? {} : VNPlayerApp._characterPresetPositionsFromStore(scene));
         const app = new VNPlayerApp({
             scene,
             mode: payload.mode !== undefined ? payload.mode : PLAYER_MODES.INDIVIDUAL,
             leaderId: payload.leaderId !== undefined ? payload.leaderId : null,
             participantIds: payload.participantIds || [],
-            networked: payload.networked === true || Array.isArray(payload.targetIds)
+            characterPresetPositions,
+            networked
         });
         try {
             await app.render(true);
@@ -235,6 +267,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             scene,
             mode: PLAYER_MODES.INDIVIDUAL,
             leaderId: game.user.id,
+            characterPresetPositions: VNPlayerApp._characterPresetPositionsFromStore(scene),
             networked: false,
             framePreview: true
         });
@@ -269,6 +302,9 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (payload?.mode !== undefined) existing.mode = payload.mode;
         if (payload?.leaderId !== undefined) existing.leaderId = payload.leaderId;
         if (payload?.networked === true || Array.isArray(payload?.targetIds)) existing.networked = true;
+        if (payload?.characterPresetPositions && typeof payload.characterPresetPositions === "object") {
+            existing._characterPresetPositions = normalizeCharacterPresetPositions(payload.characterPresetPositions);
+        }
 
         const nextParticipants = Array.isArray(payload?.participantIds) ? uniqueIds(payload.participantIds) : existing.participantIds;
         const participantsChanged = JSON.stringify(nextParticipants) !== JSON.stringify(existing.participantIds);
@@ -323,6 +359,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!isCurrentRecall()) return existing;
         existing.counterState = nextCounterState;
         existing.visualState = nextVisualState;
+        existing._restoreAutoPortraitState(state.automaticPortraitState);
         if (existing.mode === PLAYER_MODES.VOTE && state.voteState) existing._applyVoteState(state.voteState);
         if (stateChanged || participantsChanged) await existing.render();
         return existing;
@@ -449,6 +486,11 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             currentTextIndex: app.currentTextIndex,
             counterState: Object.assign({}, app.counterState),
             visualState: Object.assign({}, app.visualState),
+            automaticPortraitState: {
+                characterId: app._autoPortraitCharacterId,
+                side: app._autoPortraitSide,
+                lastDialogueSide: app._lastDialoguePortraitSide
+            },
             voteState: app.mode === PLAYER_MODES.VOTE ? app._buildVoteStateFromLeaderVotes() : null
         };
     }
@@ -784,6 +826,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.counterState = getInitialCounterState(this.scene);
             this.audio.pauseExternalAudio();
             this.visualState = createVisualState();
+            this._resetAutoPortraitSequence();
             const frames = Array.isArray(this.scene.frames) ? this.scene.frames : [];
             const firstId = this.scene.startFrame || (frames[0] ? frames[0].id : null);
             await this.goToFrame(firstId, { force: true });
@@ -832,6 +875,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.audio.pauseExternalAudio();
             this.counterState = nextCounterState;
             this.visualState = nextVisualState;
+            this._restoreAutoPortraitState(state.automaticPortraitState);
             this.currentFrameId = frame.id;
             this._contentHidden = false;
             this.currentTextIndex = requestedIndex;
@@ -1303,9 +1347,16 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     _characterDefaultPosition(characterId) {
         if (!characterId) return "auto";
-        const character = VNSceneStore.getCharacter(characterId);
-        const position = character?.defaultPosition;
+        const position = this._characterPresetPositions?.[characterId];
         return ["auto", "left", "center", "right"].includes(position) ? position : "auto";
+    }
+
+    _restoreAutoPortraitState(state) {
+        this._autoPortraitCharacterId = typeof state?.characterId === "string" ? state.characterId : "";
+        this._autoPortraitSide = ["left", "right"].includes(state?.side) ? state.side : "";
+        this._lastDialoguePortraitSide = ["left", "right"].includes(state?.lastDialogueSide)
+            ? state.lastDialogueSide
+            : "";
     }
 
     _resetAutoPortraitSequence() {
