@@ -65,7 +65,7 @@ if (!exists(exportFormatPath)) errors.push("Export format documentation is missi
 if (exists(exportExamplePath)) {
   try {
     const example = JSON.parse(read(exportExamplePath));
-    if (example.schemaVersion !== 13 || example.version !== 3) errors.push("Export example must use current schemaVersion 13 and storage version 3");
+    if (example.schemaVersion !== 14 || example.version !== 3) errors.push("Export example must use current schemaVersion 14 and storage version 3");
     if (!Array.isArray(example.scenes) || !example.scenes.length) errors.push("Export example must contain at least one scene");
     if (!Array.isArray(example.assets) || !Array.isArray(example.characters)) errors.push("Export example must show assets and characters arrays");
     const exampleScene = example.scenes?.[0] || null;
@@ -93,6 +93,7 @@ if (exists(exportExamplePath)) {
     if (!routingTrust || trustBeforeChoice < Number(routingTrust.value || 0)) errors.push("Export example conditional routing must be reachable from its documented counter progression");
     if (!secretTrust || trustBeforeChoice < Number(secretTrust.value || 0)) errors.push("Export example conditional choice must be reachable from its documented counter progression");
     if (!Number.isFinite(Number(exampleScene?.audioExitFadeMs))) errors.push("Export example scene must document audioExitFadeMs");
+    if (exampleFrames.some(frame => !Number.isFinite(Number(frame?.textSpeed)))) errors.push("Every export example frame must document textSpeed");
     const exampleAudioCues = exampleFrames.flatMap(frame => [...(frame?.musicCues || []), ...(frame?.sfxCues || [])]);
     for (const cue of exampleAudioCues) {
       for (const field of ["repeatCount", "repeatDelayMs", "startDelayMs", "fadeInMs", "fadeOutMs", "crossFadeMs", "continueRepeats"]) {
@@ -106,7 +107,7 @@ if (exists(exportExamplePath)) {
 }
 if (exists(exportFormatPath)) {
   const exportFormatSource = read(exportFormatPath);
-  if (!exportFormatSource.includes("schemaVersion: 13") || !exportFormatSource.includes("fbl-vn-export.example.json")) {
+  if (!exportFormatSource.includes("schemaVersion: 14") || !exportFormatSource.includes("fbl-vn-export.example.json")) {
     errors.push("Export format documentation must identify the current schema and example file");
   }
 }
@@ -130,6 +131,7 @@ if (!/clean\.transition\s*=\s*\["none",\s*"fade",\s*"dark"\]\.includes\(clean\.t
 if (!/const transition\s*=\s*frame && \["none",\s*"fade",\s*"dark"\]\.includes\(frame\.transition\)\s*\?\s*frame\.transition\s*:\s*"none"/.test(playerSource)) errors.push("Player must reject unsupported transition classes from raw scene payloads");
 if (!characterManagerSource.includes("this.expandedCharacterIds = new Set()")) errors.push("Character manager must start with every preset collapsed");
 if (!characterManagerSource.includes("this.selectedScope = options.scope || this.editor?.selectedSceneId || CHARACTER_SCOPE_ALL")) errors.push("Character manager must default to the currently edited cutscene library");
+if (!characterManagerSource.includes('["auto", "Стандарт / не задано"]')) errors.push("Character presets must expose an automatic/default side option");
 if (!characterManagerSource.includes("copy.expanded = this.expandedCharacterIds.has(copy.id)")) errors.push("Character manager must preserve expanded cards across rerenders");
 if (!characterManagerSource.includes('for (const row of this.element.querySelectorAll("[data-character-row]"))') || !characterManagerSource.includes("else this.expandedCharacterIds.delete(characterId);")) errors.push("Character manager capture must update only rendered rows so hidden-scope expansion state survives");
 if (!characterManagerSource.includes("_sceneUsageIndex(data)") || !characterManagerSource.includes("frame?.additionalCharacters")) errors.push("Character manager must infer legacy preset cutscene usage from primary and additional frame characters");
@@ -142,6 +144,10 @@ if (!/button\.fbl-vn-character-summary\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?di
 if (!schemaSource.includes("export function createFrameCharacter")) errors.push("Frame schema must expose additional character records");
 if (!schemaSource.includes("clean.additionalCharacters = Array.isArray(clean.additionalCharacters)")) errors.push("Frame sanitization must normalize additional characters");
 if (!editorFrameTemplateSource.includes('data-action="addFrameCharacter"') || !editorFrameTemplateSource.includes('data-action="deleteFrameCharacter"') || !editorFrameTemplateSource.includes("data-additional-character-row")) errors.push("Frame editor must expose add/remove character rows");
+if (!editorFrameTemplateSource.includes('name="frame.textSpeed"') || !editorSource.includes('frame.textSpeed = Number(this._readValue("frame.textSpeed"')) errors.push("Frame editor must expose and persist per-frame text speed");
+if (!editorSource.includes('["auto", "По пресету / авто"]')) errors.push("Frame editor must expose preset/automatic portrait inheritance");
+if (!schemaSource.includes('portraitPosition: "auto"') || !schemaSource.includes("clean.textSpeed = Math.max(TEXT_SPEED.MIN")) errors.push("Frame schema must default portrait inheritance and sanitize text speed");
+if (!playerSource.includes("_resolvePrimaryPortraitPosition(frame)") || !playerSource.includes("_resetAutoPortraitSequence()") || !playerSource.includes("_resolveAdditionalPortraitPosition(character)")) errors.push("Player must resolve preset, automatic, and additional portrait sides");
 if (!editorSource.includes("_applyAdditionalCharacterPreset") || !editorSource.includes("_applyAdditionalCharacterPortrait")) errors.push("Frame editor must bind presets and portraits for additional characters");
 if (!playerTemplateSource.includes("{{#each frameCharacters}}")) errors.push("Player template must render multiple frame characters");
 if (!playerSource.includes("frameCharacters.push")) errors.push("Player context must compose multiple visible characters");
@@ -256,11 +262,13 @@ const editorGridRule = editorLayoutCssSource.match(/(?:^|\n)\.fbl-vn-editor\s*\{
 if (/height:\s*100%;/.test(editorGridRule)) errors.push("Editor grid must not claim 100% of the framed ApplicationV2 height");
 if (!/\.fbl-vn-character-manager\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/.test(characterCssSource)) errors.push("Character manager must constrain its grid so the preset list can scroll");
 if (!/\.fbl-vn-character-list\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/.test(characterCssSource)) errors.push("Character preset list must retain vertical scrolling");
-if (!constantsSource.includes("DATA_SCHEMA_VERSION = 13")) errors.push("Data schema version must be 13");
+if (!constantsSource.includes("DATA_SCHEMA_VERSION = 14")) errors.push("Data schema version must be 14");
 if (!migrationSource.includes("function migrateToV11")) errors.push("Schema v11 migration is missing");
 if (!migrationSource.includes("function migrateToV12") || !migrationSource.includes("schemaVersion < 12")) errors.push("Schema v12 compound-condition migration is missing");
 if (!migrationSource.includes("function migrateToV13") || !migrationSource.includes("schemaVersion < 13") || !migrationSource.includes("audioExitFadeMs")) errors.push("Schema v13 audio timing migration is missing");
+if (!migrationSource.includes("function migrateToV14") || !migrationSource.includes("schemaVersion < 14") || !migrationSource.includes("textSpeed") || !migrationSource.includes('portraitPosition === "left"')) errors.push("Schema v14 portrait inheritance/text speed migration is missing");
 if (!playerSource.includes("splitTextGraphemes(plainText).length > 900") || !playerSource.includes("splitTextGraphemes(child.data)")) errors.push("Typewriter must count and reveal Unicode grapheme clusters");
+if (!playerSource.includes("const charsPerMs = textSpeed / 1000") || !playerSource.includes("_textSpeedForFrame(frame)")) errors.push("Typewriter must honor per-frame text speed");
 if (!read("scripts/utils/rich-text.js").includes("export function splitTextGraphemes")) errors.push("Shared grapheme segmentation helper is missing");
 if (!schemaSource.includes("export function collectFrameAssetPaths") || !schemaSource.includes("export function collectFrameEntryAssetPaths")) errors.push("Schema must expose full-frame and frame-entry asset collection for progressive preload");
 if (!preloaderSource.includes("collectWindowFrameIds") || !preloaderSource.includes("collectWindowPaths") || !preloaderSource.includes("collectStartupWindowPaths")) errors.push("Preloader must build bounded startup and nearby-frame windows");
