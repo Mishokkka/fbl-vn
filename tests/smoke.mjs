@@ -1675,14 +1675,17 @@ autoSidePlayer.visualState = { background: "", portrait: "", portraitPosition: "
 autoSidePlayer._autoPortraitCharacterId = "";
 autoSidePlayer._autoPortraitSide = "";
 autoSidePlayer._lastDialoguePortraitSide = "";
+autoSidePlayer._characterPresetPositions = {
+  "auto-a": "auto",
+  "auto-b": "auto",
+  "auto-c": "auto",
+  "preset-right": "right",
+  "preset-left": "left"
+};
 const savedAutoGetCharacter = VNSceneStore.getCharacter;
-VNSceneStore.getCharacter = characterId => ({
-  "auto-a": { id: "auto-a", defaultPosition: "auto" },
-  "auto-b": { id: "auto-b", defaultPosition: "auto" },
-  "auto-c": { id: "auto-c", defaultPosition: "auto" },
-  "preset-right": { id: "preset-right", defaultPosition: "right" },
-  "preset-left": { id: "preset-left", defaultPosition: "left" }
-}[characterId] || null);
+VNSceneStore.getCharacter = () => {
+  throw new Error("Playback position resolution must not read the private character store.");
+};
 const autoDialogue = (characterId, speaker) => {
   const frame = createFrame("dialogue");
   frame.characterId = characterId;
@@ -1712,6 +1715,14 @@ assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "A non-dialogu
 assert.equal(autoSidePlayer._textSpeedForFrame({ textSpeed: 80 }), 80, "Player must use the frame text speed");
 assert.equal(autoSidePlayer._textSpeedForFrame({ textSpeed: 999 }), TEXT_SPEED.MAX, "Player must clamp raw text speed payloads");
 assert.equal(autoSidePlayer._textSpeedForFrame({}), TEXT_SPEED.DEFAULT, "Player must fall back to the default text speed");
+autoSidePlayer._restoreAutoPortraitState({ characterId: "auto-b", side: "right", lastDialogueSide: "right" });
+assert.equal(autoSidePlayer._autoPortraitCharacterId, "auto-b", "Reconnect restoration must preserve the current automatic speaker");
+assert.equal(autoSidePlayer._autoPortraitSide, "right", "Reconnect restoration must preserve the current automatic side");
+assert.equal(autoSidePlayer._lastDialoguePortraitSide, "right", "Reconnect restoration must preserve the alternation history");
+autoSidePlayer._restoreAutoPortraitState({ characterId: 42, side: "center", lastDialogueSide: "center" });
+assert.equal(autoSidePlayer._autoPortraitCharacterId, "", "Invalid reconnect portrait state must reset the automatic speaker");
+assert.equal(autoSidePlayer._autoPortraitSide, "", "Invalid reconnect portrait state must reset the current side");
+assert.equal(autoSidePlayer._lastDialoguePortraitSide, "", "Invalid reconnect portrait state must reset alternation history");
 VNSceneStore.getCharacter = savedAutoGetCharacter;
 
 const player = Object.create(VNPlayerApp.prototype);
@@ -3029,6 +3040,9 @@ reconnectVotePlayer._participantConnectionState = new Map();
 reconnectVotePlayer._leaderVotes = new Map([[playerUser.id, { action: "continue", choiceId: "" }]]);
 reconnectVotePlayer.counterState = { counter: 2 };
 reconnectVotePlayer.visualState = { background: "resume-bg.webp", portrait: "", portraitPosition: "left" };
+reconnectVotePlayer._autoPortraitCharacterId = "reconnect-character";
+reconnectVotePlayer._autoPortraitSide = "right";
+reconnectVotePlayer._lastDialoguePortraitSide = "right";
 reconnectVotePlayer.scene = scene;
 reconnectVotePlayer.leaderId = gm1.id;
 reconnectVotePlayer.started = true;
@@ -3038,6 +3052,11 @@ const reconnectVoteState = VNPlayerApp.getSyncState("scene-vote-reconnect-state"
 assert.deepEqual(reconnectVoteState.voteState.voters, [playerUser.id], "Reconnect snapshot must include current votes from remaining players");
 assert.equal(reconnectVoteState.voteState.total, 2, "Reconnect snapshot must include the current player-only quorum");
 assert.deepEqual(reconnectVoteState.voteState.participantIds, [playerUser.id, playerUser2.id], "Reconnect snapshot must carry the current vote roster");
+assert.deepEqual(
+  reconnectVoteState.automaticPortraitState,
+  { characterId: "reconnect-character", side: "right", lastDialogueSide: "right" },
+  "Reconnect snapshot must carry automatic portrait alternation state"
+);
 VNPlayerApp.active.delete("scene-vote-reconnect-state");
 
 const savedFoundry = globalThis.foundry;
