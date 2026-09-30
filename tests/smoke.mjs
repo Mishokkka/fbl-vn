@@ -97,12 +97,12 @@ const { VNAudioController } = await import("../scripts/playback/vn-audio.js");
 const { VNPreloadController, VNPreloader } = await import("../scripts/playback/vn-preloader.js");
 const { applyChoiceCounterEffect, applyFrameCounterEffect, collectAssetPaths, collectFrameAssetPaths, collectFrameEntryAssetPaths, createAudioCue, createCharacterPreset, createCounterCondition, createFrame, createFrameCharacter, createScene, createSceneCounter, createTextBlock, getFrameReferences, isChoiceAvailable, resolveFrameNextRouting, sanitizeFrame, sanitizeScene, validateScene } = await import("../scripts/data/schema.js");
 const { migrateData } = await import("../scripts/data/migrations.js");
-const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, DATA_SCHEMA_VERSION, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
+const { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, DATA_SCHEMA_VERSION, MODULE_ID, PLAYER_MODES, SETTINGS, TEXT_PRESENTATIONS, TEXT_SPEED, VIGNETTE_MODES } = await import("../scripts/utils/constants.js");
 const { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml, splitTextGraphemes } = await import("../scripts/utils/rich-text.js");
 const { duplicateData, localize, mergeData, randomId, serializeJson } = await import("../scripts/utils/foundry-helpers.js");
 
 VNSceneStore.registerSettings();
-assert.equal(DATA_SCHEMA_VERSION, 13, "Audio timing release must use schema v13");
+assert.equal(DATA_SCHEMA_VERSION, 14, "Portrait inheritance and frame text speed must use schema v14");
 assert.equal(game.settings.settings.has(`${MODULE_ID}.${SETTINGS.PRELOAD_AHEAD_DEPTH}`), true, "Long-range preload depth must be registered as a world setting");
 assert.equal(game.settings.get(MODULE_ID, SETTINGS.PRELOAD_AHEAD_DEPTH), 10, "Long-range preload target depth must default to 10");
 
@@ -167,7 +167,8 @@ scene.frames[0].sfxCues = [
 assert.deepEqual(new Set(collectAssetPaths(scene)), new Set(["music-a.ogg", "music-b.ogg", "wind.ogg"]), "Preload collection must include every playable audio cue");
 const nested = createFrame("dialogue");
 assert.equal(nested.textPresentation, TEXT_PRESENTATIONS.BOX, "New frames must use the normal dialogue box by default");
-assert.equal(nested.portraitPosition, "left", "New frames must default portraits to the left");
+assert.equal(nested.portraitPosition, "auto", "New frames must inherit portrait position by default");
+assert.equal(nested.textSpeed, TEXT_SPEED.DEFAULT, "New frames must use the default typewriter speed");
 assert.equal(nested.vignetteMode, VIGNETTE_MODES.NONE, "New frames must disable the vignette by default");
 assert.equal(nested.transition, "none", "New frames must disable visual transitions by default");
 assert.equal(nested.showSpeakerName, true, "New frames must show the primary character name by default");
@@ -179,10 +180,12 @@ const extraCharacter = createFrameCharacter({ name: "Companion", portrait: "comp
 assert.equal(extraCharacter.showName, true, "Additional frame characters must show their names by default");
 scene.frames[0].additionalCharacters.push(extraCharacter);
 assert.equal(collectAssetPaths({ frames: [scene.frames[0]] }).includes("companion.png"), true, "Additional character portraits must be preloaded");
-assert.equal(createCharacterPreset("Left default").defaultPosition, "left", "New character presets must default to the left");
+assert.equal(createCharacterPreset("Automatic default").defaultPosition, "auto", "New character presets must default to automatic placement");
 assert.equal(createCharacterPreset("Scoped", "Main", "", "left", "scene-a").sceneId, "scene-a", "Character presets must preserve their cutscene library assignment");
 const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid", transition: "legacy" });
-assert.equal(invalidPositionFrame.portraitPosition, "left", "Invalid portrait positions must sanitize to left");
+assert.equal(invalidPositionFrame.portraitPosition, "auto", "Invalid portrait positions must sanitize to automatic placement");
+assert.equal(sanitizeFrame({ ...nested, textSpeed: 999 }).textSpeed, TEXT_SPEED.MAX, "Frame text speed must clamp to its upper bound");
+assert.equal(sanitizeFrame({ ...nested, textSpeed: 0 }).textSpeed, TEXT_SPEED.MIN, "Frame text speed must clamp to its lower bound");
 assert.equal(invalidPositionFrame.vignetteMode, VIGNETTE_MODES.NONE, "Invalid vignette modes must sanitize to none");
 assert.equal(invalidPositionFrame.transition, "none", "Unsupported transition values must sanitize to none");
 const formattedBlock = createTextBlock("Hello\nworld");
@@ -499,7 +502,7 @@ assert.equal(staleGenerationResults[0].cancelled, true, "Changing preload genera
 assert.equal(pendingImages[1].released, true, "Stale speculative image requests must release their browser Image source");
 globalThis.Image = savedImage;
 
-await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 14, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const sceneSummaries = VNSceneStore.sceneSummaries;
 assert.equal(sceneSummaries.length, 1, "Scene summaries must expose one lightweight row per stored scene");
@@ -1265,9 +1268,28 @@ const schema12Scene = createScene();
 delete schema12Scene.audioExitFadeMs;
 schema12Scene.frames[0].musicCues = [{ id: "v12-audio", action: AUDIO_ACTIONS.PLAY, channel: "music-v12", src: "v12.ogg", loop: true }];
 const schema12Migrated = migrateData({ schemaVersion: 12, version: 3, scenes: [schema12Scene], assets: [], characters: [] });
-assert.equal(schema12Migrated.schemaVersion, 13, "Schema v12 exports must migrate explicitly to schema v13");
+assert.equal(schema12Migrated.schemaVersion, 14, "Schema v12 exports must migrate through to current schema v14");
 assert.equal(schema12Migrated.scenes[0].audioExitFadeMs, 0, "Schema v12 scenes must retain immediate audio shutdown by default");
 assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].crossFadeMs, 0, "Schema v12 cues must gain zeroed timing fields");
+
+const schema13Scene = createScene();
+schema13Scene.frames[0].portraitPosition = "left";
+delete schema13Scene.frames[0].textSpeed;
+schema13Scene.frames[0].additionalCharacters = [
+  createFrameCharacter({ id: "legacy-extra", name: "Legacy Extra", portraitPosition: "right" })
+];
+const schema13Migrated = migrateData({
+  schemaVersion: 13,
+  version: 3,
+  scenes: [schema13Scene],
+  assets: [],
+  characters: [{ id: "legacy-character", name: "Legacy", defaultPosition: "left", sceneId: "", portraits: [] }]
+});
+assert.equal(schema13Migrated.schemaVersion, 14, "Schema v13 exports must migrate explicitly to schema v14");
+assert.equal(schema13Migrated.scenes[0].frames[0].portraitPosition, "auto", "Legacy primary default-left frames must migrate to preset inheritance");
+assert.equal(schema13Migrated.scenes[0].frames[0].additionalCharacters[0].portraitPosition, "auto", "Legacy additional default-right entries must migrate to preset inheritance");
+assert.equal(schema13Migrated.scenes[0].frames[0].textSpeed, TEXT_SPEED.DEFAULT, "Legacy frames must gain the default text speed");
+assert.equal(schema13Migrated.characters[0].defaultPosition, "left", "Explicit legacy character preset sides must remain unchanged");
 assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].repeatCount, 1, "Schema v12 cues must gain one-play repeat defaults");
 for (const cue of [...migratedFrame.musicCues, ...migratedFrame.sfxCues]) {
   assert.equal(cue.repeatCount, 1, "Schema v13 migration must default legacy cues to one playback");
@@ -1647,6 +1669,50 @@ visualStatePlayer.visualState = { background: "old-bg.png", portrait: "old-portr
 visualStatePlayer._applyVisualState({ background: "", clearBackground: false, portrait: "", hidePortrait: false, portraitPosition: "right" });
 assert.equal(visualStatePlayer.visualState.portrait, "old-portrait.png", "A frame without a new portrait must keep the previous portrait image");
 assert.equal(visualStatePlayer.visualState.portraitPosition, "right", "Portrait position must update even when the frame keeps the previous portrait image");
+
+const autoSidePlayer = Object.create(VNPlayerApp.prototype);
+autoSidePlayer.visualState = { background: "", portrait: "", portraitPosition: "left" };
+autoSidePlayer._autoPortraitCharacterId = "";
+autoSidePlayer._autoPortraitSide = "";
+autoSidePlayer._lastDialoguePortraitSide = "";
+const savedAutoGetCharacter = VNSceneStore.getCharacter;
+VNSceneStore.getCharacter = characterId => ({
+  "auto-a": { id: "auto-a", defaultPosition: "auto" },
+  "auto-b": { id: "auto-b", defaultPosition: "auto" },
+  "auto-c": { id: "auto-c", defaultPosition: "auto" },
+  "preset-right": { id: "preset-right", defaultPosition: "right" },
+  "preset-left": { id: "preset-left", defaultPosition: "left" }
+}[characterId] || null);
+const autoDialogue = (characterId, speaker) => {
+  const frame = createFrame("dialogue");
+  frame.characterId = characterId;
+  frame.speaker = speaker;
+  frame.portraitPosition = "auto";
+  return frame;
+};
+autoSidePlayer._applyVisualState(autoDialogue("auto-a", "A"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "Automatic dialogue placement must start on the left");
+autoSidePlayer._applyVisualState(autoDialogue("auto-a", "A"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "Consecutive lines by the same automatic character must keep their side");
+autoSidePlayer._applyVisualState(autoDialogue("auto-b", "B"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "right", "A new automatic speaker must alternate to the opposite side");
+autoSidePlayer._applyVisualState(autoDialogue("preset-right", "Fixed"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "right", "A preset side must override automatic alternation");
+autoSidePlayer._applyVisualState(autoDialogue("auto-c", "C"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "Automatic placement must continue from the last visible dialogue side");
+const explicitOverrideFrame = autoDialogue("preset-left", "Override");
+explicitOverrideFrame.portraitPosition = "right";
+autoSidePlayer._applyVisualState(explicitOverrideFrame);
+assert.equal(autoSidePlayer.visualState.portraitPosition, "right", "An explicit frame side must override the character preset side");
+assert.equal(autoSidePlayer._resolveAdditionalPortraitPosition({ characterId: "preset-left", portraitPosition: "auto" }), "left", "Additional characters must inherit an explicit preset side");
+assert.equal(autoSidePlayer._resolveAdditionalPortraitPosition({ characterId: "auto-a", portraitPosition: "auto" }), "right", "Additional automatic characters must retain the historical right-side fallback");
+autoSidePlayer._applyVisualState(createFrame("narration"));
+autoSidePlayer._applyVisualState(autoDialogue("auto-b", "B"));
+assert.equal(autoSidePlayer.visualState.portraitPosition, "left", "A non-dialogue frame must reset automatic alternation");
+assert.equal(autoSidePlayer._textSpeedForFrame({ textSpeed: 80 }), 80, "Player must use the frame text speed");
+assert.equal(autoSidePlayer._textSpeedForFrame({ textSpeed: 999 }), TEXT_SPEED.MAX, "Player must clamp raw text speed payloads");
+assert.equal(autoSidePlayer._textSpeedForFrame({}), TEXT_SPEED.DEFAULT, "Player must fall back to the default text speed");
+VNSceneStore.getCharacter = savedAutoGetCharacter;
 
 const player = Object.create(VNPlayerApp.prototype);
 player.scene = scene;
