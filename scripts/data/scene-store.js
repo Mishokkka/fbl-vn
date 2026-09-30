@@ -463,7 +463,9 @@ export class VNSceneStore {
                 data.characters.push(character);
             }
             else {
-                character.defaultPosition = frame.portraitPosition || character.defaultPosition || "auto";
+                character.defaultPosition = ["left", "center", "right"].includes(frame.portraitPosition)
+                    ? frame.portraitPosition
+                    : character.defaultPosition || "auto";
                 if (frame.portrait) {
                     const existing = character.portraits.find(portrait => portrait.path === frame.portrait);
                     if (existing) existing.label = portraitLabel || existing.label || "Основной";
@@ -492,6 +494,12 @@ export class VNSceneStore {
 
     static importData(imported, { replace = false } = {}) {
         const importedSnapshot = duplicateData(imported);
+        const normalizedSnapshot = importedSnapshot
+            && !Array.isArray(importedSnapshot)
+            && typeof importedSnapshot === "object"
+            && Object.prototype.hasOwnProperty.call(importedSnapshot, "schemaVersion")
+            ? migrateData(importedSnapshot)
+            : importedSnapshot;
         return this.mutateData(data => {
             if (replace) {
                 data.schemaVersion = DEFAULT_DATA.schemaVersion;
@@ -500,7 +508,7 @@ export class VNSceneStore {
                 data.assets = [];
                 data.characters = [];
             }
-            const importedScenes = Array.isArray(importedSnapshot && importedSnapshot.scenes) ? importedSnapshot.scenes : Array.isArray(importedSnapshot) ? importedSnapshot : [importedSnapshot];
+            const importedScenes = Array.isArray(normalizedSnapshot && normalizedSnapshot.scenes) ? normalizedSnapshot.scenes : Array.isArray(normalizedSnapshot) ? normalizedSnapshot : [normalizedSnapshot];
             for (const scene of importedScenes) {
                 if (!scene) continue;
                 const clean = sanitizeScene(scene);
@@ -508,7 +516,7 @@ export class VNSceneStore {
                 if (index >= 0) data.scenes[index] = clean;
                 else data.scenes.push(clean);
             }
-            const importedAssets = Array.isArray(importedSnapshot && importedSnapshot.assets) ? importedSnapshot.assets : [];
+            const importedAssets = Array.isArray(normalizedSnapshot && normalizedSnapshot.assets) ? normalizedSnapshot.assets : [];
             for (const asset of importedAssets) {
                 const clean = sanitizeAsset(asset);
                 if (!clean.path) continue;
@@ -516,7 +524,7 @@ export class VNSceneStore {
                 if (index >= 0) data.assets[index] = clean;
                 else data.assets.push(clean);
             }
-            const importedCharacters = Array.isArray(importedSnapshot && importedSnapshot.characters) ? importedSnapshot.characters : [];
+            const importedCharacters = Array.isArray(normalizedSnapshot && normalizedSnapshot.characters) ? normalizedSnapshot.characters : [];
             for (const character of importedCharacters) {
                 const clean = sanitizeCharacter(character);
                 const index = data.characters.findIndex(item => item.id === clean.id || item.name === clean.name);
