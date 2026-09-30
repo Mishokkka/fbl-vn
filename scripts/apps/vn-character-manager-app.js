@@ -158,9 +158,28 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         }
     }
 
+    _syncCharacterDisclosure(row, expanded = row?.dataset?.expanded === "true") {
+        if (!row) return;
+        const isExpanded = expanded === true;
+        row.dataset.expanded = isExpanded ? "true" : "false";
+
+        const toggle = row.querySelector?.('[data-action="toggleCharacter"]');
+        if (toggle) toggle.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+
+        const body = row.querySelector?.("[data-character-card-body]");
+        if (!body) return;
+        body.removeAttribute("hidden");
+        body.removeAttribute("aria-hidden");
+        body.style?.setProperty?.("display", isExpanded ? "grid" : "none", "important");
+    }
+
     _attachPartListeners(partId, htmlElement, options) {
         super._attachPartListeners(partId, htmlElement, options);
         if (partId !== "main") return;
+
+        for (const row of htmlElement.querySelectorAll("[data-character-row]")) {
+            this._syncCharacterDisclosure(row);
+        }
 
         const scopeFilter = htmlElement.querySelector("[data-character-scope-filter]");
         if (scopeFilter) {
@@ -172,13 +191,6 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
             });
         }
 
-        for (const input of htmlElement.querySelectorAll("[data-character-name]")) {
-            input.addEventListener("input", () => {
-                const row = input.closest("[data-character-row]");
-                const summaryName = row ? row.querySelector("[data-character-summary-name]") : null;
-                if (summaryName) summaryName.textContent = input.value.trim() || "Без имени";
-            });
-        }
     }
 
     _readCharacters() {
@@ -245,10 +257,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         if (!row) return;
 
         const expanded = row.dataset.expanded !== "true";
-        row.dataset.expanded = expanded ? "true" : "false";
-        target.setAttribute("aria-expanded", expanded ? "true" : "false");
-        const body = row.querySelector("[data-character-card-body]");
-        if (body) body.setAttribute("aria-hidden", expanded ? "false" : "true");
+        this._syncCharacterDisclosure(row, expanded);
         if (expanded) this.expandedCharacterIds.add(characterId);
         else this.expandedCharacterIds.delete(characterId);
     }

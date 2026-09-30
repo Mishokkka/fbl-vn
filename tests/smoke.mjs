@@ -130,6 +130,45 @@ assert.deepEqual(
   "Capturing rendered cards must preserve expansion state outside the active scope and remove rendered collapsed cards"
 );
 
+const disclosureBody = {
+  removed: [],
+  display: null,
+  priority: null,
+  removeAttribute(name) { this.removed.push(name); },
+  style: {
+    setProperty(name, value, priority) {
+      if (name === "display") {
+        disclosureBody.display = value;
+        disclosureBody.priority = priority;
+      }
+    }
+  }
+};
+const disclosureToggle = {
+  ariaExpanded: null,
+  setAttribute(name, value) {
+    if (name === "aria-expanded") this.ariaExpanded = value;
+  }
+};
+const disclosureRow = {
+  dataset: { characterId: "character-disclosure", expanded: "false" },
+  querySelector(selector) {
+    if (selector === '[data-action="toggleCharacter"]') return disclosureToggle;
+    if (selector === "[data-character-card-body]") return disclosureBody;
+    return null;
+  }
+};
+characterManager._syncCharacterDisclosure(disclosureRow, true);
+assert.equal(disclosureRow.dataset.expanded, "true", "Expanding a preset must update the card state");
+assert.equal(disclosureToggle.ariaExpanded, "true", "Expanding a preset must update aria-expanded on the toggle");
+assert.equal(disclosureBody.display, "grid", "Expanding a preset must force the body visible even under host CSS");
+assert.equal(disclosureBody.priority, "important", "Preset body visibility must win against host-system display rules");
+assert.deepEqual(disclosureBody.removed.sort(), ["aria-hidden", "hidden"], "Disclosure sync must clear stale host-sensitive hiding attributes");
+characterManager._syncCharacterDisclosure(disclosureRow, false);
+assert.equal(disclosureRow.dataset.expanded, "false", "Collapsing a preset must update the card state");
+assert.equal(disclosureToggle.ariaExpanded, "false", "Collapsing a preset must update aria-expanded on the toggle");
+assert.equal(disclosureBody.display, "none", "Collapsing a preset must force the body hidden");
+
 const scopedUsage = characterManager._sceneUsageIndex({
   scenes: [
     { id: "scene-a", frames: [{ characterId: "character-a", additionalCharacters: [{ characterId: "character-b" }] }] },
