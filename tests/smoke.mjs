@@ -113,17 +113,22 @@ assert.equal(serializeJson({ alpha: 1 }, { pretty: true }).includes("\n"), true,
 
 const characterManager = new VNCharacterManagerApp();
 assert.equal(characterManager.expandedCharacterIds.size, 0, "Character presets must be collapsed when the manager first opens");
+characterManager.expandedCharacterIds = new Set(["character-hidden", "character-b"]);
 characterManager.element = {
   querySelectorAll(selector) {
-    assert.equal(selector, '[data-character-row][data-expanded="true"]');
+    assert.equal(selector, "[data-character-row]");
     return [
-      { dataset: { characterId: "character-a" } },
-      { dataset: { characterId: "character-b" } }
+      { dataset: { characterId: "character-a", expanded: "true" } },
+      { dataset: { characterId: "character-b", expanded: "false" } }
     ];
   }
 };
 characterManager._captureExpandedCharacters();
-assert.deepEqual([...characterManager.expandedCharacterIds], ["character-a", "character-b"], "Expanded character cards must be captured before a manager rerender");
+assert.deepEqual(
+  [...characterManager.expandedCharacterIds].sort(),
+  ["character-a", "character-hidden"],
+  "Capturing rendered cards must preserve expansion state outside the active scope and remove rendered collapsed cards"
+);
 
 const scopedUsage = characterManager._sceneUsageIndex({
   scenes: [
