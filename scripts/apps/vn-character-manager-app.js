@@ -144,7 +144,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
     }
 
     _positionOptions(selected) {
-        const pairs = [["left", "Слева"], ["center", "По центру"], ["right", "Справа"]];
+        const pairs = [["auto", "Стандарт / не задано"], ["left", "Слева"], ["center", "По центру"], ["right", "Справа"]];
         return pairs.map(pair => ({ value: pair[0], label: pair[1], selected: pair[0] === selected }));
     }
 
@@ -208,7 +208,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
                 ...existing,
                 id,
                 name: nameInput ? nameInput.value : "Без имени",
-                defaultPosition: positionInput ? positionInput.value : "left",
+                defaultPosition: positionInput ? positionInput.value : "auto",
                 sceneId: sceneInput ? sceneInput.value : existing.sceneId || "",
                 portraits
             }));
@@ -264,7 +264,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         event.preventDefault();
         const characters = this._readCharacters();
         this._captureExpandedCharacters();
-        const character = createCharacterPreset("Новый персонаж", "Основной", "", "left", this._newCharacterSceneId());
+        const character = createCharacterPreset("Новый персонаж", "Основной", "", "auto", this._newCharacterSceneId());
         characters.push(character);
         this.expandedCharacterIds.add(character.id);
         await VNSceneStore.replaceCharacters(characters);
