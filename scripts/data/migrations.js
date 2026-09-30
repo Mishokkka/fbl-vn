@@ -463,7 +463,7 @@ function migrateToV14(data) {
         scene.frames = Array.isArray(scene.frames) ? scene.frames : [];
         for (const frame of scene.frames) {
             if (!frame || typeof frame !== "object") continue;
-            if (frame.portraitPosition === undefined || frame.portraitPosition === null || frame.portraitPosition === "") {
+            if (frame.portraitPosition === undefined || frame.portraitPosition === null || frame.portraitPosition === "" || frame.portraitPosition === "left") {
                 frame.portraitPosition = "auto";
             }
             if (frame.textSpeed === undefined || frame.textSpeed === null || frame.textSpeed === "") {
@@ -472,7 +472,7 @@ function migrateToV14(data) {
             frame.additionalCharacters = Array.isArray(frame.additionalCharacters) ? frame.additionalCharacters : [];
             for (const entry of frame.additionalCharacters) {
                 if (!entry || typeof entry !== "object") continue;
-                if (entry.portraitPosition === undefined || entry.portraitPosition === null || entry.portraitPosition === "") {
+                if (entry.portraitPosition === undefined || entry.portraitPosition === null || entry.portraitPosition === "" || entry.portraitPosition === "right") {
                     entry.portraitPosition = "auto";
                 }
             }
