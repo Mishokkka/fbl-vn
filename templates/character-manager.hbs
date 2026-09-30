@@ -19,49 +19,80 @@
     {{#if hasCharacters}}
       {{#each characters}}
         <article class="fbl-vn-character-card" data-character-row data-character-id="{{id}}" data-expanded="{{#if expanded}}true{{else}}false{{/if}}">
-          <button
-            type="button"
-            class="fbl-vn-character-summary"
-            data-action="toggleCharacter"
-            data-character-id="{{id}}"
-            aria-expanded="{{#if expanded}}true{{else}}false{{/if}}"
-            aria-controls="fbl-vn-character-body-{{id}}"
-          >
-            <i class="fa-solid fa-chevron-right fbl-vn-character-chevron" aria-hidden="true"></i>
-            <span class="fbl-vn-character-summary-name" data-character-summary-name>{{name}}</span>
+          <div class="fbl-vn-character-summary">
+            <button
+              type="button"
+              class="fbl-vn-character-toggle"
+              data-action="toggleCharacter"
+              data-character-id="{{id}}"
+              aria-expanded="{{#if expanded}}true{{else}}false{{/if}}"
+              aria-controls="fbl-vn-character-body-{{id}}"
+              title="Портреты персонажа"
+              aria-label="Показать или скрыть портреты персонажа"
+            >
+              <i class="fa-solid fa-chevron-right fbl-vn-character-chevron" aria-hidden="true"></i>
+            </button>
+
+            <input
+              id="fbl-vn-character-name-{{id}}"
+              class="fbl-vn-character-summary-name"
+              type="text"
+              data-character-name
+              value="{{name}}"
+              title="Имя персонажа"
+              aria-label="Имя персонажа"
+            />
+
+            <select
+              id="fbl-vn-character-position-{{id}}"
+              class="fbl-vn-character-summary-position"
+              data-character-position
+              title="Позиция по умолчанию"
+              aria-label="Позиция по умолчанию"
+            >
+              {{#each positionOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+
+            <select
+              id="fbl-vn-character-scene-{{id}}"
+              class="fbl-vn-character-summary-scene"
+              data-character-scene
+              title="Раздел библиотеки"
+              aria-label="Раздел библиотеки"
+            >
+              {{#each sceneOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+
             <span class="fbl-vn-character-summary-count">{{portraitCount}} портретов</span>
-          </button>
+
+            <button
+              type="button"
+              class="fbl-vn-character-summary-action"
+              data-action="addPortrait"
+              data-character-id="{{id}}"
+              title="Добавить портрет"
+              aria-label="Добавить портрет"
+            ><i class="fa-solid fa-image"></i><i class="fa-solid fa-plus fbl-vn-character-action-mark"></i></button>
+
+            <button
+              type="button"
+              class="danger fbl-vn-character-summary-action"
+              data-action="deleteCharacter"
+              data-character-id="{{id}}"
+              title="Удалить персонажа"
+              aria-label="Удалить персонажа"
+            ><i class="fa-solid fa-trash"></i></button>
+          </div>
 
           <div
             id="fbl-vn-character-body-{{id}}"
             class="fbl-vn-character-card-body"
             data-character-card-body
           >
-            <header class="fbl-vn-character-fields">
-              <div class="form-group fbl-vn-character-name-field">
-                <label for="fbl-vn-character-name-{{id}}">Имя</label>
-                <input id="fbl-vn-character-name-{{id}}" type="text" data-character-name value="{{name}}" />
-              </div>
-              <div class="form-group fbl-vn-character-position-field">
-                <label for="fbl-vn-character-position-{{id}}">Позиция по умолчанию</label>
-                <select id="fbl-vn-character-position-{{id}}" data-character-position>
-                  {{#each positionOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div class="form-group fbl-vn-character-scene-field">
-                <label for="fbl-vn-character-scene-{{id}}">Раздел библиотеки</label>
-                <select id="fbl-vn-character-scene-{{id}}" data-character-scene>
-                  {{#each sceneOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <button type="button" data-action="addPortrait" data-character-id="{{id}}" title="Добавить портрет" aria-label="Добавить портрет"><i class="fa-solid fa-image"></i></button>
-              <button type="button" class="danger" data-action="deleteCharacter" data-character-id="{{id}}" title="Удалить персонажа" aria-label="Удалить персонажа"><i class="fa-solid fa-trash"></i></button>
-            </header>
-
             <div class="fbl-vn-portrait-list">
               {{#each portraits}}
                 <div class="fbl-vn-portrait-row" data-portrait-row data-portrait-id="{{id}}">
@@ -76,6 +107,8 @@
                   </div>
                   <button type="button" class="danger" data-action="deletePortrait" data-character-id="{{../id}}" data-portrait-id="{{id}}" title="Удалить портрет" aria-label="Удалить портрет"><i class="fa-solid fa-xmark"></i></button>
                 </div>
+              {{else}}
+                <div class="fbl-vn-character-no-portraits">Портретов пока нет. Добавьте первый портрет кнопкой в строке персонажа.</div>
               {{/each}}
             </div>
           </div>
