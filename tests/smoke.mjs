@@ -2844,6 +2844,7 @@ const staleVisualRecallApp = {
   currentTextIndex: 0,
   counterState: { counter: 1 },
   visualState: { background: "race-base.webp", portrait: "", portraitPosition: "left" },
+  _restoreAutoPortraitState: VNPlayerApp.prototype._restoreAutoPortraitState,
   async render() { staleVisualRecallRenders += 1; },
   async preload() {},
   async _ensureVisualStateAssets(state) {
