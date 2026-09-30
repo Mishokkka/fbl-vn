@@ -459,11 +459,11 @@ export class VNSceneStore {
         return this.mutateData(data => {
             let character = data.characters.find(item => String(item.name || "").toLowerCase() === String(name || "").toLowerCase());
             if (!character) {
-                character = createCharacterPreset(name, portraitLabel || "Основной", frame.portrait || "", frame.portraitPosition || "center");
+                character = createCharacterPreset(name, portraitLabel || "Основной", frame.portrait || "", frame.portraitPosition || "auto");
                 data.characters.push(character);
             }
             else {
-                character.defaultPosition = frame.portraitPosition || character.defaultPosition || "center";
+                character.defaultPosition = frame.portraitPosition || character.defaultPosition || "auto";
                 if (frame.portrait) {
                     const existing = character.portraits.find(portrait => portrait.path === frame.portrait);
                     if (existing) existing.label = portraitLabel || existing.label || "Основной";
