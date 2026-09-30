@@ -126,15 +126,15 @@ button.fbl-vn-character-summary:focus-visible {
   white-space: nowrap;
 }
 
-.fbl-vn-character-card-body {
-  display: none;
+.fbl-vn-character-manager .fbl-vn-character-card-body {
+  display: none !important;
   gap: 8px;
   padding: 8px;
   border-top: 1px solid var(--vn-border);
 }
 
-.fbl-vn-character-card[data-expanded="true"] > .fbl-vn-character-card-body {
-  display: grid;
+.fbl-vn-character-manager .fbl-vn-character-card[data-expanded="true"] > .fbl-vn-character-card-body {
+  display: grid !important;
 }
 
 .fbl-vn-character-fields {
