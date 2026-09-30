@@ -248,7 +248,7 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
         row.dataset.expanded = expanded ? "true" : "false";
         target.setAttribute("aria-expanded", expanded ? "true" : "false");
         const body = row.querySelector("[data-character-card-body]");
-        if (body) body.hidden = !expanded;
+        if (body) body.setAttribute("aria-hidden", expanded ? "false" : "true");
         if (expanded) this.expandedCharacterIds.add(characterId);
         else this.expandedCharacterIds.delete(characterId);
     }
