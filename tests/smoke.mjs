@@ -115,7 +115,7 @@ const characterManager = new VNCharacterManagerApp();
 assert.equal(characterManager.expandedCharacterIds.size, 0, "Character presets must be collapsed when the manager first opens");
 characterManager.element = {
   querySelectorAll(selector) {
-    assert.equal(selector, "details[data-character-row][open]");
+    assert.equal(selector, '[data-character-row][data-expanded="true"]');
     return [
       { dataset: { characterId: "character-a" } },
       { dataset: { characterId: "character-b" } }
@@ -124,6 +124,18 @@ characterManager.element = {
 };
 characterManager._captureExpandedCharacters();
 assert.deepEqual([...characterManager.expandedCharacterIds], ["character-a", "character-b"], "Expanded character cards must be captured before a manager rerender");
+
+const scopedUsage = characterManager._sceneUsageIndex({
+  scenes: [
+    { id: "scene-a", frames: [{ characterId: "character-a", additionalCharacters: [{ characterId: "character-b" }] }] },
+    { id: "scene-b", frames: [{ characterId: "character-b", additionalCharacters: [] }] }
+  ]
+});
+const scopedSceneIds = new Set(["scene-a", "scene-b"]);
+assert.equal(characterManager._effectiveCharacterScope({ id: "character-a", sceneId: "" }, scopedUsage, scopedSceneIds), "scene-a", "Legacy presets used by one cutscene must be inferred into that cutscene");
+assert.equal(characterManager._effectiveCharacterScope({ id: "character-b", sceneId: "" }, scopedUsage, scopedSceneIds), "__shared__", "Legacy presets used by multiple cutscenes must stay shared");
+assert.equal(characterManager._effectiveCharacterScope({ id: "character-c", sceneId: "scene-b" }, scopedUsage, scopedSceneIds), "scene-b", "Explicit preset cutscene ownership must take priority over inferred usage");
+assert.equal(characterManager._effectiveCharacterScope({ id: "character-d", sceneId: "*" }, scopedUsage, scopedSceneIds), "__shared__", "Explicit shared presets must stay in the shared library");
 
 const scene = createScene();
 assert.equal(scene.audioExitFadeMs, 750, "New scenes must default to a short exit audio fade");
@@ -163,6 +175,7 @@ assert.equal(extraCharacter.showName, true, "Additional frame characters must sh
 scene.frames[0].additionalCharacters.push(extraCharacter);
 assert.equal(collectAssetPaths({ frames: [scene.frames[0]] }).includes("companion.png"), true, "Additional character portraits must be preloaded");
 assert.equal(createCharacterPreset("Left default").defaultPosition, "left", "New character presets must default to the left");
+assert.equal(createCharacterPreset("Scoped", "Main", "", "left", "scene-a").sceneId, "scene-a", "Character presets must preserve their cutscene library assignment");
 const invalidPositionFrame = sanitizeFrame({ ...nested, portraitPosition: "diagonal", vignetteMode: "invalid", transition: "legacy" });
 assert.equal(invalidPositionFrame.portraitPosition, "left", "Invalid portrait positions must sanitize to left");
 assert.equal(invalidPositionFrame.vignetteMode, VIGNETTE_MODES.NONE, "Invalid vignette modes must sanitize to none");
