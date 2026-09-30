@@ -150,11 +150,12 @@ export class VNCharacterManagerApp extends HandlebarsApplicationMixin(Applicatio
 
     _captureExpandedCharacters() {
         if (!this.element) return;
-        this.expandedCharacterIds = new Set(
-            [...this.element.querySelectorAll('[data-character-row][data-expanded="true"]')]
-                .map(row => row.dataset.characterId)
-                .filter(Boolean)
-        );
+        for (const row of this.element.querySelectorAll("[data-character-row]")) {
+            const characterId = row.dataset.characterId;
+            if (!characterId) continue;
+            if (row.dataset.expanded === "true") this.expandedCharacterIds.add(characterId);
+            else this.expandedCharacterIds.delete(characterId);
+        }
     }
 
     _attachPartListeners(partId, htmlElement, options) {
