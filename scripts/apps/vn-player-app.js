@@ -1322,7 +1322,7 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
             if (revealed >= totalChars) {
                 this._typingRaf = null;
-                node.innerHTML = safeHtml;
+                if (!smoothTyping) node.innerHTML = safeHtml;
                 this._typingComplete = true;
                 return;
             }
