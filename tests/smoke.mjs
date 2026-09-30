@@ -528,7 +528,7 @@ const queuedScene = VNSceneStore.getScene(scene.id);
 assert.equal(queuedScene.title, "Queued title", "Serialized mutations must preserve the first queued write");
 assert.equal(queuedScene.defaultMode, PLAYER_MODES.VOTE, "Serialized mutations must re-read state after the previous write");
 assert.ok(VNSceneStore.revision > revisionBeforeQueuedMutations, "Store revision must advance when persisted data changes");
-await VNSceneStore.setData({ schemaVersion: 13, version: 3, scenes: [scene], assets: [], characters: [] });
+await VNSceneStore.setData({ schemaVersion: 14, version: 3, scenes: [scene], assets: [], characters: [] });
 
 const noOpEditor = Object.create(VNEditorApp.prototype);
 noOpEditor._pendingRenderParts = new Set();
@@ -1233,7 +1233,7 @@ legacySource.sceneRouting = {
 };
 const migrated = migrateData({ schemaVersion: 5, version: 3, scenes: [legacyScene], assets: [], characters: [] });
 const migratedFrame = migrated.scenes[0].frames[0];
-assert.equal(migrated.schemaVersion, 13);
+assert.equal(migrated.schemaVersion, 14);
 assert.equal(migratedFrame.nextRouting.enabled, false, "Legacy scene-to-scene routing cannot be converted into frame routing and must be disabled");
 assert.equal(migratedFrame.nextRouting.trueFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
 assert.equal(migratedFrame.nextRouting.falseFrameId, "", "Legacy scene ids must not be mistaken for frame ids");
@@ -1352,7 +1352,7 @@ assert.equal(migratedChoiceCondition.conditionLogic, COUNTER_CONDITION_LOGIC.ALL
 assert.equal("conditionCounterId" in migratedChoiceCondition, false, "Schema v12 must remove legacy choice condition fields");
 
 const invalidVersionMigrated = migrateData({ schemaVersion: "v5", version: 3, scenes: [{ id: "bad-version", frames: [], frameFolders: [] }], assets: [], characters: [] });
-assert.equal(invalidVersionMigrated.schemaVersion, 13, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
+assert.equal(invalidVersionMigrated.schemaVersion, 14, "Malformed legacy schemaVersion strings must retain the baseline migration fallback");
 assert.equal(Array.isArray(invalidVersionMigrated.scenes[0].branches), true, "Baseline migrations must initialize branch data for malformed legacy schemaVersion input");
 for (const invalidSchemaVersion of [-1, 7.5, 14]) {
   assert.throws(
