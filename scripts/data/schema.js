@@ -1,4 +1,4 @@
-import { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, PLAYER_MODES, TEXT_PRESENTATIONS, VIGNETTE_MODES } from "../utils/constants.js";
+import { AUDIO_ACTIONS, COUNTER_CONDITION_LOGIC, COUNTER_EFFECTS, COUNTER_OPERATORS, FRAME_TYPES, PLAYER_MODES, TEXT_PRESENTATIONS, TEXT_SPEED, VIGNETTE_MODES } from "../utils/constants.js";
 import { duplicateData, randomId } from "../utils/foundry-helpers.js";
 import { richTextFromPlainText, richTextToPlainText, sanitizeRichTextHtml } from "../utils/rich-text.js";
 
@@ -95,7 +95,7 @@ export function createFrameCharacter(options = {}) {
         portraitId: String(options.portraitId || ""),
         name: String(options.name || ""),
         portrait: String(options.portrait || ""),
-        portraitPosition: ["left", "center", "right"].includes(options.portraitPosition) ? options.portraitPosition : "right",
+        portraitPosition: ["auto", "left", "center", "right"].includes(options.portraitPosition) ? options.portraitPosition : "auto",
         showName: options.showName !== false
     };
 }
@@ -114,7 +114,7 @@ export function sanitizeFrameCharacter(character, usedIds = null) {
     clean.portraitId = String(clean.portraitId || "");
     clean.name = String(clean.name || "");
     clean.portrait = String(clean.portrait || "");
-    clean.portraitPosition = ["left", "center", "right"].includes(clean.portraitPosition) ? clean.portraitPosition : "right";
+    clean.portraitPosition = ["auto", "left", "center", "right"].includes(clean.portraitPosition) ? clean.portraitPosition : "auto";
     clean.showName = clean.showName !== false;
     return clean;
 }
@@ -136,11 +136,12 @@ export function createFrame(type = FRAME_TYPES.DIALOGUE) {
         speaker: "",
         portrait: "",
         hidePortrait: false,
-        portraitPosition: "left",
+        portraitPosition: "auto",
         showSpeakerName: true,
         additionalCharacters: [],
         vignetteMode: VIGNETTE_MODES.NONE,
         textPresentation: TEXT_PRESENTATIONS.BOX,
+        textSpeed: TEXT_SPEED.DEFAULT,
         text: "",
         textBlocks: [createTextBlock("")],
         musicCues: [],
@@ -445,7 +446,7 @@ export function sanitizeFrame(frame) {
     clean.speaker || (clean.speaker = "");
     clean.portrait || (clean.portrait = "");
     clean.hidePortrait = clean.hidePortrait === true;
-    clean.portraitPosition = ["left", "center", "right"].includes(clean.portraitPosition) ? clean.portraitPosition : "left";
+    clean.portraitPosition = ["auto", "left", "center", "right"].includes(clean.portraitPosition) ? clean.portraitPosition : "auto";
     clean.showSpeakerName = clean.showSpeakerName !== false;
     const frameCharacterIds = new Set();
     clean.additionalCharacters = Array.isArray(clean.additionalCharacters)
@@ -453,6 +454,7 @@ export function sanitizeFrame(frame) {
         : [];
     clean.vignetteMode = Object.values(VIGNETTE_MODES).includes(clean.vignetteMode) ? clean.vignetteMode : VIGNETTE_MODES.NONE;
     clean.textPresentation = Object.values(TEXT_PRESENTATIONS).includes(clean.textPresentation) ? clean.textPresentation : TEXT_PRESENTATIONS.BOX;
+    clean.textSpeed = Math.max(TEXT_SPEED.MIN, Math.min(TEXT_SPEED.MAX, normalizeNumber(clean.textSpeed, TEXT_SPEED.DEFAULT)));
     clean.text || (clean.text = "");
     clean.textBlocks = Array.isArray(clean.textBlocks) ? clean.textBlocks.map(sanitizeTextBlock) : [];
     if (!clean.textBlocks.length) clean.textBlocks.push(createTextBlock(clean.text || "", ""));
@@ -777,7 +779,7 @@ export function createCharacterPreset(name, portraitLabel, portraitPath, default
     return {
         id: randomId("character"),
         name: name || "Новый персонаж",
-        defaultPosition: defaultPosition || "left",
+        defaultPosition: defaultPosition || "auto",
         sceneId: String(sceneId || ""),
         portraits: portrait.path ? [portrait] : []
     };
@@ -787,7 +789,7 @@ export function sanitizeCharacter(character) {
     const clean = duplicateData(character !== null && character !== void 0 ? character : {});
     clean.id || (clean.id = randomId("character"));
     clean.name = String(clean.name || "Без имени");
-    clean.defaultPosition = ["left", "center", "right"].includes(clean.defaultPosition) ? clean.defaultPosition : "left";
+    clean.defaultPosition = ["auto", "left", "center", "right"].includes(clean.defaultPosition) ? clean.defaultPosition : "auto";
     clean.sceneId = String(clean.sceneId || "");
     clean.portraits = Array.isArray(clean.portraits) ? clean.portraits.map(sanitizeCharacterPortrait).filter(portrait => portrait.path || portrait.label) : [];
     return clean;
