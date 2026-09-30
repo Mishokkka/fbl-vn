@@ -1,0 +1,29 @@
+name: Character manager validation
+
+on:
+  push:
+    branches:
+      - fix/character-preset-library-scoping
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: |
+          node --check scripts/apps/vn-character-manager-app.js
+          node --check scripts/data/schema.js
+          node --check tests/smoke.mjs
+          node --check tools/verify.mjs
+      - name: Repository verification
+        run: node tools/verify.mjs
+      - name: Smoke suite
+        run: |
+          node tests/smoke.mjs
+          node tests/boot-smoke.mjs
+          node tests/runtime-init-smoke.mjs
+          node tests/socket-transport-smoke.mjs
