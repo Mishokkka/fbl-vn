@@ -2769,6 +2769,10 @@ const synchronizedRecallApp = {
   currentTextIndex: 0,
   counterState: { counter: 1 },
   visualState: { background: "old-bg.webp", portrait: "", portraitPosition: "left" },
+  _autoPortraitCharacterId: "stale-character",
+  _autoPortraitSide: "left",
+  _lastDialoguePortraitSide: "left",
+  _restoreAutoPortraitState: VNPlayerApp.prototype._restoreAutoPortraitState,
   async render() { synchronizedRecallRenders += 1; },
   async preload() {},
   async _ensureVisualStateAssets(state) { synchronizedRecallVisualPreloads.push({ ...state }); },
@@ -2792,6 +2796,7 @@ await VNPlayerApp.recallScene({
     currentTextIndex: 0,
     counterState: { counter: 2 },
     visualState: { background: "new-bg.webp", portrait: "", portraitPosition: "left" },
+    automaticPortraitState: { characterId: "fresh-character", side: "right", lastDialogueSide: "right" },
     voteState: { frameId: "frame-root", textIndex: 0, voters: [], choices: {}, total: 2, participantIds: [playerUser.id, playerUser2.id] }
   }
 });
@@ -2800,6 +2805,9 @@ assert.equal(synchronizedRecallRenders, 1, "Duplicate open recovery must refresh
 assert.deepEqual(synchronizedRecallVisualPreloads, [{ background: "new-bg.webp", portrait: "", portraitPosition: "left" }], "In-place reconnect recovery must preload inherited visual-state assets before rendering them");
 assert.deepEqual(synchronizedRecallApp.counterState, { counter: 2 }, "In-place recovery must synchronize counter state");
 assert.equal(synchronizedRecallApp.visualState.background, "new-bg.webp", "In-place recovery must synchronize visual state");
+assert.equal(synchronizedRecallApp._autoPortraitCharacterId, "fresh-character", "In-place recovery must replace stale automatic speaker state");
+assert.equal(synchronizedRecallApp._autoPortraitSide, "right", "In-place recovery must restore the automatic side");
+assert.equal(synchronizedRecallApp._lastDialoguePortraitSide, "right", "In-place recovery must restore alternation history");
 assert.deepEqual(synchronizedRecallApp.participantIds, [playerUser.id, playerUser2.id], "In-place recovery must synchronize the vote roster");
 assert.equal(synchronizedVoteState?.total, 2, "In-place recovery must apply the current vote state");
 await VNPlayerApp.recallScene({
