@@ -1,6 +1,6 @@
 # Формат экспорта FBL Visual Novel Cutscenes
 
-Актуальная версия формата данных: `schemaVersion: 13`.
+Актуальная версия формата данных: `schemaVersion: 14`.
 
 Готовый полный пример находится рядом: `examples/fbl-vn-export.example.json`. Он намеренно отформатирован с отступами для чтения, хотя обычный экспорт из модуля записывается компактным JSON без лишних пробелов и переносов строк.
 
@@ -28,7 +28,7 @@
 
 ```json
 {
-  "schemaVersion": 13,
+  "schemaVersion": 14,
   "version": 3,
   "scenes": [],
   "assets": [],
@@ -109,11 +109,12 @@
   "speaker": "Проводник",
   "portrait": "path/to/portrait.webp",
   "hidePortrait": false,
-  "portraitPosition": "left",
+  "portraitPosition": "auto",
   "showSpeakerName": true,
   "additionalCharacters": [],
   "vignetteMode": "none",
   "textPresentation": "box",
+  "textSpeed": 160,
   "text": "Текст первого блока",
   "textBlocks": [],
   "musicCues": [],
@@ -131,9 +132,10 @@
 
 - `type`: `dialogue`, `narration`, `choice`.
 - `transition`: `none`, `fade`, `dark`.
-- `portraitPosition`: `left`, `center`, `right`.
+- `portraitPosition`: `auto`, `left`, `center`, `right`. `auto` наследует сторону пресета; если и пресет имеет `defaultPosition: "auto"`, диалоговые персонажи чередуются слева/справа при смене говорящего. Любая явная сторона кадра имеет приоритет.
 - `vignetteMode`: `auto`, `screen`, `text`, `none`.
 - `textPresentation`: `box`, `center`.
+- `textSpeed`: скорость typewriter-эффекта в видимых символах в секунду, диапазон 10–500, значение по умолчанию 160.
 - `effectOperation`: пустая строка, `add`, `subtract`.
 
 Поле `text` дублирует plain-text первого элемента `textBlocks` для совместимости. При ручной генерации файла лучше держать их согласованными.
@@ -158,7 +160,7 @@
   "portraitId": "portrait-companion-main",
   "name": "Спутник",
   "portrait": "path/to/companion.webp",
-  "portraitPosition": "right",
+  "portraitPosition": "auto",
   "showName": true
 }
 ```
@@ -295,7 +297,7 @@ Asset library не является обязательной для воспро
 {
   "id": "character-guide",
   "name": "Проводник",
-  "defaultPosition": "left",
+  "defaultPosition": "auto",
   "portraits": [
     {
       "id": "portrait-guide-main",
@@ -306,12 +308,12 @@ Asset library не является обязательной для воспро
 }
 ```
 
-Кадр может ссылаться на preset через `characterId` и `portraitId`, но одновременно хранит отображаемые `speaker` и `portrait`.
+Кадр может ссылаться на preset через `characterId` и `portraitId`, но одновременно хранит отображаемые `speaker` и `portrait`. `defaultPosition` принимает `auto`, `left`, `center` или `right`. В режиме `auto` первый диалог после старта или недиалогового кадра появляется слева, а затем сторона меняется только при смене говорящего.
 
 ## ID и ручная генерация
 
 ID должны быть уникальны внутри соответствующего набора и ссылки должны указывать на существующие ID. При ручной генерации удобно использовать читаемые ID вроде `frame-intro`, `choice-left`, `counter-trust`; модулю не требуется конкретный формат случайной строки.
 
-При импорте данные проходят sanitizer и миграции. Экспорты schema v12 автоматически мигрируют в v13: старые audio cues получают нулевые timing-параметры и один playback, а старые сцены сохраняют прежнее мгновенное завершение аудио через `audioExitFadeMs: 0`. Некорректные enum-значения могут быть заменены безопасными значениями по умолчанию, а часть отсутствующих ID может быть создана автоматически. Для предсказуемого результата лучше формировать файл сразу в текущей структуре.
+При импорте данные проходят sanitizer и миграции. Экспорты schema v12 сначала получают поля audio timing из v13, а затем мигрируют в v14. В v14 старые неявные позиции основного портрета `left` и дополнительного `right` переводятся в `auto`, чтобы пресеты наконец могли задавать сторону; каждому старому кадру также добавляется `textSpeed: 160`. Явные `center` и противоположные стороны сохраняются. Некорректные enum-значения могут быть заменены безопасными значениями по умолчанию, а часть отсутствующих ID может быть создана автоматически. Для предсказуемого результата лучше формировать файл сразу в текущей структуре.
 
 Полный рабочий пример всех основных сущностей: `examples/fbl-vn-export.example.json`.
