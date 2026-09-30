@@ -1248,11 +1248,14 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         template.innerHTML = safeHtml;
         node.replaceChildren();
 
+        const smoothTyping = textSpeed <= 60;
+        const glyphFadeMs = Math.max(70, Math.min(140, (1000 / Math.max(1, textSpeed)) * 1.25));
         const segments = [];
         const cloneChildren = (source, target) => {
             for (const child of source.childNodes) {
                 if (child.nodeType === 3) {
-                    const output = document.createTextNode("");
+                    const output = smoothTyping ? document.createElement("span") : document.createTextNode("");
+                    if (smoothTyping) output.className = "fbl-vn-type-segment";
                     target.append(output);
                     segments.push({ node: output, chars: splitTextGraphemes(child.data), index: 0 });
                     continue;
@@ -1277,6 +1280,17 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         let carry = 0;
         let previous = performance.now();
         const charsPerMs = textSpeed / 1000;
+        const appendSmoothGlyphs = (segment, chars) => {
+            const fragment = document.createDocumentFragment();
+            for (const char of chars) {
+                const glyph = document.createElement("span");
+                glyph.className = "fbl-vn-type-glyph";
+                glyph.style.setProperty("--vn-type-glyph-duration", `${glyphFadeMs}ms`);
+                glyph.textContent = char;
+                fragment.append(glyph);
+            }
+            segment.node.append(fragment);
+        };
         const reveal = count => {
             let remaining = count;
             while (remaining > 0 && segmentIndex < segments.length) {
@@ -1288,13 +1302,16 @@ export class VNPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 }
                 const take = Math.min(remaining, available);
                 const end = segment.index + take;
-                segment.node.appendData(segment.chars.slice(segment.index, end).join(""));
+                const chars = segment.chars.slice(segment.index, end);
+                if (smoothTyping) appendSmoothGlyphs(segment, chars);
+                else segment.node.appendData(chars.join(""));
                 segment.index = end;
                 remaining -= take;
                 revealed += take;
                 if (segment.index >= segment.chars.length) segmentIndex += 1;
             }
         };
+        if (smoothTyping) reveal(1);
         const tick = now => {
             carry += Math.max(0, now - previous) * charsPerMs;
             previous = now;
