@@ -1290,6 +1290,79 @@ assert.equal(schema13Migrated.scenes[0].frames[0].portraitPosition, "auto", "Leg
 assert.equal(schema13Migrated.scenes[0].frames[0].additionalCharacters[0].portraitPosition, "auto", "Legacy additional default-right entries must migrate to preset inheritance");
 assert.equal(schema13Migrated.scenes[0].frames[0].textSpeed, TEXT_SPEED.DEFAULT, "Legacy frames must gain the default text speed");
 assert.equal(schema13Migrated.characters[0].defaultPosition, "left", "Explicit legacy character preset sides must remain unchanged");
+
+const savedStoreMutateData = VNSceneStore.mutateData;
+try {
+  const presetSaveData = {
+    characters: [{
+      id: "preset-save-character",
+      name: "Preset Save",
+      defaultPosition: "right",
+      portraits: []
+    }]
+  };
+  VNSceneStore.mutateData = async updater => updater(presetSaveData);
+  await VNSceneStore.saveCharacterFromFrame({
+    speaker: "Preset Save",
+    portrait: "",
+    portraitPosition: "auto"
+  }, "Основной");
+  assert.equal(
+    presetSaveData.characters[0].defaultPosition,
+    "right",
+    "Saving an inherited frame must preserve the existing preset side"
+  );
+  await VNSceneStore.saveCharacterFromFrame({
+    speaker: "Preset Save",
+    portrait: "",
+    portraitPosition: "left"
+  }, "Основной");
+  assert.equal(
+    presetSaveData.characters[0].defaultPosition,
+    "left",
+    "Saving a frame with an explicit side must still update the preset side"
+  );
+
+  const importedData = { scenes: [], assets: [], characters: [] };
+  VNSceneStore.mutateData = async updater => updater(importedData);
+  const legacyImportScene = createScene();
+  legacyImportScene.frames[0].portraitPosition = "left";
+  delete legacyImportScene.frames[0].textSpeed;
+  legacyImportScene.frames[0].additionalCharacters = [
+    createFrameCharacter({ id: "import-extra", portraitPosition: "right" })
+  ];
+  await VNSceneStore.importData({
+    schemaVersion: 13,
+    version: 3,
+    scenes: [legacyImportScene],
+    assets: [],
+    characters: []
+  });
+  assert.equal(
+    importedData.scenes[0].portraitPosition,
+    undefined,
+    "Scene-level import migration must not invent frame fields on the scene object"
+  );
+  assert.equal(
+    importedData.scenes[0].frames[0].portraitPosition,
+    "auto",
+    "Versioned container imports must migrate legacy primary portrait positions before sanitizing"
+  );
+  assert.equal(
+    importedData.scenes[0].frames[0].additionalCharacters[0].portraitPosition,
+    "auto",
+    "Versioned container imports must migrate legacy additional portrait positions before sanitizing"
+  );
+  assert.equal(
+    importedData.scenes[0].frames[0].textSpeed,
+    TEXT_SPEED.DEFAULT,
+    "Versioned container imports must apply schema-v14 text-speed defaults"
+  );
+}
+finally {
+  VNSceneStore.mutateData = savedStoreMutateData;
+}
+
 assert.equal(schema12Migrated.scenes[0].frames[0].musicCues[0].repeatCount, 1, "Schema v12 cues must gain one-play repeat defaults");
 for (const cue of [...migratedFrame.musicCues, ...migratedFrame.sfxCues]) {
   assert.equal(cue.repeatCount, 1, "Schema v13 migration must default legacy cues to one playback");
